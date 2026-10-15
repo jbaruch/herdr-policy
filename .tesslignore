@@ -1,0 +1,8 @@
+.github/
+docs/
+AGENTS.md
+agent-plugin.yaml
+.editorconfig
+.gitignore
+*.bak
+*.tmp
