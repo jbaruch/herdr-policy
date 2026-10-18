@@ -554,7 +554,7 @@ and no degraded ruling.
   explicit per-repo, per-action permission recorded in the brief.
 - Release on a Phase 1 report. A plan is not a verification.
 - Treat Herdr status as assignment acceptance or task completion.
-- Merge on a worker's behalf. The developer runs the release skill.
+- Merge on a worker's behalf.
 - Act against a judge's ruling, or seat the judge on developer, reviewer, or
   tester. Only the operator overrides a ruling.
 

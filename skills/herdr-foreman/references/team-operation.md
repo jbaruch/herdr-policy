@@ -740,7 +740,7 @@ workstation's thin anchor.
 - A shared GitHub account posts internal reviews as COMMENT reviews
 - The foreman enforces the blocking findings a COMMENT review carries
 - Severity classification follows `rules/review-severity.md`
-- The developer then runs the release skill for the PR, the merge, and the cleanup
+- The developer then runs `Skill(skill: "release")` for the PR, the merge, and the cleanup
 
 ## Authority and Policy
 
