@@ -23,17 +23,11 @@ foreman only fires and forgets go through `_run_optional_json`, which treats
 exit 0 with no output as success -- the exit code is the contract there, and
 demanding a JSON body it never reads only invents failures.
 
-Pass a `trace` sink to record every invocation -- argv, exit status, and its
-stdout and stderr -- so a live run that goes wrong is diagnosable without
-guessing at what foreman sent. `--trace` or `FOREMAN_TRACE=1` turns it on.
-
-Traced text is never raw. Pane output is arbitrary text an agent drew on a
-terminal, and an agent that just ran `gh auth status` or echoed an env var has
-credentials on screen; argv can carry them too. Every traced field goes through
-`scrub_for_trace` first, which masks the credential shapes in SECRET_PATTERNS
-and then caps the field at TRACE_FIELD_CAP_BYTES with an explicit truncation
-marker. Redaction runs BEFORE the cap so a truncation cannot slice a token in
-half and leave the front of it standing.
+Pass a `trace` sink to record static operation names, exit status and stream
+byte counts. `--trace` or `FOREMAN_TRACE=1` turns it on. Operands, executable
+paths and response bodies never enter this sink or transport errors. They can
+contain credentials of arbitrary shape; pattern redaction cannot prove them
+safe. The separate bounded-redaction helpers remain available to other owners.
 """
 
 import json
@@ -42,12 +36,19 @@ import re
 import shlex
 import subprocess
 
-from .errors import HerdrError
-from .command_context import HerdrCommandContext, remote_command, refuse
+from .errors import HerdrError, IDENTIFIER_ERROR_CODES, TRANSIENT_LAUNCH_ERROR_CODES
+from .command_context import HerdrCommandContext, REMOTE_READS, REMOTE_EFFECTS, remote_command, refuse
 
 #: Default per-call wall-clock ceiling for the subprocess itself. Herdr's own
 #: --timeout governs how long *it* waits; this guards against a wedged binary.
 SUBPROCESS_TIMEOUT_SEC = 300
+
+# Error codes authorize specific recovery branches. Unknown server strings
+# remain unavailable evidence and are never copied into diagnostics.
+SAFE_ERROR_CODES = frozenset({
+    "agent_not_found", "pane_not_found", "agent_not_idle", "agent_not_ready",
+    "agent_pane_busy", "agent_name_taken", "agent_blocked", "pane_gone", "timeout",
+}) | IDENTIFIER_ERROR_CODES | TRANSIENT_LAUNCH_ERROR_CODES
 
 #: Runtime dependency floor for retrying the server's atomic pre-input
 #: agent_pane_busy refusal. Renew quarterly and before changing this floor:
@@ -216,8 +217,8 @@ def format_argv(argv):
 def error_code(exc):
     """Herdr's own error code from a failed command, or None.
 
-    `_run` keeps the failed command's stderr in the HerdrError details, and a
-    server error is JSON there (`{"error": {"code": ..., "message": ...}}`).
+    `_run` keeps only an enumerated code in the HerdrError details as JSON
+    (`{"error": {"code": ...}}`), without the server's message or other fields.
     A caller that must branch on one code -- `agent_not_found` proving a name
     was released -- reads it here instead of matching on prose. Anything that
     is not that shape is None: a syntax error, a wedged binary, or a non-JSON
@@ -416,29 +417,28 @@ class HerdrClient:
             raise HerdrError("Native start retry compatibility is unproved. Inspect `{}` and restore a running, "
                              "endpoint-compatible Herdr server at version {} or newer before retrying the owner "
                              "spawn; this busy launch is not automatically repeated.".format(
-                                 format_argv(self._argv("status", "server")), minimum),
+                                 self._diagnostic_operation(self._argv("status", "server")), minimum),
                              {"minimum_server_version": minimum, "reason": "startup_retry_compatibility_unproved"})
 
     def _emit_trace(self, argv, completed=None, outcome=None):
         """Record one invocation on the trace sink, if there is one.
 
-        Every field crosses `scrub_for_trace` on its way out: argv can carry a
-        token an operator passed, and stdout/stderr are pane text that may hold
-        anything the agent had on screen. `outcome` is this module's own
-        literal and needs no scrubbing.
+        Static operation names and byte counts preserve call ordering without
+        copying arbitrary command operands or response text. `outcome` is this
+        module's own literal, never caller or server input.
         """
         if self._trace is None:
             return
-        command = scrub_for_trace(format_argv(argv))
+        command = self._diagnostic_operation(argv)
         if completed is None:
             self._trace("herdr> {}{}".format(command, outcome or ""))
             return
         self._trace(
-            "herdr> {}\nherdr< exit={} stdout={!r} stderr={!r}".format(
+            "herdr> {}\nherdr< exit={} stdout_bytes={} stderr_bytes={}".format(
                 command,
                 completed.returncode,
-                scrub_for_trace(completed.stdout or ""),
-                scrub_for_trace(completed.stderr or ""),
+                len((completed.stdout or "").encode("utf-8")),
+                len((completed.stderr or "").encode("utf-8")),
             )
         )
 
@@ -455,16 +455,17 @@ class HerdrClient:
         except FileNotFoundError:
             self._emit_trace(argv, outcome="\nherdr< executable not found")
             raise HerdrError(
-                "herdr executable {!r} not found on PATH - install Herdr or set "
-                "FOREMAN_HERDR_BIN to its absolute path.".format(self.binary),
-                {"command": format_argv(argv)},
+                "Herdr executable was not found - install Herdr or set "
+                "FOREMAN_HERDR_BIN to its absolute path.",
+                {"command": self._diagnostic_operation(argv)},
             ) from None
         except subprocess.TimeoutExpired:
             self._emit_trace(argv, outcome="\nherdr< subprocess timeout")
             raise HerdrError(
                 "herdr did not return within {}s running `{}` - check the pane "
-                "with `herdr agent list`.".format(SUBPROCESS_TIMEOUT_SEC, format_argv(argv)),
-                {"command": format_argv(argv)},
+                "with `herdr agent list`; reconcile any uncertain send before retrying.".format(
+                    SUBPROCESS_TIMEOUT_SEC, self._diagnostic_operation(argv)),
+                {"command": self._diagnostic_operation(argv)},
             ) from None
 
         self._emit_trace(argv, completed)
@@ -473,36 +474,43 @@ class HerdrClient:
             raise HerdrError(
                 self._failure_message(argv, completed),
                 {
-                    "command": format_argv(argv),
+                    "command": self._diagnostic_operation(argv),
                     "exit_code": completed.returncode,
-                    "stderr": (completed.stderr or "").strip(),
+                    "stderr": self._diagnostic_error(completed.stderr),
                 },
             )
         return completed.stdout or ""
 
+    def _diagnostic_operation(self, argv):
+        """Return static operation metadata; operands and executable paths stay private."""
+        command = argv[len(self.context.argv()):]
+        operation = tuple(command[:2])
+        return "herdr " + " ".join(operation) if operation in REMOTE_READS | REMOTE_EFFECTS else "herdr operation"
+
     @staticmethod
-    def _failure_message(argv, completed):
-        stderr = (completed.stderr or "").strip()
-        detail = stderr
-        # Herdr reports server errors as JSON on stderr; surface its own code
-        # and message when it gave us one, and the raw text when it did not.
-        if stderr.startswith("{"):
-            try:
-                payload = json.loads(stderr)
-            except json.JSONDecodeError:
-                payload = None
-            if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
-                error = payload["error"]
-                detail = "{}: {}".format(
-                    error.get("code", "unknown"), error.get("message", stderr)
-                )
+    def _diagnostic_error(stderr):
+        """Retain only an enumerated error code, never server prose or arbitrary keys."""
+        try:
+            payload = json.loads(stderr or "")
+        except json.JSONDecodeError:
+            return ""
+        error = payload.get("error") if isinstance(payload, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        if not isinstance(code, str) or code not in SAFE_ERROR_CODES:
+            return ""
+        return json.dumps({"error": {"code": code}})
+
+    def _failure_message(self, argv, completed):
+        safe = HerdrError("", {"stderr": self._diagnostic_error(completed.stderr)})
+        detail = error_code(safe) or "unclassified transport failure"
         if completed.returncode == 2:
             return (
                 "herdr rejected the command `{}` as a syntax error ({}) - this "
                 "build of foreman may not match the installed herdr; check "
-                "`herdr agent --help`.".format(format_argv(argv), detail or "no detail")
+                "`herdr agent --help`.".format(self._diagnostic_operation(argv), detail)
             )
-        return "herdr failed running `{}`: {}".format(argv and format_argv(argv), detail or "no detail")
+        return "herdr failed running `{}`: {}. Inspect the bound worker through the owner; reconcile uncertain effects before retrying.".format(
+            self._diagnostic_operation(argv), detail)
 
     def _run_optional_json(self, argv):
         """Run a command whose result foreman never reads.
@@ -514,7 +522,7 @@ class HerdrClient:
         sitting unsent in Grok's input box.
 
         Exit status stays the contract: a non-zero exit is still a HerdrError
-        carrying herdr's own stderr.
+        carrying the safe operation and any recognized server error code.
         """
         stdout = self._run(argv)
         if not stdout.strip():
@@ -533,18 +541,15 @@ class HerdrClient:
             payload = json.loads(stdout)
         except json.JSONDecodeError:
             raise HerdrError(
-                "herdr returned non-JSON output for `{}` - expected a JSON "
-                "control response. Got: {!r}".format(format_argv(argv), stdout[:200]),
-                {"command": format_argv(argv)},
+                "herdr returned non-JSON output for `{}` - restore its JSON control response and reconcile uncertain effects before retrying.".format(
+                    self._diagnostic_operation(argv)),
+                {"command": self._diagnostic_operation(argv)},
             ) from None
         if not isinstance(payload, dict) or "result" not in payload:
             raise HerdrError(
-                "herdr returned JSON without a `result` field for `{}` - got "
-                "keys {}.".format(
-                    format_argv(argv),
-                    sorted(payload) if isinstance(payload, dict) else type(payload).__name__,
-                ),
-                {"command": format_argv(argv)},
+                "herdr returned JSON without a `result` field for `{}` - restore the supported response before retrying.".format(
+                    self._diagnostic_operation(argv)),
+                {"command": self._diagnostic_operation(argv)},
             )
         return payload["result"]
 
@@ -555,8 +560,8 @@ class HerdrClient:
             raise HerdrError(
                 "herdr returned a non-object `result` for `{}`; expected a JSON "
                 "object. Inspect this read's response and update Herdr before "
-                "retrying.".format(format_argv(argv)),
-                {"command": format_argv(argv), "result_type": type(result).__name__},
+                "retrying.".format(self._diagnostic_operation(argv)),
+                {"command": self._diagnostic_operation(argv), "result_type": type(result).__name__},
             )
         return result
 

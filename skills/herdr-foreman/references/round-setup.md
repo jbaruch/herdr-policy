@@ -117,10 +117,9 @@ counts and intervals default to the script's own constants; see
 `skills/herdr-foreman/foreman/measure.py`.
 
 Add `--trace` (or `FOREMAN_TRACE=1`) when a live run does something the JSON
-does not explain: every herdr invocation, its exit status, and its output go to
-stderr, and stdout stays the machine-readable document. Traced fields are
-redacted for credential shapes and capped per field with a `[truncated N bytes]`
-marker. The tracing contract is in
+does not explain: static operation names, exit status and stream byte counts go
+to stderr, and stdout stays the machine-readable document. Operands and response
+text stay out of diagnostics. The tracing contract is in
 `skills/herdr-foreman/references/herdr.md`, "Tracing a Live Run".
 
 Report each `failed_agents` entry and follow

@@ -25,6 +25,7 @@ from foreman.herdr import (
     SECRET_MASK,
     TRACE_FIELD_CAP_BYTES,
     HerdrClient,
+    error_code,
     bound_field,
     format_argv,
     redact_secrets,
@@ -300,7 +301,7 @@ class EmptyStdoutTest(unittest.TestCase):
         runner.set("pane send-text", stdout="sent 6 bytes")
         self.assertEqual(HerdrClient(runner=runner).pane_send_text("w4:p1", "/usage"), {})
 
-    def test_a_non_zero_exit_is_still_an_error_carrying_stderr(self):
+    def test_a_non_zero_exit_preserves_the_code_without_server_prose(self):
         runner = FakeRunner()
         runner.set(
             "pane send-text",
@@ -312,7 +313,8 @@ class EmptyStdoutTest(unittest.TestCase):
             HerdrClient(runner=runner).pane_send_text("w9:p9", "/usage")
         message = str(caught.exception)
         self.assertIn("pane_not_found", message)
-        self.assertIn("pane w9:p9 not found", message)
+        self.assertNotIn("pane w9:p9 not found", message)
+        self.assertEqual(error_code(caught.exception), "pane_not_found")
 
     def test_a_syntax_error_exit_is_still_an_error(self):
         runner = FakeRunner()
@@ -415,7 +417,7 @@ class FailureTest(unittest.TestCase):
             HerdrClient(runner=runner).agent_get("ghost")
         message = str(caught.exception)
         self.assertIn("agent_not_found", message)
-        self.assertIn("ghost not found", message)
+        self.assertNotIn("ghost not found", message)
 
     def test_exit_two_is_reported_as_a_syntax_error(self):
         runner = FakeRunner()
@@ -424,12 +426,13 @@ class FailureTest(unittest.TestCase):
             HerdrClient(runner=runner).agent_get("x")
         self.assertIn("syntax error", str(caught.exception))
 
-    def test_non_json_stderr_is_passed_through(self):
+    def test_non_json_stderr_is_withheld_with_recovery_guidance(self):
         runner = FakeRunner()
         runner.set("agent get x", stdout="", returncode=1, stderr="boom")
         with self.assertRaises(HerdrError) as caught:
             HerdrClient(runner=runner).agent_get("x")
-        self.assertIn("boom", str(caught.exception))
+        self.assertNotIn("boom", str(caught.exception))
+        self.assertIn("reconcile uncertain effects", str(caught.exception))
 
     def test_non_json_stdout_on_a_control_command_is_an_error(self):
         runner = FakeRunner()
@@ -463,7 +466,7 @@ class FailureTest(unittest.TestCase):
         )
         with self.assertRaises(HerdrError) as caught:
             HerdrClient(runner=runner).agent_wait("x")
-        self.assertIn("agent wait x", str(caught.exception))
+        self.assertIn("herdr agent wait", str(caught.exception))
 
 
 class TraceTest(unittest.TestCase):
@@ -474,7 +477,7 @@ class TraceTest(unittest.TestCase):
         runner.set("agent get grok", agent_json("grok", "idle", "w4:p1"))
         HerdrClient(runner=runner).agent_get("grok")  # must not raise
 
-    def test_a_successful_call_records_argv_exit_and_raw_streams(self):
+    def test_a_successful_call_records_operation_exit_and_stream_sizes(self):
         runner = FakeRunner()
         runner.set("agent read grok", "Weekly limit: 0%\n")
         lines = []
@@ -482,11 +485,12 @@ class TraceTest(unittest.TestCase):
             "grok", source="visible", lines=80
         )
         self.assertEqual(len(lines), 1)
-        self.assertIn("herdr> herdr agent read grok --source visible --lines 80", lines[0])
+        self.assertIn("herdr> herdr agent read", lines[0])
         self.assertIn("exit=0", lines[0])
-        self.assertIn("Weekly limit: 0%", lines[0])
+        self.assertNotIn("Weekly limit: 0%", lines[0])
+        self.assertIn("stdout_bytes=17", lines[0])
 
-    def test_a_failing_call_records_the_stderr_payload(self):
+    def test_a_failing_call_records_stderr_size_without_its_payload(self):
         runner = FakeRunner()
         runner.set(
             "pane wait-output",
@@ -499,9 +503,10 @@ class TraceTest(unittest.TestCase):
         with self.assertRaises(HerdrError):
             client.pane_wait_output("w4:p1", match="Weekly limit", timeout_ms=20000)
         self.assertEqual(len(lines), 1)
-        self.assertIn("pane wait-output --match 'Weekly limit'", lines[0])
+        self.assertIn("pane wait-output", lines[0])
         self.assertIn("exit=1", lines[0])
-        self.assertIn("timed out waiting for output match", lines[0])
+        self.assertNotIn("timed out waiting for output match", lines[0])
+        self.assertIn("stderr_bytes=", lines[0])
 
     def test_a_missing_binary_is_traced_too(self):
         runner = FakeRunner(raises={"agent get x": FileNotFoundError()})
@@ -519,8 +524,8 @@ class TraceTest(unittest.TestCase):
         client.agent_get("grok")
         client.agent_read("grok")
         self.assertEqual(len(lines), 2)
-        self.assertIn("agent get grok", lines[0])
-        self.assertIn("agent read grok", lines[1])
+        self.assertIn("agent get", lines[0])
+        self.assertIn("agent read", lines[1])
 
 
 class TraceEnvTest(unittest.TestCase):
@@ -651,7 +656,7 @@ class TraceRedactionTest(unittest.TestCase):
             "grok", "export GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
         )
         self.assertNotIn("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", lines[0])
-        self.assertIn(SECRET_MASK, lines[0])
+        self.assertNotIn("export", lines[0])
 
     def test_a_credential_in_pane_output_is_masked(self):
         runner = FakeRunner()
@@ -659,7 +664,7 @@ class TraceRedactionTest(unittest.TestCase):
         lines = []
         HerdrClient(runner=runner, trace=lines.append).agent_read("grok", lines=40)
         self.assertNotIn("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", lines[0])
-        self.assertIn(SECRET_MASK, lines[0])
+        self.assertNotIn("echo", lines[0])
 
     def test_a_credential_in_a_failure_payload_is_masked(self):
         runner = FakeRunner()
@@ -681,7 +686,7 @@ class TraceRedactionTest(unittest.TestCase):
         runner.set("agent read grok", "y" * 8000)
         lines = []
         HerdrClient(runner=runner, trace=lines.append).agent_read("grok", lines=200)
-        self.assertIn("[truncated", lines[0])
+        self.assertIn("stdout_bytes=8000", lines[0])
         self.assertLess(len(lines[0]), 4000)
 
     def test_the_returned_payload_is_never_the_scrubbed_one(self):
@@ -701,6 +706,39 @@ class TraceRedactionTest(unittest.TestCase):
         lines = []
         text = HerdrClient(runner=runner, trace=lines.append).agent_read("grok", lines=200)
         self.assertEqual(len(text), 8000)
+
+
+class DiagnosticPrivacyTest(unittest.TestCase):
+    def test_arbitrary_sensitive_values_never_enter_errors_or_trace(self):
+        marker = "opaque-sensitive-value-without-a-credential-pattern"
+        cases = [
+            (1, "", json.dumps({"error": {"code": "agent_not_found", "message": marker}})),
+            (1, "", json.dumps({"error": {"code": marker, "message": marker}})),
+            (1, "", marker),
+            (0, marker, ""),
+            (0, json.dumps({marker: marker}), ""),
+        ]
+        for code, stdout, stderr in cases:
+            with self.subTest(code=code, stdout=bool(stdout), stderr=bool(stderr)):
+                runner, lines = FakeRunner(), []
+                runner.set("agent prompt", stdout=stdout, returncode=code, stderr=stderr)
+                client = HerdrClient(runner=runner, trace=lines.append)
+                with self.assertRaises(HerdrError) as caught:
+                    client.agent_prompt(marker, marker)
+                diagnostic = json.dumps(caught.exception.to_dict()) + str(caught.exception) + "".join(lines)
+                self.assertNotIn(marker, diagnostic)
+                self.assertIn("herdr agent prompt", diagnostic)
+                self.assertEqual(error_code(caught.exception), "agent_not_found" if '"agent_not_found"' in stderr else None)
+
+    def test_missing_binary_and_timeout_withhold_operands(self):
+        marker = "opaque-private-operand"
+        for failure in (FileNotFoundError(), subprocess.TimeoutExpired(cmd=marker, timeout=1)):
+            with self.subTest(failure=type(failure).__name__):
+                runner, lines = FakeRunner(raises={"agent prompt": failure}), []
+                client = HerdrClient(runner=runner, trace=lines.append)
+                with self.assertRaises(HerdrError) as caught:
+                    client.agent_prompt(marker, marker)
+                self.assertNotIn(marker, json.dumps(caught.exception.to_dict()) + "".join(lines))
 
 
 if __name__ == "__main__":

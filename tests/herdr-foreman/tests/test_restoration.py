@@ -237,8 +237,10 @@ class ReleaseGateTest(RestorationCase):
             with self.subTest(stderr=stderr):
                 self.setUp()
                 self.runner.script("pane process-info", SHELL_ONLY).script("agent get", FakeCompleted(1, "", stderr))
-                with self.assertRaisesRegex(HerdrError, r"herdr failed running `herdr agent get codex-review`"):
+                with self.assertRaisesRegex(HerdrError, r"herdr failed running `herdr agent get`") as caught:
                     self.restore()
+                self.assertNotIn("codex-review", str(caught.exception))
+                self.assertNotIn(stderr, str(caught.exception))
                 self.assertNoStart()
                 self.assertEqual(self.sleeps, [])
 

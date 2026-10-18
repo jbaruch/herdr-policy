@@ -339,9 +339,10 @@ class TraceFlagTest(CliCase):
             ]
         )
         self.assertEqual(code, 1)  # the stub herdr refuses every command
-        self.assertIn("herdr> {} agent get grok".format(self.fake_herdr), err)
+        self.assertIn("herdr> herdr agent get", err)
         self.assertIn("exit=1", err)
-        self.assertIn("agent_not_found", err)
+        self.assertIn("stderr_bytes=", err)
+        self.assertIn("agent_not_found", out)
         # stdout stays the machine-readable snapshot; tracing never pollutes it
         self.assertEqual(json.loads(out)["failed_agents"], ["grok"])
 
