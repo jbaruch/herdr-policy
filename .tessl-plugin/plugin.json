@@ -1,10 +1,99 @@
 {
   "name": "jbaruch/herdr-policy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Herdr team coordination policy for AI coding agents",
   "private": false,
   "repository": "https://github.com/jbaruch/herdr-policy",
   "rules": [
-    "rules/herdr-scope.md"
-  ]
+    "rules/herdr-scope.md",
+    "rules/agent-team-operation.md",
+    "rules/herdr-bootstrap.md",
+    "rules/coding-policy-integration.md"
+  ],
+  "skills": [
+    "skills/herdr-foreman",
+    "skills/herdr-standup"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh",
+              "session-start"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "nativeHooks": {
+    "claude-code": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" session-start"
+            }
+          ]
+        }
+      ],
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" reset-input"
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" supervision-stop"
+            }
+          ]
+        }
+      ]
+    },
+    "codex": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" session-start"
+            }
+          ]
+        }
+      ],
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" reset-input"
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" supervision-stop"
+            }
+          ]
+        }
+      ]
+    }
+  }
 }

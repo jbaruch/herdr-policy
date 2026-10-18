@@ -1,0 +1,48 @@
+{
+  "include": [
+    "skills/herdr-foreman",
+    "skills/herdr-standup",
+    "tests",
+    "scripts"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "tests/herdr-foreman",
+      "extraPaths": [
+        "skills/herdr-foreman",
+        "skills/herdr-foreman/classify",
+        "tests/herdr-foreman"
+      ]
+    },
+    {
+      "root": "tests/herdr-standup",
+      "extraPaths": [
+        "skills/herdr-standup",
+        "tests/herdr-standup"
+      ]
+    },
+    {
+      "root": "skills/herdr-foreman",
+      "extraPaths": [
+        "skills/herdr-foreman",
+        "skills/herdr-foreman/classify"
+      ]
+    },
+    {
+      "root": "skills/herdr-standup",
+      "extraPaths": [
+        "skills/herdr-standup"
+      ]
+    },
+    {
+      "root": "tests",
+      "extraPaths": [
+        "skills/herdr-foreman",
+        "skills/herdr-foreman/classify"
+      ]
+    }
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "standard",
+  "reportMissingModuleSource": "none"
+}

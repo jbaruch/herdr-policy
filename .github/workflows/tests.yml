@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extraction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: jbaruch/coding-policy
+          ref: 9101b94c189c265ea61c82c071cb34b0e1c9fc32
+          path: .test-dependencies/coding-policy
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: jbaruch/agentic-context-registry
+          ref: f8dffcecc0eb98f13b2d7d90cd399f99208becf2
+          path: .test-dependencies/acr
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: .test-dependencies/acr/go.mod
+          cache-dependency-path: .test-dependencies/acr/go.sum
+      - uses: ./.test-dependencies/coding-policy/.github/actions/setup-diagnostics
+      - uses: tesslio/setup-tessl@v2
+      - name: Language diagnostics
+        run: python3 scripts/run-diagnostics.py
+      - name: Validate Tessl package
+        run: tessl plugin lint .
+      - name: Validate ACR package
+        working-directory: .test-dependencies/acr
+        run: go run ./cmd/acr validate ../.. --json
+      - name: Run runtime and installation regression suites
+        env:
+          HERDR_CODING_POLICY_ROOT: ${{ github.workspace }}/.test-dependencies/coding-policy
+        run: python3 scripts/run-tests.py

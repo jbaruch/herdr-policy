@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "package_roots": [
+    "skills/*",
+    "rules",
+    "scripts",
+    ".github/workflows",
+    "tests/*"
+  ],
+  "package_change_lines": 400,
+  "trust_boundary_paths": [
+    ".github/workflows/*",
+    ".herdr/triggers.json",
+    "rules/*",
+    "skills/herdr-foreman/*.sh",
+    "skills/herdr-foreman/foreman/*.py",
+    "skills/herdr-foreman/hooks/*",
+    "skills/herdr-foreman/references/team-operation.md"
+  ],
+  "cli_spec_paths": [
+    "skills/herdr-foreman/foreman/*.py",
+    "skills/*/*.sh",
+    "skills/*/*.py",
+    "scripts/*.py"
+  ],
+  "cli_surface_markers": [
+    "add_parser(",
+    "add_argument(",
+    "raise UsageError(",
+    "raise PlanError(",
+    "_fail(",
+    "usage:",
+    "Usage:",
+    "getopts",
+    ">&2"
+  ],
+  "user_doc_paths": [
+    "README.md",
+    "CONTRIBUTING.md",
+    "docs/*"
+  ]
+}
