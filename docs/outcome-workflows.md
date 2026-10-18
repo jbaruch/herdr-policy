@@ -50,3 +50,10 @@ finding classifications must come from current artifact-bound owner
 assessments; report prose is not an assessment. Executable acceptance cases
 are in `tests/test_workflow_profiles.py`. A verified service/admission adapter
 and a comparative pilot remain required before runtime activation.
+
+The service prototype's `foreman/process_lease.py` holds a kernel lock for an
+explicit process lifetime. Real-process tests cover competing holders, exit,
+fork inheritance, replaced paths and released capabilities. This lock is a
+liveness primitive; it grants no task generation, handoff or dispatch authority.
+An expired heartbeat or released lock never proves an uncertain send was absent.
+The native/remote authority guards remain unchanged and no service is activated.
