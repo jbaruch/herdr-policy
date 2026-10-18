@@ -260,7 +260,10 @@ boy_scout = (rules / "boy-scout.md").read_text()
 severity = (rules / "review-severity.md").read_text()
 advisory_directive = next(line for line in boy_scout.splitlines() if line.startswith("- **Advisory**"))
 risk_directive = next(line for line in boy_scout.splitlines() if line.startswith("- **Unrelated blocking risk**"))
-assert "Herdr round" in risk_directive and "current conversation standalone" in risk_directive
+integration = (root.parent / "rules/coding-policy-integration.md").read_text()
+# Generic standalone duties remain compatible with the published relocation
+# oracle and the reduced package; team-specific routing belongs to Herdr.
+assert "current conversation" in risk_directive
 references = {
     "herdr-foreman/references/round-completion.md": ["skills/herdr-foreman/templates/brief-release.md"],
     "herdr-foreman/references/dispatch-recovery.md": ["skills/herdr-foreman/foreman/composer.py", "skills/herdr-foreman/foreman/assign.py"],
@@ -275,8 +278,9 @@ for source, paths in references.items():
 assert "reconcile --state <state-path> --dispatch <recorded-dispatch-id>" in (root / "herdr-foreman/references/dispatch-recovery.md").read_text()
 assert "rules/review-severity.md" in advisory_directive
 assert "task report" not in advisory_directive and "round log" not in advisory_directive
-assert "Advisory in a team round → acknowledge in the existing task report or round log" in severity
-assert "Advisory standalone → note it directly in the existing review conversation" in severity
+assert "Advisory findings are acknowledged in the existing task report or round log" in integration
+assert "they create no follow-up or delivery prerequisite" in integration
+assert "existing review conversation" in severity and "without simulating team artifacts" in severity
 assert "Acknowledged — advisory noted" in release
 assert "never simulate a team report" in release
 assert "outside merge prerequisites" in release
@@ -320,6 +324,7 @@ root = Path(sys.argv[1])
 rule = (root.parent / "rules/agent-team-operation.md").read_text()
 import os
 isolation = (Path(os.environ["HERDR_CODING_POLICY_ROOT"]) / "rules/agent-worktree-isolation.md").read_text()
+integration = (root.parent / "rules/coding-policy-integration.md").read_text()
 team = (root / "herdr-foreman/references/team-operation.md").read_text()
 skill = (root / "herdr-foreman/SKILL.md").read_text()
 common = (root / "herdr-foreman/templates/COMMON.md").read_text()
@@ -331,7 +336,8 @@ assert "does the task directly" in rule
 assert "Team-round direct work stays within the current role's authority" in rule
 assert "Standalone direct work follows every other applicable rule" in rule
 assert 'Agent tool\'s `isolation: "worktree"`' not in isolation
-assert "foreman provisions" in isolation
+assert "git worktree add" in isolation
+assert "foreman provisions each writer's worktree" in integration
 for surface in (team, skill, common):
     assert "rules/agent-team-operation.md" in surface and "Delegation" in surface
 assert "staffing" in common and "foreman" in common
