@@ -177,7 +177,7 @@ main() {
   [ "$all" -eq 0 ] || [ -z "$since" ] || die "--since and --all contradict each other; pass one"
   local changed
   changed="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["changed"])' "${HERE}/report-questions.json")" \
-    || die "cannot read the questions' change date from ${HERE}/report-questions.json; restore that file (reinstall the plugin: tessl install jbaruch/coding-policy), then rerun"
+    || die "cannot read the questions' change date from ${HERE}/report-questions.json; restore that file (reinstall the plugin: tessl install jbaruch/herdr-policy), then rerun"
   if [ "$all" -eq 0 ] && [ -z "$since" ]; then since="$changed"; fi
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/classify-eval.XXXXXX")" || die "cannot create a temporary directory; repair write access to \${TMPDIR:-/tmp} (or point TMPDIR at a writable directory), then rerun"

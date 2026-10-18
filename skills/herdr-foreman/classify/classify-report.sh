@@ -153,7 +153,7 @@ main() {
   esac
   [ -n "$agent" ] || agent="$DEFAULT_AGENT"
   local verdict="${HERE}/report_verdict.py"
-  [ -r "$verdict" ] || die "missing the question owner at ${verdict}; reinstall the plugin (tessl install jbaruch/coding-policy), then rerun"
+  [ -r "$verdict" ] || die "missing the question owner at ${verdict}; reinstall the plugin (tessl install jbaruch/herdr-policy), then rerun"
 
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/classify-report.XXXXXX")" || die "cannot create a temporary directory; repair write access to \${TMPDIR:-/tmp} (or point TMPDIR at a writable directory), then rerun"

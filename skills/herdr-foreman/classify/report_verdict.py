@@ -99,7 +99,7 @@ def questions():
     try:
         data = json.loads(QUESTIONS.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, ValueError) as exc:
-        fail("cannot read the questions at {}: {}; restore that file as UTF-8 JSON (reinstall the plugin: tessl install jbaruch/coding-policy), then rerun".format(QUESTIONS, exc))
+        fail("cannot read the questions at {}: {}; restore that file as UTF-8 JSON (reinstall the plugin: tessl install jbaruch/herdr-policy), then rerun".format(QUESTIONS, exc))
     return data
 
 
