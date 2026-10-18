@@ -66,8 +66,9 @@ jobs:
         # Review monthly and after release-contract changes, in a dedicated PR.
         run: GOBIN="$RUNNER_TEMP/acr-bin" go install github.com/jbaruch/agentic-context-registry/cmd/acr@f8dffcecc0eb98f13b2d7d90cd399f99208becf2
       - name: Publish immutable ACR tag and asset
-        # Pin the reviewed publisher owner; renew monthly with coding-policy releases.
-        uses: jbaruch/coding-policy/.github/actions/publish-acr@894668183834d39a117bea893058820fb9e9a630
+        # Extraction publisher with controlled Git diagnostics and tested action forwarding.
+        # Renew monthly with coding-policy releases, after the candidate's review gates pass.
+        uses: jbaruch/coding-policy/.github/actions/publish-acr@0dbe6a75928d47cbd279a60fd3be3be9bf30695c
         env:
           GH_TOKEN: ${{ github.token }}
         with:

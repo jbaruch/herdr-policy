@@ -52,6 +52,7 @@ from .composition import REQUIREMENTS_SCHEMA_VERSION, parse_requirements
 from .errors import UsageError
 from .tiers import canonical_role, require_seatable
 
+GIT_DIAGNOSTIC_OPERATIONS = frozenset({"diff", "ls-tree", "show", "rev-parse", "ls-files", "merge-base"})
 
 DECLARATION_SCHEMA_VERSION = 1
 DETECTION_SCHEMA_VERSION = 3
@@ -696,16 +697,17 @@ def git_runner(repo):
     """A runner executing git in `repo` and returning stdout."""
 
     def run(arguments):
+        operation = arguments[0] if arguments and arguments[0] in GIT_DIAGNOSTIC_OPERATIONS else "inspection"
         completed = subprocess.run(["git", "-C", str(repo), *arguments],
                                    capture_output=True, check=False)
         try:
             stdout = completed.stdout.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise UsageError("git {} returned non-UTF-8 output in {} ({}); use UTF-8 repository metadata and trigger declarations.".format(
-                " ".join(arguments), repo, exc.reason), {}) from None
+            raise UsageError("git {} returned non-UTF-8 output ({}); use UTF-8 repository metadata and trigger declarations.".format(
+                operation, exc.reason), {}) from None
         if completed.returncode != 0:
-            raise UsageError("Git trigger inspection failed (exit {}); response withheld. Restore repository metadata and origin access before retrying.".format(
-                completed.returncode), {})
+            raise UsageError("git {} failed (exit {}); response withheld. Restore repository metadata and origin access before retrying.".format(
+                operation, completed.returncode), {})
         return stdout
     return run
 

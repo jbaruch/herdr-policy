@@ -1838,5 +1838,17 @@ class WorktreeBaseCommandTest(TempCase):
         self.assertEqual(json.loads(location.read_text())["schema_version"], 2)
 
 
+class GitDiagnosticTest(unittest.TestCase):
+    def test_known_operation_survives_without_operands_or_response_text(self):
+        private = "private transport fixture"
+        for operation in ("rev-parse", private):
+            result = subprocess.CompletedProcess([], 128, stdout=b"", stderr=private.encode())
+            with self.subTest(operation=operation), patch.object(triggers.subprocess, "run", return_value=result):
+                with self.assertRaises(UsageError) as failure:
+                    triggers.git_runner(Path("/unused"))([operation, private])
+                self.assertNotIn(private, str(failure.exception))
+                self.assertIn("git rev-parse" if operation == "rev-parse" else "git inspection", str(failure.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
