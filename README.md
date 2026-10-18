@@ -1,5 +1,7 @@
 # jbaruch/herdr-policy
 
+[![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Fjbaruch%2Fherdr-policy)](https://tessl.io/registry/jbaruch/herdr-policy)
+
 Herdr team coordination policy, distributed from the same authored files through Tessl and the Agentic Context Registry (ACR).
 
 ## Contents
@@ -7,6 +9,18 @@ Herdr team coordination policy, distributed from the same authored files through
 The `herdr-foreman` skill owns dispatch, identity, reports, supervision, state and recovery. The `herdr-standup` skill asks idle workers for a bounded status update. Team rules, templates and the native reset, Stop and startup hooks ship with those skills.
 
 General coding and release policy belongs to [jbaruch/coding-policy](https://github.com/jbaruch/coding-policy). Tests and fixtures remain in this repository under `tests/`; consumers do not install them. Extraction does not itself reduce model coordination cost. Background progression and context changes are tracked separately in [the epic](https://github.com/jbaruch/herdr-policy/issues/1).
+
+| Rule | Purpose |
+| --- | --- |
+| [herdr-scope](rules/herdr-scope.md) | Team applicability and package boundary |
+| [agent-team-operation](rules/agent-team-operation.md) | Existing team modes, delegation and foreman authority |
+| [herdr-bootstrap](rules/herdr-bootstrap.md) | Installed skill lookup across both channels |
+| [coding-policy-integration](rules/coding-policy-integration.md) | Team-specific exceptions and release integration |
+
+| Skill | Purpose |
+| --- | --- |
+| [herdr-foreman](skills/herdr-foreman/SKILL.md) | Dispatch, supervise and accept team work |
+| [herdr-standup](skills/herdr-standup/SKILL.md) | Collect bounded status from idle workers |
 
 ## Installation
 
@@ -44,6 +58,8 @@ tessl plugin lint .
 acr validate . --json
 ```
 
-The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI pins the coding-policy helper source and ACR validator; source package manifests share one explicit version.
+The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI installs the published relocation baseline outside the checkout and pins the ACR validator. It gates actual native installation and canonical Tessl skill review at 85%. The scoped publisher credential is configured in [repository Actions secrets](https://github.com/jbaruch/herdr-policy/settings/secrets/actions); its creation and renewal are documented in `.env.example`. Source package manifests share one explicit version.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and [migration.md](docs/migration.md) for cutover and rollback.
+
+The serialized publish workflow runs the gates once, publishes the explicit Tessl version, then creates the immutable ACR tag and asset in a dependent job. Each channel is confirmed separately; Tessl moderation must pass before consumer adoption. If only ACR fails, rerun failed jobs on that same run, preserving the successful Tessl job and original baseline. Never move an existing tag or rerun a successful Tessl publish to repair the other channel. This repository records dated changelog headings manually and does not add a stamp commit during publication.

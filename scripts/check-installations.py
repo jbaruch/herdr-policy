@@ -17,6 +17,8 @@ from pathlib import Path
 
 
 SENTINEL = "Operator-owned instruction sentinel: preserve this line.\n"
+# The scope-only bootstrap is the immutable upgrade oracle. Review monthly;
+# replace only in a dedicated baseline PR with recorded migration coverage.
 BOOTSTRAP = "github:jbaruch/herdr-policy@8c7ab1f2182033fdc7de3c6dcb4624d1f31f5988"
 IDENTITY = "acr__jbaruch__herdr-policy__"
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0
+## 0.2.0 — 2026-10-18
 
 - Extract the Herdr foreman, standup, team rules, templates and owner/runtime contracts from coding-policy.
 - Resolve general cleanup helpers as one compatible coding-policy release bundle; support native ACR skill namespaces and Tessl package layouts.

@@ -1,0 +1,73 @@
+name: Publish extracted Herdr plugin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-herdr-policy
+  cancel-in-progress: false
+
+jobs:
+  gates:
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+  tessl:
+    needs: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7; Dependabot weekly
+        with:
+          fetch-depth: 0
+      - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2; Dependabot weekly
+        with:
+          token: ${{ secrets.TESSL_TOKEN }}
+      # Review these shared release-action pins monthly in a dedicated compatibility PR.
+      - name: Capture original registry baseline
+        id: baseline
+        uses: jbaruch/coding-policy/.github/actions/publish-landed-gate@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        with:
+          phase: capture
+      - name: Publish explicit manifest version
+        id: publish
+        continue-on-error: true
+        uses: jbaruch/coding-policy/.github/actions/smart-publish@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        with:
+          mode: as-is
+      - name: Confirm Tessl publication
+        uses: jbaruch/coding-policy/.github/actions/publish-landed-gate@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        with:
+          phase: confirm
+          baseline: ${{ steps.baseline.outputs.baseline }}
+          publish-outcome: ${{ steps.publish.outcome }}
+          credit-signature: ${{ steps.publish.outputs.credit-signature }}
+  # Failed ACR publication reruns independently: keep the successful Tessl job
+  # and its original baseline with `gh run rerun <run-id> --failed`.
+  acr:
+    needs: tessl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7; Dependabot weekly
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6; Dependabot weekly
+        with:
+          # Match the ACR module; review monthly with its revision below.
+          go-version: '1.27.0'
+          cache: false
+      - name: Install pinned ACR publisher
+        # Review monthly and after release-contract changes, in a dedicated PR.
+        run: GOBIN="$RUNNER_TEMP/acr-bin" go install github.com/jbaruch/agentic-context-registry/cmd/acr@f8dffcecc0eb98f13b2d7d90cd399f99208becf2
+      - name: Publish immutable ACR tag and asset
+        # Pin the reviewed publisher owner; renew monthly with coding-policy releases.
+        uses: jbaruch/coding-policy/.github/actions/publish-acr@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          bin-directory: ${{ runner.temp }}/acr-bin
+          source-commit: ${{ github.sha }}
