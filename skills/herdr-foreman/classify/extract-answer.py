@@ -48,7 +48,7 @@ def from_claude(raw):
         fail("claude emitted no result event")
     last = results[-1]
     if last.get("is_error"):
-        fail("claude reported an error: {}".format(last.get("result") or last.get("subtype")))
+        fail("claude reported an error; check provider availability before retrying")
     answer = last.get("structured_output")
     if not isinstance(answer, dict):
         fail("claude's result carries no structured_output")

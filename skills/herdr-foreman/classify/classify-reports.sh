@@ -22,7 +22,8 @@
 #      "unannotated": [{"report": "<path>", "reason": "<diagnostic>"}, ...]}
 #   `agent` is the adapter requested, "default" for Jev; each label names the
 #   adapter that answered. A report Jev could not label is in `unannotated`
-#   with the reason, and is read in full.
+#   with a static failure diagnostic, and is read in full. Provider streams
+#   are never relayed to diagnostics or copied into the batch result.
 #   stderr: per-report progress and every unannotated report.
 #
 # Exit 0 whenever the arguments were valid, including when some or every
@@ -83,13 +84,12 @@ main() {
     index=$((index + 1))
     echo "  [${index}/${#reports[@]}] ${report}" >&2
     if bash "${HERE}/classify-report.sh" "$report" ${agent:+--agent "$agent"} \
-         --out "${work}/label-${index}.json" >/dev/null 2>"${work}/err-${index}"; then
-      cat "${work}/err-${index}" >&2
+         --out "${work}/label-${index}.json" >/dev/null 2>/dev/null; then
+      continue
     else
       printf '%s' "$report" > "${work}/failed-${index}"
       # Best-effort: the batch continues, and the failure is still visible.
-      echo "classify-reports: ${report} was not annotated; read it in full. The classifier said:" >&2
-      cat "${work}/err-${index}" >&2
+      echo "classify-reports: ${report} was not annotated; read it in full -- a failed call is never a verdict" >&2
     fi
   done
 
@@ -104,10 +104,8 @@ for index in range(1, total + 1):
     if label.is_file():
         labels.append(json.loads(label.read_text(encoding="utf-8")))
     elif failed.is_file():
-        lines = [line for line in (work / "err-{}".format(index)).read_text(encoding="utf-8",
-                 errors="replace").splitlines() if line.strip()]
         unannotated.append({"report": failed.read_text(encoding="utf-8"),
-                            "reason": lines[-1] if lines else "no diagnostic"})
+                            "reason": "classifier unavailable or invalid; read the report in full -- a failed call is never a verdict"})
 print(json.dumps({"schema_version": 2, "agent": agent,
                   "labels": labels, "unannotated": unannotated}, sort_keys=True))
 PY

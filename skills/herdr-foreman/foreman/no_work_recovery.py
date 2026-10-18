@@ -67,7 +67,7 @@ def _git(tree, *args):
     except OSError as exc:
         refuse("Cannot inspect the original checkout: {}.".format(exc))
     if result.returncode:
-        refuse("Git cannot verify the original checkout ({}): {}.".format(args[0], result.stderr.strip()))
+        refuse("Git cannot verify the original checkout (exit {}); response withheld. Restore repository access before retrying.".format(result.returncode))
     return result.stdout.strip()
 
 

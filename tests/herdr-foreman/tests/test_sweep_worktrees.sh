@@ -187,7 +187,7 @@ main() {
   quiet "alpha second worktree failed" "${G[@]}" -C "$alpha" worktree add -q -b review/a2 "$nroot/alpha-again" origin/main
   run "$nroot"
   echo "3. a repository without origin reports an error; the others still ran"
-  if (( RC == 2 )) && [[ "$(q 'next(r.get("error","") for r in d["repos"] if r["shared"].endswith("gamma-shared"))')" == *"no origin"* ]] \
+  if (( RC == 2 )) && [[ "$(q 'next(r.get("error","") for r in d["repos"] if r["shared"].endswith("gamma-shared"))')" == *"prune-worktrees.sh exited 1"* ]] \
     && ! listed "$alpha" "$nroot/alpha-again" && listed "$gamma" "$nroot/gamma-wt"; then
     pass; else fail "no origin: rc=$RC out=$OUT err=$ERRTEXT"; fi
 

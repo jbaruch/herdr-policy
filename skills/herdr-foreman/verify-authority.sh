@@ -45,7 +45,7 @@ api() { # <path>
   local rc=0 out
   out="$("$GH_BIN" api "$1" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${GH_BIN} api $1\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — run \`${GH_BIN} auth status\` to check the session"
+    warn "\`${GH_BIN} api $1\` failed (exit ${rc}): response withheld — run \`${GH_BIN} auth status\` to check the session"
     return 2
   fi
   printf '%s' "$out"
@@ -80,7 +80,7 @@ main() {
   local auth_rc=0
   "$GH_BIN" auth status >/dev/null 2>"$ERRFILE" || auth_rc=$?
   if (( auth_rc != 0 )); then
-    warn "not logged in to GitHub (\`${GH_BIN} auth status\` exit ${auth_rc}): $(tr '\n' ' ' < "$ERRFILE") — run \`${GH_BIN} auth login\` and retry"
+    warn "not logged in to GitHub (\`${GH_BIN} auth status\` exit ${auth_rc}): response withheld — run \`${GH_BIN} auth login\` and retry"
     return 1
   fi
 
@@ -131,7 +131,7 @@ main() {
       if grep -q '404' "$ERRFILE"; then
         : # not a member — not an owner, nothing to report
       else
-        warn "could not read org membership for ${viewer_login} in ${owner_login} (exit ${membership_rc}): $(tr '\n' ' ' < "$ERRFILE") — no verdict; check \`gh auth status\` and the network, then rerun"
+        warn "could not read org membership for ${viewer_login} in ${owner_login} (exit ${membership_rc}): response withheld — no verdict; check \`gh auth status\` and the network, then rerun"
         return 2
       fi
     fi

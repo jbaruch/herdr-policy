@@ -259,7 +259,7 @@ main() {
 
   # 6. A failing `agent get` is a tool failure, never "still working".
   run "$report" FAKE_MARKER=found FAKE_GET_ERR=1
-  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "agent_not_found"; then
+  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "agent get failed"; then
     pass; else fail "agent get failure: expected exit 2, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
 
   # 6b. An unreadable `agent get` payload is a tool failure too.
@@ -269,8 +269,8 @@ main() {
 
   # 7. A non-timeout probe error must not read as "the marker is not there yet".
   run "$report" FAKE_MARKER=error
-  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "pane_not_found"; then
-    pass; else fail "probe failure: expected exit 2 surfacing the code, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "pane wait-output failed"; then
+    pass; else fail "probe failure: expected exit 2 naming the operation, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
 
   # 8. Usage error -> exit 2 with a usage line.
   OUT="$(env HERDR_ENV=1 HERDR_BIN="$FAKE" bash "$SCRIPT" worker </dev/null 2>"$TMP/e8")"; RC=$?

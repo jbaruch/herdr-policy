@@ -4,6 +4,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,33 @@ SPEC.loader.exec_module(CHECK)
 
 
 class InstallationErrorsTest(unittest.TestCase):
+    def test_credentials_are_scoped_to_registry_install_not_candidate_execution(self):
+        secret = "private fixture value"
+        with patch.dict(os.environ, {"GH_TOKEN": secret, "TESSL_TOKEN": secret, "PATH": "/fixture/bin"}, clear=True):
+            result = subprocess.CompletedProcess([], 0, stdout='{"ok":true}', stderr="")
+            with patch.object(CHECK.subprocess, "run", return_value=result) as run:
+                CHECK.acr("install", Path("/unused"), "fixture:source")
+                self.assertEqual(run.call_args.kwargs["env"], {"PATH": "/fixture/bin", "GH_TOKEN": secret})
+                CHECK.acr("realize", Path("/unused"))
+                self.assertEqual(run.call_args.kwargs["env"], {"PATH": "/fixture/bin"})
+                CHECK.command("bash", "fixture-hook", env=dict(os.environ), check_behavior=True)
+                self.assertEqual(run.call_args.kwargs["env"], {"PATH": "/fixture/bin"})
+
+    def test_candidate_output_is_not_copied_into_failure_diagnostics(self):
+        secret = "private fixture value"
+        for code in (0, 7):
+            with self.subTest(code=code):
+                result = subprocess.CompletedProcess([], code, stdout=secret, stderr=secret)
+                with patch.object(CHECK.subprocess, "run", return_value=result), self.assertRaises(CHECK.BehaviorFailure) as error:
+                    CHECK.command("bash", "fixture-hook", check_behavior=True, quiet=True)
+                self.assertNotIn(secret, str(error.exception))
+
+    def test_real_candidate_process_does_not_receive_parent_credentials(self):
+        with patch.dict(os.environ, {"GH_TOKEN": "private fixture value", "TESSL_TOKEN": "private fixture value"}):
+            output = CHECK.command(sys.executable, "-c", "import os; print('GH_TOKEN' in os.environ or 'TESSL_TOKEN' in os.environ)",
+                                   check_behavior=True)
+        self.assertEqual(output, "False\n")
+
     def test_runtime_inventory_keeps_decoder_and_refuses_development_calibration(self):
         with tempfile.TemporaryDirectory() as scratch:
             skill = Path(scratch)

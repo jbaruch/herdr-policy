@@ -2,6 +2,7 @@
 
 ## 0.2.0 — 2026-10-18
 
+- Pass an allowlisted environment to installed conformance artifacts, scope the CI fetch token to registry installs, and withhold provider/Herdr response bodies from shell and classifier diagnostics.
 - Withhold command operands and arbitrary server output from transport errors and traces; preserve static operation metadata, byte counts and recognized recovery codes.
 - Refuse standup prompting when atomic readiness-guarded delivery is unavailable; preserve read-only diagnostics and round-log fallback without risking input to a working agent.
 - Bind both skill entrypoints explicitly to the distributed Herdr lookup rule.

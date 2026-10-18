@@ -27,14 +27,33 @@ class BehaviorFailure(RuntimeError):
     """An installed operation failed after its tooling and source were prepared."""
 
 
+RUNTIME_ENVIRONMENT = frozenset({
+    "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL",
+    "SYSTEMROOT", "XDG_STATE_HOME", "XDG_CONFIG_HOME", "PYTHONDONTWRITEBYTECODE",
+    "HERDR_ENV", "HERDR_PANE_ID",
+})
+
+
+def runtime_environment(source=None):
+    """Pass runtime settings alone, never ambient CI/provider credentials."""
+    source = os.environ if source is None else source
+    return {key: value for key, value in source.items() if key in RUNTIME_ENVIRONMENT}
+
+
 def command(*arguments, env=None, input_text=None, check_behavior=False, quiet=False):
-    result = subprocess.run(arguments, input=input_text, capture_output=True, text=True, env=env)
+    environment = runtime_environment(env)
+    # Only the pinned registry client's immutable-source fetch needs this token.
+    # Installed hooks, decoders and owners never receive it.
+    if arguments[:2] == ("acr", "install") and os.environ.get("GH_TOKEN"):
+        environment["GH_TOKEN"] = os.environ["GH_TOKEN"]
+    result = subprocess.run(arguments, input=input_text, capture_output=True, text=True, env=environment)
     if result.returncode:
         failure = BehaviorFailure if check_behavior else OSError
-        raise failure("{} exited {}: {}".format(arguments[0], result.returncode, result.stderr.strip()))
+        raise failure("{} exited {}; inspect the selected operation without logging candidate output".format(
+            arguments[0], result.returncode))
     if quiet and (result.stdout or result.stderr):
-        raise BehaviorFailure("{} emitted unexpected hook output: {} {}".format(
-            arguments[0], result.stdout.strip(), result.stderr.strip()))
+        raise BehaviorFailure("{} emitted unexpected hook output (stdout {} bytes, stderr {} bytes)".format(
+            arguments[0], len(result.stdout.encode()), len(result.stderr.encode())))
     return result.stdout
 
 
@@ -83,7 +102,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
     if len(paths) != 3:
         raise ValueError("{}: expected three owned hook entrypoints, got {}".format(agent, len(paths)))
     state = project / "private-state"
-    environment = {**os.environ, "XDG_STATE_HOME": str(state), "XDG_CONFIG_HOME": str(project / "private-config"),
+    environment = {**runtime_environment(), "XDG_STATE_HOME": str(state), "XDG_CONFIG_HOME": str(project / "private-config"),
                    "PYTHONDONTWRITEBYTECODE": "1"}
     for key in ("HERDR_ENV", "HERDR_PANE_ID", "PYTHONPATH"):
         environment.pop(key, None)

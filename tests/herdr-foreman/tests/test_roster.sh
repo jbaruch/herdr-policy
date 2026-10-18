@@ -164,8 +164,8 @@ main() {
 
   # 8. herdr fails -> exit 2 (a tool failure), never an empty roster.
   run "$l1" FAKE_LIST_ERR='{"error":{"code":"no_session","message":"no herdr session"}}'
-  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "no_session"; then
-    pass; else fail "herdr error: expected exit 2 surfacing the CLI message, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "agent list failed"; then
+    pass; else fail "herdr error: expected exit 2 naming the operation, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
 
   # 9. A payload without .result.agents is unreadable, not an empty team.
   local l9="$TMP/list9.json"

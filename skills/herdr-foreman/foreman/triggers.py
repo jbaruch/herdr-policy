@@ -700,13 +700,12 @@ def git_runner(repo):
                                    capture_output=True, check=False)
         try:
             stdout = completed.stdout.decode("utf-8")
-            stderr = completed.stderr.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise UsageError("git {} returned non-UTF-8 output in {} ({}); use UTF-8 repository metadata and trigger declarations.".format(
                 " ".join(arguments), repo, exc.reason), {}) from None
         if completed.returncode != 0:
-            raise UsageError("git {} failed in {} ({}): {}".format(
-                " ".join(arguments), repo, completed.returncode, stderr.strip() or "no diagnostic"), {})
+            raise UsageError("Git trigger inspection failed (exit {}); response withheld. Restore repository metadata and origin access before retrying.".format(
+                completed.returncode), {})
         return stdout
     return run
 

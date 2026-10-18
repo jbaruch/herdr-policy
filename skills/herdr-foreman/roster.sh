@@ -66,14 +66,14 @@ main() {
 
   list="$("$HERDR_BIN" agent list 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} agent list\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — run it by hand to inspect the session"
+    warn "Herdr agent list failed (exit ${rc}); response withheld — restore the session connection before retrying"
     return 2
   fi
 
   # `.result.agents` is the documented array; anything else is a payload shape
   # this script cannot read, which is a tool failure, never an empty roster.
   rc=0
-  roster="$(printf '%s' "$list" | jq --arg caller "$caller" '
+  roster="$(printf '%s' "$list" | jq -e --arg caller "$caller" '
     if (.result.agents | type) != "array" then
       error("herdr agent list payload has no .result.agents array")
     else
@@ -87,7 +87,7 @@ main() {
                       state: (.agent_status // "unknown") } ] }
     end' 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "could not read the herdr agent list payload (jq exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — run \`${HERDR_BIN} agent list\` and inspect its JSON"
+    warn "could not read the Herdr agent list payload (jq exit ${rc}); response withheld — check CLI compatibility before retrying"
     return 2
   fi
 

@@ -252,18 +252,18 @@ agent_info() { # <agent-name>
   local raw rc=0 parsed
   raw="$("$HERDR_BIN" agent get "$1" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} agent get $1\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — run \`${HERDR_BIN} agent list\` to see the live names"
+    warn "Herdr agent get failed (exit ${rc}); response withheld — verify the live agent identity before retrying"
     return 2
   fi
   rc=0
-  parsed="$(printf '%s' "$raw" | jq -r '
+  parsed="$(printf '%s' "$raw" | jq -er '
     if (.result.agent | type) != "object" then
       error("herdr agent get payload has no .result.agent object")
     else
       "\(.result.agent.agent_status // "unknown") \(.result.agent.pane_id // "unknown")"
     end' 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "could not read the herdr agent get payload (jq exit ${rc}): $(tr '\n' ' ' < "$ERRFILE")"
+    warn "could not read the Herdr agent get payload (jq exit ${rc}); response withheld — check CLI compatibility before retrying"
     return 2
   fi
   printf '%s\n' "$parsed"
@@ -294,7 +294,7 @@ marker_seen() { # <pane-id> <absolute-report-path>
   if (( rc != 0 )); then
     code="$(jq -r '.error.code // "unparseable"' < "$ERRFILE" 2>/dev/null)" || code="unparseable"
     if [[ "$code" == "timeout" ]]; then return 1; fi
-    warn "\`${HERDR_BIN} pane wait-output $1\` failed (exit ${rc}, code ${code}): $(tr '\n' ' ' < "$ERRFILE")"
+    warn "Herdr pane wait-output failed (exit ${rc}); response withheld — restore the pane connection before retrying"
     return 2
   fi
 
@@ -306,7 +306,7 @@ marker_seen() { # <pane-id> <absolute-report-path>
     --source visible \
     --lines "$FOREMAN_PROBE_LINES" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} pane read $1\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — the marker was seen but could not be confirmed"
+    warn "Herdr pane read failed (exit ${rc}); response withheld — the marker was seen but could not be confirmed; restore the pane connection"
     return 2
   fi
   # Visible rows cannot prove that a newline was a soft wrap. Never join them
@@ -339,7 +339,7 @@ dialog_on_screen() { # <pane-id>
     --source visible \
     --lines "$FOREMAN_PROBE_LINES" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} pane read $1\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — cannot confirm whether a dialog is on screen"
+    warn "Herdr pane read failed (exit ${rc}); response withheld — restore the pane connection before checking for a dialog"
     return 2
   fi
   # Lowercased through tr, not `${var,,}`: that expansion is bash 4+, and this
@@ -461,7 +461,7 @@ read_refusal_view() { # <pane-id>
   local text rc=0
   text="$("$HERDR_BIN" pane read "$1" --source visible --lines "$FOREMAN_PROBE_LINES" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "cannot inspect ${1} for a terminal provider notice (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — restore the pane connection before deciding this attempt's outcome"
+    warn "cannot inspect the pane for a terminal provider notice (exit ${rc}); response withheld — restore the pane connection before deciding this attempt's outcome"
     return 2
   fi
   printf '%s\n' "$text"
@@ -475,10 +475,10 @@ refusal_context() { # <pane-id>
   local raw parsed rc=0
   raw="$("$HERDR_BIN" pane get "$1" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "cannot verify the live terminal for ${1} (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — restore the pane connection before deciding this attempt's outcome"
+    warn "cannot verify the live terminal (exit ${rc}); response withheld — restore the pane connection before deciding this attempt's outcome"
     return 2
   fi
-  parsed="$(printf '%s' "$raw" | jq -c --arg pane "$1" '
+  parsed="$(printf '%s' "$raw" | jq -ce --arg pane "$1" '
     if (.result.pane | type) != "object" then error("missing result.pane")
     else .result.pane |
       if .pane_id == $pane and (.terminal_id | type) == "string" and .terminal_id != ""
@@ -488,8 +488,11 @@ refusal_context() { # <pane-id>
       then {terminal_id, agent_session, revision}
       else null end
     end' 2>"$ERRFILE")" || rc=$?
+  if (( rc == 1 )) && [[ "$parsed" == null ]]; then
+    return 1  # Valid pane metadata without terminal refusal readiness.
+  fi
   if (( rc != 0 )); then
-    warn "cannot parse the live terminal for ${1}: $(tr '\n' ' ' < "$ERRFILE") — check the Herdr pane get response before deciding this attempt's outcome"
+    warn "cannot parse the live terminal; response withheld — check Herdr pane compatibility before deciding this attempt's outcome"
     return 2
   fi
   [[ "$parsed" != null ]] || return 1
@@ -579,7 +582,7 @@ classify_worktree() { # <worktree-path> [base-revision]
   fi
   if [[ ! -d "$tree" ]] || ! git -C "$tree" rev-parse --is-inside-work-tree >/dev/null 2>"$ERRFILE"; then
     local why
-    why="$(tr '\n' ' ' < "$ERRFILE")"
+    why="Git operation failed; response withheld"
     warn "\`git rev-parse --is-inside-work-tree\` found no work tree at ${tree}: ${why:-no such directory} — the stall is recorded, its classification is not; inspect that path by hand"
     jq -n --arg t "$tree" --arg e "${why:-no such directory}" \
       '{class: "unknown", evidence: {worktree: $t, readable: false, error: $e}}'
@@ -595,7 +598,7 @@ classify_worktree() { # <worktree-path> [base-revision]
   gitdir="$(git -C "$tree" rev-parse --absolute-git-dir 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )) || [[ -z "$gitdir" ]]; then
     local detail
-    detail="$(tr '\n' ' ' < "$ERRFILE")"
+    detail="Git operation failed; response withheld"
     warn "could not read the git directory of ${tree}: ${detail:-no --absolute-git-dir output} — the stall is recorded, its classification is not; inspect the worktree by hand"
     jq -n --arg t "$tree" --arg e "${detail:-no --absolute-git-dir output}" \
       '{class: "unknown", evidence: {worktree: $t, readable: false, error: $e}}'
@@ -613,7 +616,7 @@ classify_worktree() { # <worktree-path> [base-revision]
   status="$(git -C "$tree" status --porcelain --untracked-files=all 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
     local why
-    why="$(tr '\n' ' ' < "$ERRFILE")"
+    why="Git operation failed; response withheld"
     warn "\`git status\` failed in ${tree}: ${why:-no diagnostic} — the stall is recorded, its classification is not; inspect that checkout by hand"
     jq -n --arg t "$tree" --arg e "${why:-no diagnostic}" \
       '{class: "unknown", evidence: {worktree: $t, readable: false, error: $e}}'
@@ -636,7 +639,7 @@ classify_worktree() { # <worktree-path> [base-revision]
     # Unreadable history is not "nothing to push": reading it as zero would
     # classify a worker's committed work as a retryable no_work.
     local detail
-    detail="$(tr '\n' ' ' < "$ERRFILE")"
+    detail="Git operation failed; response withheld"
     warn "could not count unpushed commits in ${tree}: ${detail:-unreadable rev-list output} — the stall is recorded, its classification is not; inspect the worktree by hand"
     jq -n --arg t "$tree" --arg e "${detail:-unreadable rev-list output}" --argjson m "$mid" \
           --argjson s "$staged" --argjson d "$modified" --argjson u "$untracked" \
@@ -653,7 +656,7 @@ classify_worktree() { # <worktree-path> [base-revision]
     own="$(git -C "$tree" rev-list --count "${base}..HEAD" 2>"$ERRFILE")" || rc=$?
     if (( rc != 0 )) || [[ ! "$own" =~ ^[0-9]+$ ]]; then
       local why
-      why="$(tr '\n' ' ' < "$ERRFILE")"
+      why="Git operation failed; response withheld"
       warn "could not count this dispatch's commits in ${tree} against ${base}: ${why:-unreadable rev-list output} — the stall is recorded, its classification is not; inspect that checkout by hand"
       jq -n --arg t "$tree" --arg b "$base" --arg e "${why:-unreadable rev-list output}" \
         '{class: "unknown", evidence: {worktree: $t, base: $b, readable: false, error: $e}}'
@@ -706,7 +709,7 @@ epoch_of() { # <iso8601>
        end) as $offset
     | $naive - $offset' 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )) || [[ ! "$out" =~ ^-?[0-9]+$ ]]; then
-    warn "could not read --since '${1}' as an ISO-8601 timestamp: $(tr '\n' ' ' < "$ERRFILE") — pass the dispatch's recorded send time"
+    warn "could not read --since as an ISO-8601 timestamp; response withheld — pass the dispatch's recorded send time"
     return 1
   fi
   printf '%s' "$out"

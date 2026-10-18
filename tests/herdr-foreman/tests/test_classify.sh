@@ -229,7 +229,7 @@ STUB
   RC=$?
   ERRTEXT="$(cat "$ERRFILE")"
   if [[ $RC -eq 2 && -z "$OUT" && ! -e "$TMP/cl-default-room" ]] \
-     && printf '%s' "$ERRTEXT" | grep -q 'no Jev label (Jev unavailable: TYPESAFE_API_KEY is not set' \
+     && printf '%s' "$ERRTEXT" | grep -q 'no Jev label; check provider availability and configuration' \
      && printf '%s' "$ERRTEXT" | grep -q 'in full'; then
     pass; else fail "an unset key labels nothing and never calls claude, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
 
@@ -324,7 +324,7 @@ assert len(d["labels"]) == 2 and d["unannotated"] == [], d
 import json, sys
 d = json.load(sys.stdin)
 assert d["agent"] == "default" and d["labels"] == [], d
-assert len(d["unannotated"]) == 1 and "TYPESAFE_API_KEY is not set" in d["unannotated"][0]["reason"], d
+assert len(d["unannotated"]) == 1 and "classifier unavailable or invalid" in d["unannotated"][0]["reason"], d
 '; then
     pass; else fail "an unavailable Jev leaves the batch unannotated, got RC=$RC OUT=$OUT"; fi
 

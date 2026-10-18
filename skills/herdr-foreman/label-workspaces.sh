@@ -58,7 +58,7 @@ rename_to() { # <kind: workspace|pane> <id> <label> <current>
   fi
   "$HERDR_BIN" "$kind" rename "$id" "$label" >/dev/null 2>"$ERRFILE" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} ${kind} rename ${id} ${label}\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — the label is cosmetic, so the round continues"
+    warn "Herdr ${kind} rename failed (exit ${rc}); response withheld — the label is cosmetic, so the round continues"
     printf 'failed'
     return 1
   fi
@@ -97,7 +97,7 @@ main() {
   rc=0
   workspace_raw="$("$HERDR_BIN" workspace list 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} workspace list\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — restore the Herdr session or connection, then retry"
+    warn "Herdr workspace list failed (exit ${rc}); response withheld — restore the Herdr session or connection, then retry"
     return 2
   fi
   rc=0
@@ -112,7 +112,7 @@ main() {
       error("herdr workspace list payload has no .result.workspaces array")
     end' 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "could not read the herdr workspace list payload (jq exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — update or reinstall the Herdr CLI, then retry"
+    warn "could not read the Herdr workspace list payload (jq exit ${rc}); response withheld — update or reinstall the Herdr CLI, then retry"
     return 2
   fi
 
@@ -132,12 +132,12 @@ main() {
   local list rc=0
   list="$("$HERDR_BIN" agent list 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} agent list\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE")"
+    warn "Herdr agent list failed (exit ${rc}); response withheld — restore the session connection before retrying"
     return 2
   fi
   rc=0
   local roster
-  roster="$(printf '%s' "$list" | jq -c --arg caller "${HERDR_PANE_ID:-}" '
+  roster="$(printf '%s' "$list" | jq -ce --arg caller "${HERDR_PANE_ID:-}" '
     if (.result.agents | type) != "array" then
       error("herdr agent list payload has no .result.agents array")
     else
@@ -148,7 +148,7 @@ main() {
            workspace_id: (.workspace_id // ""), pane_id: (.pane_id // "")} ]
     end' 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "could not read the herdr agent list payload (jq exit ${rc}): $(tr '\n' ' ' < "$ERRFILE")"
+    warn "could not read the Herdr agent list payload (jq exit ${rc}); response withheld — check CLI compatibility before retrying"
     return 2
   fi
 

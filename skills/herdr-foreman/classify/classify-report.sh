@@ -112,24 +112,24 @@ die() { echo "classify-report: $*" >&2; exit 2; }
 
 # Each adapter reads the whole question on stdin, writes the model's answer
 # object to <answer>, and returns non-zero when the vendor call failed.
-ask_codex() { # <model> <schema> <answer> <log>
+ask_codex() { # <model> <schema> <answer>
   codex exec --json --skip-git-repo-check --sandbox read-only \
-    --model "$1" --output-schema "$2" --output-last-message "$3" - >"$4" 2>&1
+    --model "$1" --output-schema "$2" --output-last-message "$3" - >/dev/null 2>/dev/null
 }
 
-ask_claude() { # <model> <schema> <answer> <log>
+ask_claude() { # <model> <schema> <answer>
   local raw="${3}.raw"
   claude -p --model "$1" --output-format json --json-schema "$(cat "$2")" \
-    --tools "" --strict-mcp-config >"$raw" 2>"$4" || return 1
-  python3 "${HERE}/extract-answer.py" claude "$raw" "$3" 2>>"$4"
+    --tools "" --strict-mcp-config >"$raw" 2>/dev/null || return 1
+  python3 "${HERE}/extract-answer.py" claude "$raw" "$3"
 }
 
-ask_grok() { # <model> <schema> <answer> <log>
+ask_grok() { # <model> <schema> <answer>
   local raw="${3}.raw" question
   question="$(cat)"
   grok -m "$1" --json-schema "$(cat "$2")" --max-turns 1 --no-subagents \
-    --disable-web-search --tools "" -p "$question" </dev/null >"$raw" 2>"$4" || return 1
-  python3 "${HERE}/extract-answer.py" grok "$raw" "$3" 2>>"$4"
+    --disable-web-search --tools "" -p "$question" </dev/null >"$raw" 2>/dev/null || return 1
+  python3 "${HERE}/extract-answer.py" grok "$raw" "$3"
 }
 
 main() {
@@ -158,17 +158,15 @@ main() {
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/classify-report.XXXXXX")" || die "cannot create a temporary directory; repair write access to \${TMPDIR:-/tmp} (or point TMPDIR at a writable directory), then rerun"
   SCRATCH="$work"
-  local answer="${work}/answer.json" log="${work}/run.log" room="${work}/room" snapshot="${work}/report"
+  local answer="${work}/answer.json" room="${work}/room" snapshot="${work}/report"
   # One read of the report: every adapter, the evidence check and the label's
   # sha256 see these bytes, so a report rewritten mid-run is never half-read.
   cp -- "$report" "$snapshot" || die "cannot snapshot ${report}; restore read access and re-run"
   local payload=""
 
   if [ "$agent" = "jev" ]; then
-    if ! payload="$(python3 "$verdict" jev "$snapshot" --as "$report" ${model:+--model "$model"} 2>"$log")"; then
-      local why
-      why="$(tail -n 1 "$log")"
-      die "no Jev label (${why#report_verdict: }); read ${report} in full -- a failed call is never a verdict"
+    if ! payload="$(python3 "$verdict" jev "$snapshot" --as "$report" ${model:+--model "$model"} 2>/dev/null)"; then
+      die "no Jev label; check provider availability and configuration, then read ${report} in full -- a failed call is never a verdict"
     fi
   else
     local pinned
@@ -180,12 +178,11 @@ main() {
     python3 "$verdict" frame "$snapshot" "$question" > "${work}/frame.json" \
       || die "cannot frame ${report} as data; read it in full, or restore the questions file and the plugin, then rerun"
     mkdir "$room" || die "cannot create the empty working directory; repair write access to \${TMPDIR:-/tmp} (or point TMPDIR at a writable directory), then rerun"
-    if ! ( cd "$room" && "ask_${agent}" "$model" "$schema" "$answer" "$log" < "$question" ); then
-      cat "$log" >&2
+    if ! ( cd "$room" && "ask_${agent}" "$model" "$schema" "$answer" < "$question" ); then
       die "the ${agent} call failed; a failed call is never a verdict"
     fi
-    [ -s "$answer" ] || { cat "$log" >&2; die "${agent} wrote no schema-conforming answer"; }
-    payload="$(python3 "$verdict" label "$answer" "$snapshot" "$agent" "$model" --as "$report")" \
+    [ -s "$answer" ] || die "${agent} wrote no schema-conforming answer; read the report in full"
+    payload="$(python3 "$verdict" label "$answer" "$snapshot" "$agent" "$model" --as "$report" 2>/dev/null)" \
       || die "the ${agent} answer did not conform to the schema"
   fi
 

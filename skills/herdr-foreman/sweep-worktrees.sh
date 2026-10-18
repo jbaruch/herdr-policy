@@ -262,14 +262,14 @@ for kind, path in found:
     owner = repo_of(gitdir)
     common = git("-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir")
     if common.returncode != 0:
-        errors.append({"path": path, "repo": owner, "exit": common.returncode, "error": common.stderr.strip()})
+        errors.append({"path": path, "repo": owner, "exit": common.returncode, "error": "Git common-directory lookup failed; response withheld"})
         continue
     common_dir = common.stdout.strip()
     if owner is None and os.path.basename(common_dir) == ".git":
         owner = os.path.dirname(common_dir)
     listed = git("--git-dir", common_dir, "worktree", "list", "--porcelain", "-z")
     if listed.returncode != 0:
-        errors.append({"path": path, "repo": owner, "exit": listed.returncode, "error": listed.stderr.strip()})
+        errors.append({"path": path, "repo": owner, "exit": listed.returncode, "error": "Git worktree listing failed; response withheld"})
         continue
     registered = [f[len("worktree "):] for f in listed.stdout.split("\0") if f.startswith("worktree ")]
     if os.path.realpath(path) not in {os.path.realpath(p) for p in registered[1:]}:
@@ -329,8 +329,8 @@ for index, shared in enumerate(sorted(repos)):
         break
     run = Run(subprocess.run(["bash", prune, shared, *(["--dry-run"] if dry else [])],
                              capture_output=True, env=env))
-    for line in run.stderr.splitlines():
-        sys.stderr.write("sweep-worktrees: {}: {}\n".format(shared, line))
+    if run.stderr:
+        sys.stderr.write("sweep-worktrees: cleanup diagnostic withheld; inspect the structured cleanup result (exit {}).\n".format(run.returncode))
     entry = {"shared": shared, "exit": run.returncode}
     try:
         entry["result"] = json.loads(run.stdout) if run.returncode in (0, 2) else None
@@ -344,7 +344,7 @@ for index, shared in enumerate(sorted(repos)):
         if why:
             entry["error"] = "prune-worktrees.sh exited {} with a result holding {}".format(run.returncode, why)
         else:
-            entry["error"] = run.stderr.strip() or "prune-worktrees.sh exited {} with no JSON".format(run.returncode)
+            entry["error"] = "prune-worktrees.sh exited {} with no usable JSON; diagnostic withheld; restore origin access and repository metadata before retrying".format(run.returncode)
         if run.returncode in (0, 2):
             sys.stderr.write("sweep-worktrees: {}: prune-worktrees.sh exited {} without a readable JSON result "
                              "— run it directly to see why\n".format(shared, run.returncode))

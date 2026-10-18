@@ -192,11 +192,11 @@ main() {
     fi
     local shared_common="" path_common=""
     if ! shared_common="$(common_dir_of "$shared")"; then
-      warn "cannot resolve the git common dir of ${shared}: $(tr '\n' ' ' < "$ERRFILE") — cannot establish which repository ${abs_path} would belong to"
+      warn "cannot resolve the git common dir of ${shared}: response withheld — cannot establish which repository ${abs_path} would belong to"
       return 2
     fi
     if ! path_common="$(common_dir_of "$abs_path")"; then
-      warn "cannot resolve the git common dir of ${abs_path}: $(tr '\n' ' ' < "$ERRFILE") — cannot tell which repository that work tree belongs to"
+      warn "cannot resolve the git common dir of ${abs_path}: response withheld — cannot tell which repository that work tree belongs to"
       return 2
     fi
     if [[ "$path_common" != "$shared_common" ]]; then
@@ -210,7 +210,7 @@ main() {
     local on="" rc=0
     on="$(git -C "$abs_path" rev-parse --abbrev-ref HEAD 2>"$ERRFILE")" || rc=$?
     if (( rc != 0 )); then
-      warn "\`git -C ${abs_path} rev-parse --abbrev-ref HEAD\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — cannot tell which branch that work tree is on; inspect it by hand"
+      warn "\`git -C ${abs_path} rev-parse --abbrev-ref HEAD\` failed (exit ${rc}): response withheld — cannot tell which branch that work tree is on; inspect it by hand"
       return 2
     fi
     if [[ "$on" != "$branch" ]]; then
@@ -251,7 +251,7 @@ main() {
     git -C "$shared" worktree add -b "$branch" "$abs_path" "$base_revision" >/dev/null 2>"$ERRFILE" || rc=$?
   fi
   if (( rc != 0 )); then
-    warn "\`git worktree add\` failed (exit ${rc}) for ${abs_path} on ${branch}: $(tr '\n' ' ' < "$ERRFILE")"
+    warn "\`git worktree add\` failed (exit ${rc}) for ${abs_path} on ${branch}: response withheld"
     return 2
   fi
 
