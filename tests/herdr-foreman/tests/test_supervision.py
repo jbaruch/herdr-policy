@@ -18,6 +18,7 @@ import os
 import subprocess
 import shlex
 import shutil
+import sys
 import tempfile
 import unittest
 from datetime import timedelta
@@ -335,6 +336,36 @@ class SupervisionTest(unittest.TestCase):
         self.assertIsNone(self.stop(environ={**self.environ, "HERDR_PANE_ID": "worker-pane"}))
         self.assertIsNone(self.stop(environ={}))
         self.assertIsNone(self.stop({**self.payload, "cwd": str(self.root / "other")}))
+
+    def test_empty_but_set_team_environment_refuses_stop_without_changing_owner_state(self):
+        self.member()
+        before = store.store_path(self.path).read_bytes()
+        result = self.stop(environ={**self.environ, "HERDR_ENV": ""})
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("Restore", result["reason"])
+        self.assertEqual(store.store_path(self.path).read_bytes(), before)
+        self.assertIsNone(self.stop(environ={"HERDR_PANE_ID": "lead-pane"}))
+
+    def test_empty_team_environment_stays_blocked_at_the_native_process_boundary(self):
+        self.member()
+        environment = {**os.environ, **self.environ, "HERDR_ENV": "", "XDG_STATE_HOME": str(self.root / "xdg")}
+        result = subprocess.run(["bash", str(Path(_ROOT) / "native-hook.sh"), "supervision-stop"],
+                                input=json.dumps(self.payload), env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["decision"], "block")
+        self.assertIn("HERDR_ENV is set but empty", json.loads(result.stdout)["reason"])
+
+    def test_empty_team_context_cannot_fail_open_on_unexpected_evaluation_errors(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        import io
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.dict(os.environ, {**self.environ, "HERDR_ENV": ""}), \
+                patch.object(sys, "stdin", io.StringIO(json.dumps(self.payload))), \
+                patch.object(hook, "check", side_effect=RuntimeError("fixture failure")), \
+                redirect_stdout(output), redirect_stderr(errors):
+            self.assertEqual(hook.main(), 0)
+        self.assertEqual(json.loads(output.getvalue())["decision"], "block")
+        self.assertIn("evaluation failed", errors.getvalue())
 
     def test_user_hold_requires_disposition_for_every_active_member(self):
         self.member("a")
