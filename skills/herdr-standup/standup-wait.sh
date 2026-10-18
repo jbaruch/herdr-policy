@@ -25,39 +25,45 @@
 #           HERDR_ENV and HERDR_BIN pass through to wait-report.sh.
 set -euo pipefail
 
-# Give-up budget for a standup answer, in seconds. Four lines take a worker
-# well under a minute; past this point the foreman writes that worker's row from
-# the round log instead of chasing it.
-STANDUP_WAIT_BUDGET_SEC="${STANDUP_WAIT_BUDGET_SEC:-180}"
+main() {
+  # Give-up budget for a standup answer, in seconds. Four lines take a worker
+  # well under a minute; past this point the foreman writes that worker's row from
+  # the round log instead of chasing it.
+  STANDUP_WAIT_BUDGET_SEC="${STANDUP_WAIT_BUDGET_SEC:-180}"
 
-# Command substitution strips every trailing newline, so the script directory
-# never passes through one bare: parameter expansion derives it (#487), and a
-# sentinel carries `pwd` across the strip (#466).
-case "${BASH_SOURCE[0]}" in
-  */*) _skill_src="${BASH_SOURCE[0]%/*}" ;;
-  *) _skill_src=. ;;
-esac
-if ! SKILL_DIR="$(CDPATH='' cd -- "${_skill_src:-/}" && pwd && printf x)"; then
-  echo "standup-wait: cannot enter the script directory ${_skill_src:-/} — restore read and search access to the plugin directory, or reinstall the plugin, then re-run" >&2
-  exit 2
-fi
-SKILL_DIR="${SKILL_DIR%x}"
-SKILL_DIR="${SKILL_DIR%$'\n'}"
-FOREMAN_SKILL=herdr-foreman
-if [[ "${SKILL_DIR##*/}" == acr__jbaruch__herdr-policy__herdr-standup ]]; then
-  FOREMAN_SKILL=acr__jbaruch__herdr-policy__herdr-foreman
-fi
-WAIT_REPORT="${SKILL_DIR}/../${FOREMAN_SKILL}/wait-report.sh"
-
-case "$STANDUP_WAIT_BUDGET_SEC" in
-  ''|*[!0-9]*)
-    echo "standup-wait: STANDUP_WAIT_BUDGET_SEC must be a whole number of seconds, got '${STANDUP_WAIT_BUDGET_SEC}' — unset it to use the script's default" >&2
+  # Command substitution strips every trailing newline, so the script directory
+  # never passes through one bare: parameter expansion derives it (#487), and a
+  # sentinel carries `pwd` across the strip (#466).
+  case "${BASH_SOURCE[0]}" in
+    */*) _skill_src="${BASH_SOURCE[0]%/*}" ;;
+    *) _skill_src=. ;;
+  esac
+  if ! SKILL_DIR="$(CDPATH='' cd -- "${_skill_src:-/}" && pwd && printf x)"; then
+    echo "standup-wait: cannot enter the script directory ${_skill_src:-/} — restore read and search access to the plugin directory, or reinstall the plugin, then re-run" >&2
     exit 2
-    ;;
-esac
-if [[ ! -f "$WAIT_REPORT" ]]; then
-  echo "standup-wait: wait-report.sh not found at ${WAIT_REPORT} — herdr-standup runs beside the herdr-foreman skill; install both with \`tessl install jbaruch/herdr-policy\`" >&2
-  exit 2
-fi
+  fi
+  SKILL_DIR="${SKILL_DIR%x}"
+  SKILL_DIR="${SKILL_DIR%$'\n'}"
+  FOREMAN_SKILL=herdr-foreman
+  if [[ "${SKILL_DIR##*/}" == acr__jbaruch__herdr-policy__herdr-standup ]]; then
+    FOREMAN_SKILL=acr__jbaruch__herdr-policy__herdr-foreman
+  fi
+  WAIT_REPORT="${SKILL_DIR}/../${FOREMAN_SKILL}/wait-report.sh"
 
-FOREMAN_WAIT_BUDGET_SEC="$STANDUP_WAIT_BUDGET_SEC" exec bash "$WAIT_REPORT" "$@"
+  case "$STANDUP_WAIT_BUDGET_SEC" in
+    ''|*[!0-9]*)
+      echo "standup-wait: STANDUP_WAIT_BUDGET_SEC must be a whole number of seconds, got '${STANDUP_WAIT_BUDGET_SEC}' — unset it to use the script's default" >&2
+      exit 2
+      ;;
+  esac
+  if [[ ! -f "$WAIT_REPORT" ]]; then
+    echo "standup-wait: wait-report.sh not found at ${WAIT_REPORT} — herdr-standup runs beside the herdr-foreman skill; install both with \`tessl install jbaruch/herdr-policy\`" >&2
+    exit 2
+  fi
+
+  FOREMAN_WAIT_BUDGET_SEC="$STANDUP_WAIT_BUDGET_SEC" exec bash "$WAIT_REPORT" "$@"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

@@ -2,6 +2,8 @@
 
 ## 0.2.0 — 2026-10-18
 
+- Isolate publishing credentials in a main-restricted GitHub environment and use a non-publishing member key for PR checks and isolated skill review. Add pinned, redacting secret checks before commits and in CI.
+- Align conditional rule activation across Tessl and ACR; keep empty-but-set team environments active and make standup wrapper imports free of execution effects.
 - Extract the Herdr foreman, standup, team rules, templates and owner/runtime contracts from coding-policy.
 - Resolve general cleanup helpers as one compatible coding-policy release bundle; support native ACR skill namespaces and Tessl package layouts.
 - Share one native hook launcher, preserve reset/supervision failure forms, and skip team-only prerequisites in ordinary sessions.

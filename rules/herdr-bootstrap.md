@@ -1,5 +1,6 @@
 ---
-alwaysApply: true
+alwaysApply: false
+applyTo: "skills/herdr-foreman/**, skills/herdr-standup/**, **/skills/** — when authoring or executing the named Herdr skill command blocks"
 description: Installed Herdr skill lookup for Tessl, ACR native layouts and verified source clones
 ---
 
@@ -14,7 +15,7 @@ description: Installed Herdr skill lookup for Tessl, ACR native layouts and veri
 
 - Narrow exception for installed Herdr skill lookup in Bash command blocks.
 - Applies to `skills/herdr-foreman/SKILL.md`, its `references/*.md`, and `skills/herdr-standup/SKILL.md`.
-- Preconditions are required:
+- Preconditions (all required):
   1. Initialize `HS` to `.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman` or the corresponding `herdr-standup` path.
   2. Use one directory test for project-local lookup, one for `$HOME` fallback, and one whole-string origin `case` for source lookup.
   3. Accept only `git@github.com:jbaruch/herdr-policy`, `https://github.com/jbaruch/herdr-policy`, and `ssh://git@github.com/jbaruch/herdr-policy`, each with or without `.git`.

@@ -17,11 +17,16 @@ artifacts:
     - id: herdr-bootstrap
       path: rules/herdr-bootstrap.md
       activation:
-        mode: always
+        mode: paths
+        paths:
+          - skills/herdr-foreman/**
+          - skills/herdr-standup/**
+          - '**/skills/**'
     - id: coding-policy-integration
       path: rules/coding-policy-integration.md
       activation:
-        mode: always
+        mode: paths
+        paths: ['**']
   skills:
     - id: herdr-foreman
       path: skills/herdr-foreman

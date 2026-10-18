@@ -144,7 +144,9 @@ main() {
       *) die "unknown argument '$1'" ;;
     esac
   done
-  [ -f "$report" ] && [ -r "$report" ] || die "'${report}' is not a readable file"
+  if [[ ! -f "$report" || ! -r "$report" ]]; then
+    die "'${report}' is not a readable file"
+  fi
   case "$agent" in
     ''|jev|codex|claude|grok) ;;
     *) die "--agent '${agent}' is not one of jev, codex, claude, grok" ;;

@@ -1,5 +1,6 @@
 ---
-alwaysApply: true
+alwaysApply: false
+applyTo: "** — during verified Herdr team rounds or when applying Herdr release, cleanup and script-output contracts"
 description: Team-specific sync, isolation, release and cleanup contracts at the coding-policy boundary
 ---
 

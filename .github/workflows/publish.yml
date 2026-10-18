@@ -19,6 +19,7 @@ jobs:
   tessl:
     needs: gates
     if: github.ref == 'refs/heads/main'
+    environment: publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7; Dependabot weekly
@@ -26,7 +27,7 @@ jobs:
           fetch-depth: 0
       - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2; Dependabot weekly
         with:
-          token: ${{ secrets.TESSL_TOKEN }}
+          token: ${{ secrets.TESSL_PUBLISH_TOKEN }}
       # Review these shared release-action pins monthly in a dedicated compatibility PR.
       - name: Capture original registry baseline
         id: baseline

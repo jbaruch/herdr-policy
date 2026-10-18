@@ -227,7 +227,7 @@ PY
 
   # 1. Mode. A standalone agent runs none of this; the caller decides, and the
   #    preflight only reports what it observed.
-  if [ -n "${HERDR_ENV:-}" ]; then
+  if [ "${HERDR_ENV+x}" = x ]; then
     record mode ok "" 0 ""
   else
     record mode standalone "HERDR_ENV is unset: this is not a Herdr team round, and a standalone agent does the task directly" 0 ""

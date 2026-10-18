@@ -62,6 +62,11 @@ main() {
 
   echo "▶ standup-wait.sh" >&2
 
+  OUT="$(STANDUP_WAIT_BUDGET_SEC=invalid bash -c 'source "$1"; printf loaded' source-probe "$SCRIPT" 2>"$TMP/source.err")"
+  RC=$?
+  if [[ $RC -eq 0 && "$OUT" == loaded && ! -s "$TMP/source.err" ]]; then
+    pass; else fail "sourcing the wrapper must only load definitions, got RC=$RC OUT=$OUT"; fi
+
   # 1. default budget
   run
   if [[ $RC -eq 0 ]] && printf '%s' "$CALLTEXT" | grep -qx 'budget=180'; then

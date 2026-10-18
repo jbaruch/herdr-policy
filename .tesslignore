@@ -8,6 +8,9 @@ agent-plugin.yaml
 *.tmp
 pyrightconfig.json
 tests/
+.pre-commit-config.yaml
+.gitleaksignore
+requirements-dev.txt
 scripts/
 .herdr/
 .env.example

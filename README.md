@@ -58,7 +58,11 @@ tessl plugin lint .
 acr validate . --json
 ```
 
-The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI installs the published relocation baseline outside the checkout and pins the ACR validator. It gates actual native installation and canonical Tessl skill review at 85%. The scoped publisher credential is configured in [repository Actions secrets](https://github.com/jbaruch/herdr-policy/settings/secrets/actions); its creation and renewal are documented in `.env.example`. Source package manifests share one explicit version.
+The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI installs the published relocation baseline outside the checkout and pins the ACR validator. It gates actual native installation and canonical Tessl skill review at 85%. Source package manifests share one explicit version.
+
+CI uses a non-publishing `member` key for baseline access and an isolated skill-review job. The publisher key exists only in the `publish` [environment](https://github.com/jbaruch/herdr-policy/settings/environments), restricted to `main`; PR test code cannot obtain it. Creation, storage and renewal are documented in `.env.example`. [Tessl workspace roles](https://docs.tessl.io/administrators/roles) define these permissions.
+
+Install the pinned local checks in your Python development environment with `python3 -m pip install -r requirements-dev.txt`, then run `pre-commit install`. Gitleaks blocks secret-shaped staged changes and redacts its findings. CI independently scans committed history with the same pinned scanner. Renew the scanner monthly in both `.pre-commit-config.yaml` and the test workflow; Dependabot renews the Python runner weekly.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and [migration.md](docs/migration.md) for cutover and rollback.
 

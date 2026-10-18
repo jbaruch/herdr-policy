@@ -138,7 +138,7 @@ For every other request, read `HERDR_ENV` and the controller's attached context 
   - Run Step 2's remaining gates through the controller's configured owners.
   - Proceed immediately to Step 5 only when those gates pass.
 
-- **Unset or empty, without a verified remote context** — this skill does not apply. Say so and do the task
+- **Unset, without a verified remote context** — this skill does not apply. Say so and do the task
   directly, without roster calls, briefs, provisioning, reports, or simulated
   worker roles. Finish here.
 - **Set, with a bounded factual lookup**

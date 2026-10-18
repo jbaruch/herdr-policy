@@ -1,0 +1,7 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    # v8.30.1. Renew monthly with the CI scanner pin in a focused dependency PR:
+    # pre-commit autoupdate --freeze --repo https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e
+    hooks:
+      - id: gitleaks
