@@ -63,8 +63,12 @@ existing provenance file requires a fresh output path. The CLI emits no native
 text, raw task/session identities, worker names or private paths in its snapshot.
 
 The cohort includes tasks registered or attempted inside the half-open window.
-Applied and uncertain-send dispatches remain assignment envelopes. Confirmed
+Applied, `sending` and `sent_but_not_started` dispatches remain assignment envelopes. Confirmed
 unsent attempts retain their task in the cohort but create no busy worker.
+Pre-send reservations likewise retain their task without claiming worker activity.
+Task state at the window boundary uses the canonical owner closure reader on
+events and assignments available by that boundary. A later applied developer
+assignment reopens the task; uncertain chronology fails instead of claiming closure.
 Assignment and enrollment IDs, task and worker must agree. A missing or
 conflicting identity remains unknown. Original/refined identities and frozen
 observations of resolved enrollments supply candidates. An observation requires

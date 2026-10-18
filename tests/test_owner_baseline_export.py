@@ -11,7 +11,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.coordination_baseline import summarize
-from scripts.export_owner_baseline import export, native_times, opaque
+from scripts.export_owner_baseline import EvidenceReader, export as export_snapshot, native_times, opaque
+
+
+READER = EvidenceReader(ROOT)
+
+
+def export(owner, supervision, start, end, native, assessment):
+    return export_snapshot(owner, supervision, start, end, native, assessment, closure=READER.closed)
 
 
 START = datetime(2026, 10, 10, tzinfo=timezone.utc)
@@ -27,9 +34,11 @@ def inputs():
               "agent": dispatch["agent"], "report": "/private/worker-report.md", "native_session": None},
               "refinements": [{"at": "2026-10-10T00:02:00Z", "native_session": IDENTITY}],
               "resolution": {"at": "2026-10-10T00:20:00Z", "outcome": "private prose", "evidence": []}}
-    owner = {"schema_version": 11, "recovery": {"schema_version": 18, "dispatches": [dispatch],
+    owner = {"schema_version": 11, "assignments": [
+             {"task": dispatch["task"], "role": "developer", "status": "applied", "at": dispatch["at"]}],
+             "recovery": {"schema_version": 18, "dispatches": [dispatch],
              "tasks": {"private-task": {"task": "private-task", "at": dispatch["at"]}},
-             "events": [{"task": "private-task", "kind": "task_closed", "at": "2026-10-10T00:30:00Z"}]}}
+             "events": [{"sequence": 1, "task": "private-task", "kind": "task_closed", "at": "2026-10-10T00:30:00Z"}]}}
     supervision = {"schema_version": 1, "state_path": "/private/owner-state.json", "members": [member],
                    "events": [{"member": dispatch["id"], "kind": "report_observed", "at": "2026-10-10T00:06:00Z",
                                "data": {"present": True, "size": 120, "path": "/private/worker-report.md"}}],
@@ -125,6 +134,49 @@ class OwnerExportTest(unittest.TestCase):
         self.assertEqual(result["assignments"][1]["native_match"], "unknown")
         unrelated = [task for task in result["tasks"] if task["id"] != opaque("private-task", "task-")]
         self.assertTrue(all(task["holds"] == [] for task in unrelated))
+
+    def test_send_time_crash_retains_an_unknown_envelope_without_native_proof(self):
+        owner, supervision = inputs()
+        owner["recovery"]["dispatches"].extend([
+            {"id": "sending", "task": "sending-task", "agent": "private-worker",
+             "at": "2026-10-10T00:03:00Z", "status": "sending"},
+            {"id": "reserved", "task": "reserved-task", "agent": "private-worker",
+             "at": "2026-10-10T00:04:00Z", "status": "reserved"}])
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(len(result["tasks"]), 3)
+        self.assertEqual(len(result["assignments"]), 2)
+        pending = result["assignments"][1]
+        self.assertEqual(pending["id"], opaque("sending", "assignment-"))
+        self.assertEqual(pending["native_match"], "unknown")
+        self.assertNotIn("native_completed_at", pending)
+        self.assertEqual(summarize(result)["coverage"]["assignments"], 2)
+
+    def test_closure_uses_owner_chronology_at_the_window_boundary(self):
+        for role, status, at, expected in (
+                ("developer", "applied", "2026-10-10T00:40:00Z", "owner_open"),
+                ("developer", "applied", "2026-10-10T02:00:00Z", "owner_closed"),
+                ("reviewer", "applied", "2026-10-10T00:40:00Z", "owner_closed"),
+                ("developer", "sent_but_not_started", "2026-10-10T00:40:00Z", "owner_closed")):
+            with self.subTest(role=role, status=status, at=at):
+                owner, supervision = inputs()
+                owner["assignments"].append({"task": "private-task", "role": role, "status": status, "at": at})
+                result = export(owner, supervision, START, END, native, lambda *_: None)
+                self.assertEqual(result["tasks"][0]["state"], expected)
+        owner, supervision = inputs()
+        owner["assignments"].append({"task": "private-task", "role": "developer", "status": "applied",
+                                     "at": "2026-10-10T00:40:00Z"})
+        # Imported events can append out of time order. Latest valid closure
+        # wins; an older event at the tail cannot reopen or reclose the task.
+        owner["recovery"]["events"].insert(0, {"sequence": 2, "task": "private-task", "kind": "task_closed",
+                                              "at": "2026-10-10T00:50:00Z"})
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(result["tasks"][0]["state"], "owner_closed")
+
+    def test_ambiguous_owner_closure_is_a_setup_error(self):
+        owner, supervision = inputs()
+        owner["recovery"]["events"].append({**owner["recovery"]["events"][0], "sequence": 2})
+        with self.assertRaisesRegex(ValueError, "owner closure chronology is uncertain"):
+            export(owner, supervision, START, END, native, lambda *_: None)
 
     def test_archived_observation_is_only_a_candidate_until_native_report_proof_matches(self):
         owner, supervision = inputs()

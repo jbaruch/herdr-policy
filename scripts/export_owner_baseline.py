@@ -111,15 +111,26 @@ class EvidenceReader:
         if not (skill / "foreman/report_delivery.py").is_file():
             raise ValueError("select a trusted extracted Herdr source checkout with --herdr-source")
         sys.path.insert(0, str(skill))
-        from foreman import claude_native, members, report_delivery
+        from foreman import claude_native, members, recovery, report_delivery
         from foreman.errors import UsageError
         if not Path(report_delivery.__file__).resolve().is_relative_to(skill):
             raise ValueError("restart in a fresh process; another Herdr reader is already imported")
         self.native_reader, self.claude_reader, self.ledger_reader = report_delivery, claude_native, members
+        self.closure_reader = recovery.task_closure
         self.source_error = UsageError
         self.exclusions = Counter()
         self.source_digests = set()
         self.paths = {}
+
+    def closed(self, owner, task, end):
+        """Use canonical closure chronology on evidence available at the boundary."""
+        assignments = [row for row in owner["assignments"] if instant(row["at"]) <= end]
+        store = {**owner["recovery"], "events": [row for row in owner["recovery"]["events"]
+                                                if instant(row["at"]) <= end]}
+        try:
+            return self.closure_reader(store, assignments, task) is not None
+        except self.source_error:
+            raise ValueError("owner closure chronology is uncertain; restore the original event ordering before export") from None
 
     def native(self, identity, report, dispatched, end):
         key = tuple(identity[name] for name in ("source", "agent", "kind", "value"))
@@ -177,7 +188,7 @@ class EvidenceReader:
         return min(times).isoformat() if times else None
 
 
-def export(owner, supervision, start, end, native, assessment):
+def export(owner, supervision, start, end, native, assessment, *, closure):
     versions = ((owner.get("schema_version"), 11), (owner["recovery"].get("schema_version"), 18),
                 (supervision.get("schema_version"), 1))
     if any(type(value) is not int or value != expected for value, expected in versions):
@@ -186,15 +197,13 @@ def export(owner, supervision, start, end, native, assessment):
         raise ValueError("the observation window must have positive duration")
     store = owner["recovery"]
     dispatches = [row for row in store["dispatches"] if start <= instant(row["at"]) < end]
-    selected = [row for row in dispatches if row["status"] in ("applied", "sent_but_not_started")]
+    selected = [row for row in dispatches if row["status"] in ("applied", "sending", "sent_but_not_started")]
     indexed(selected)
     members = indexed(supervision["members"])
     tasks = {row["task"] for row in dispatches}
     tasks.update(row["task"] for row in store["tasks"].values() if start <= instant(row["at"]) < end)
-    closed = {row["task"] for row in store["events"]
-              if row["kind"] == "task_closed" and instant(row["at"]) <= end}
     task_rows: list[dict[str, object]] = [
-        {"id": opaque(task, "task-"), "state": "owner_closed" if task in closed else "owner_open",
+        {"id": opaque(task, "task-"), "state": "owner_closed" if closure(owner, task, end) else "owner_open",
          "class": "unknown", "risk": "unknown"} for task in sorted(tasks)]
     assignments = []
     for dispatch in selected:
@@ -253,7 +262,7 @@ def main():
         owner_bytes, supervision_bytes = args.owner.read_bytes(), args.supervision.read_bytes()
         reader = EvidenceReader(args.herdr_source)
         snapshot = export(json.loads(owner_bytes), json.loads(supervision_bytes), instant(args.start), instant(args.end),
-                          reader.native, reader.assessment)
+                          reader.native, reader.assessment, closure=reader.closed)
         sys.path.insert(0, str(ROOT))
         from scripts.coordination_baseline import summarize
         summarize(snapshot)
