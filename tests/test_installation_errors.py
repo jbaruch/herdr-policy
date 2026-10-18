@@ -47,6 +47,17 @@ class InstallationErrorsTest(unittest.TestCase):
                 self.assertFalse(json.loads(output.getvalue())["passed"])
                 self.assertIn(str(exception), errors.getvalue())
 
+    def test_zero_exit_hook_fallback_is_not_successful_owner_execution(self):
+        for output, diagnostic in (('{"decision":"block"}', ""), ("", "restore the hook")):
+            with self.subTest(output=output, diagnostic=diagnostic):
+                result = subprocess.CompletedProcess([], 0, stdout=output, stderr=diagnostic)
+                with patch.object(CHECK.subprocess, "run", return_value=result):
+                    with self.assertRaises(CHECK.BehaviorFailure):
+                        CHECK.command("bash", "fixture-hook", check_behavior=True, quiet=True)
+        result = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with patch.object(CHECK.subprocess, "run", return_value=result):
+            self.assertEqual(CHECK.command("bash", "fixture-hook", check_behavior=True, quiet=True), "")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,7 +16,7 @@ hook_failure() {
 }
 
 main() {
-  local event="${1:-}" module src here skill rc=0
+  local event="${1:-}" module src here skill hooks host rc=0
   case "$event" in
     reset-input) module=foreman.reset_input_hook ;;
     supervision-stop) module=foreman.supervision_hook ;;
@@ -46,10 +46,17 @@ main() {
     *) skill="" ;;
   esac
   if [[ -z "$skill" ]]; then
-    # ACR rebases this owned skill reference for the selected native adapter.
-    # Its hook lives at <project>/<agent>/hooks/<artifact>/native-hook.sh.
-    local runtime=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman
-    skill="${here}/../../../${runtime}"
+    # ACR copies hooks unchanged. Select the sibling skill in this hook's host.
+    hooks="${here%/*}"
+    host="${hooks%/*}"
+    if [[ "${hooks##*/}" != hooks ]]; then
+      hook_failure "$event"
+      return 0
+    fi
+    case "${host##*/}" in
+      .codex|.claude|.cursor) skill="${host}/skills/acr__jbaruch__herdr-policy__herdr-foreman" ;;
+      *) hook_failure "$event"; return 0 ;;
+    esac
   fi
   if ! skill="$(CDPATH='' cd -- "$skill" && pwd -P && printf x)"; then
     hook_failure "$event"
@@ -57,13 +64,10 @@ main() {
   fi
   skill="${skill%x}"
   skill="${skill%$'\n'}"
-  if ! cd -- "$skill"; then
-    hook_failure "$event"
-    return 0
-  fi
-  # Do not load checkout modules or an inherited Python import path.
+  # Preserve the consumer cwd for portable-worker guards. Safe-path mode
+  # excludes checkout modules; the import path contains only this skill.
   PYTHONPATH="$skill" PYTHONDONTWRITEBYTECODE=1 \
-    python3 -s -m "$module" || rc=$?
+    python3 -P -s -m "$module" || rc=$?
   if (( rc != 0 )); then
     hook_failure "$event"
   fi

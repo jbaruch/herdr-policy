@@ -40,7 +40,7 @@ jobs:
       - name: Install published relocation baseline outside the checkout
         # Member access cannot publish. Only this trusted literal CLI fetch
         # receives it; PR-controlled scripts never receive a publisher key.
-        # Renew this oracle monthly with scripts/install-test-policy.sh.
+        # Renew this oracle monthly in a dedicated compatibility PR.
         working-directory: ${{ runner.temp }}/herdr-test-policy
         env:
           TESSL_TOKEN: ${{ secrets.TESSL_REVIEW_TOKEN }}

@@ -27,11 +27,14 @@ class BehaviorFailure(RuntimeError):
     """An installed operation failed after its tooling and source were prepared."""
 
 
-def command(*arguments, env=None, input_text=None, check_behavior=False):
+def command(*arguments, env=None, input_text=None, check_behavior=False, quiet=False):
     result = subprocess.run(arguments, input=input_text, capture_output=True, text=True, env=env)
     if result.returncode:
         failure = BehaviorFailure if check_behavior else OSError
         raise failure("{} exited {}: {}".format(arguments[0], result.returncode, result.stderr.strip()))
+    if quiet and (result.stdout or result.stderr):
+        raise BehaviorFailure("{} emitted unexpected hook output: {} {}".format(
+            arguments[0], result.stdout.strip(), result.stderr.strip()))
     return result.stdout
 
 
@@ -89,7 +92,9 @@ def exercise(project, agent, host, herdr_source, coding_source):
                                 text=True, capture_output=True)
         if (result.returncode, result.stdout, result.stderr) != (0, "", ""):
             raise ValueError("{}: standalone {} consulted team prerequisites".format(agent, event))
-        command("bash", str(path), event, env={**environment, "HERDR_ENV": "1"}, check_behavior=True,
+        # This ordinary prompt/unbound Stop must reach its owner and return
+        # silently; the wrapper's fail-closed fallback also exits zero.
+        command("bash", str(path), event, env={**environment, "HERDR_ENV": "1"}, check_behavior=True, quiet=True,
                 input_text='{"session_id":"isolated-fixture","prompt":"Ordinary prompt"}\n')
     # Execute the installed owner with development trees physically absent.
     json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment, check_behavior=True))

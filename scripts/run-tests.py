@@ -27,6 +27,11 @@ def main(argv=None):
         suites.extend(sorted((ROOT / "tests/hooks").glob("test_*.sh")))
     failures = []
     try:
+        if requested and any(Path(name).is_absolute() for name in requested):
+            raise ValueError("suite paths must be relative to this repository")
+        suites = [path.resolve() for path in suites]
+        if any(not path.is_relative_to(ROOT) for path in suites):
+            raise ValueError("suite paths must stay inside this repository")
         if not suites or any(not path.is_file() or path.suffix not in (".py", ".sh") for path in suites):
             raise ValueError("suite paths must name existing Python or Bash tests")
         with tempfile.TemporaryDirectory(prefix="herdr-tests-") as scratch:
