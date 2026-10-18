@@ -124,15 +124,15 @@ class SupervisionDiagnosticsTest(unittest.TestCase):
         self.assertIn("returned no agent record", data["message"])
         self.assertIn("herdr agent list", data["message"])
 
-    def test_control_failure_redacts_credentials_and_bounds_message(self):
+    def test_control_failure_withholds_server_prose_and_unknown_codes(self):
         secret = "ghp_" + "a" * 36
         response = subprocess.CompletedProcess([], 1, "unneeded stdout", json.dumps({"error": {
             "code": "AUTH_FAILED", "message": "Connection denied " + secret + " " + "x" * 5000}}))
         result = self.watch(response)
         data = self.diagnostic(result)
-        self.assertIn("AUTH_FAILED", data["message"])
-        self.assertIn("[redacted]", data["message"])
-        self.assertIn("[truncated", data["message"])
+        self.assertIn("unclassified transport failure", data["message"])
+        self.assertNotIn("AUTH_FAILED", data["message"])
+        self.assertNotIn("Connection denied", data["message"])
         self.assertLess(len(data["message"]), 2200)
         saved = store.store_path(self.state).read_text(encoding="utf-8")
         self.assertNotIn(secret, saved)

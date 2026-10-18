@@ -462,7 +462,7 @@ class HerdrClient:
         except subprocess.TimeoutExpired:
             self._emit_trace(argv, outcome="\nherdr< subprocess timeout")
             raise HerdrError(
-                "herdr did not return within {}s running `{}` - check the pane "
+                "Herdr timeout after {}s running `{}` - check the pane "
                 "with `herdr agent list`; reconcile any uncertain send before retrying.".format(
                     SUBPROCESS_TIMEOUT_SEC, self._diagnostic_operation(argv)),
                 {"command": self._diagnostic_operation(argv)},
