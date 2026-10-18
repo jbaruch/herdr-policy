@@ -33,7 +33,7 @@
 #             classifier is asked (rules/script-delegation.md Bounded
 #             Classification).
 #   codex, claude, grok -- named with --agent only, for measurement
-#             (evaluate.sh). Their labels never gate.
+#             (source-only scripts/report-calibration/evaluate.sh). Their labels never gate.
 # Each LLM adapter constrains its answer to the generated schema --
 # `codex exec --output-schema`, `claude --json-schema`, `grok --json-schema` --
 # and every answer then passes the same check in report_verdict.py, which is
@@ -59,7 +59,7 @@
 # contains its own delimiter, an unavailable or refusing Jev, or a call that
 # produced nothing conforming. A failed call is never a verdict.
 #
-# Calling this costs model quota. `evaluate.sh` runs it over the labelled corpus
+# Calling this costs model quota. The source-only evaluation harness runs it over the labelled corpus
 # and reports accuracy; nothing calls it automatically, and no test calls it live
 # (rules/testing-standards.md Determinism).
 
@@ -87,7 +87,7 @@ HERE="${HERE%$'\n'}"
 #: Renewal: these pins come due with the capability table, on `INTERVAL` in
 #: skills/herdr-foreman/foreman/capabilities.py (weekly). At each refresh,
 #: compare every pin against the table's current rows; a bump lands only after
-#: `evaluate.sh --since <last bump>` scores the new model on reports it has not
+#: `scripts/report-calibration/evaluate.sh --since <last bump>` scores the new model on reports it has not
 #: seen, and the CHANGELOG records both numbers.
 DEFAULT_AGENT="jev"
 model_for() { # <kind>

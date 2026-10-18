@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman") / "classify"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts/report-calibration"))
 
 import report_verdict  # noqa: E402 -- the classify dir is on sys.path only from here
 import scoring  # noqa: E402

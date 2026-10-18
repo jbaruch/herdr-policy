@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -19,6 +20,29 @@ SPEC.loader.exec_module(CHECK)
 
 
 class InstallationErrorsTest(unittest.TestCase):
+    def test_runtime_inventory_keeps_decoder_and_refuses_development_calibration(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            skill = Path(scratch)
+            with self.assertRaises(CHECK.BehaviorFailure):
+                CHECK.verify_runtime_payload(skill)
+            (skill / "foreman").mkdir()
+            (skill / "foreman/remote_owner.py").write_text("")
+            with self.assertRaises(CHECK.BehaviorFailure):
+                CHECK.verify_runtime_payload(skill)
+            (skill / "classify").mkdir()
+            (skill / "classify/extract-answer.py").write_text("runtime envelope decoder")
+            CHECK.verify_runtime_payload(skill)
+            for name in ("adversarial.py", "evaluate.sh", "scoring.py"):
+                path = skill / "classify" / name
+                path.write_text("development calibration fixture")
+                with self.subTest(name=name), self.assertRaises(CHECK.BehaviorFailure):
+                    CHECK.verify_runtime_payload(skill)
+                path.unlink()
+            CHECK.verify_runtime_payload(skill)
+            (skill / "tests").mkdir()
+            with self.assertRaises(CHECK.BehaviorFailure):
+                CHECK.verify_runtime_payload(skill)
+
     def test_failed_source_install_is_setup_but_failed_realization_is_behavior(self):
         failure = subprocess.CompletedProcess([], 7, stdout="", stderr="fixture rejection")
         with patch.object(CHECK.subprocess, "run", return_value=failure):

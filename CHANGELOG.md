@@ -2,6 +2,8 @@
 
 ## 0.2.0 — 2026-10-18
 
+- Keep corpus evaluation, calibration scoring and synthetic-report generation in development source; retain the vendor envelope decoder in the runtime classifier and verify both distribution inventories.
+- Isolate the runtime batch's standard-library result assembly from consumer and user-site imports while moving the classification development boundary.
 - Route capability, reset and identity recovery to the extracted Herdr owner; align judge/remote ownership instructions and source-only test references with the split packages.
 - Refuse native Stop for an empty-but-set team environment instead of treating it as standalone; preserve the refusal across unexpected hook evaluation errors without changing owner records.
 - Test development-runner discovery, selection, isolation and failure aggregation; emit diagnostics as one JSON result and remove the unused baseline installer wrapper.

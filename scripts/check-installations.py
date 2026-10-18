@@ -49,6 +49,17 @@ def revision(value):
     return value
 
 
+def verify_runtime_payload(skill):
+    required = ("foreman/remote_owner.py", "classify/extract-answer.py")
+    if any(not (skill / name).is_file() for name in required) or (skill / "tests").exists():
+        raise BehaviorFailure("incomplete runtime or installed development test tree; repair the package inventory")
+    misplaced = [name for name in ("adversarial.py", "evaluate.sh", "scoring.py")
+                 if (skill / "classify" / name).exists()]
+    if misplaced:
+        raise BehaviorFailure("development calibration tools remain installed: {}; move them outside declared skill trees".format(
+            ", ".join(misplaced)))
+
+
 def exercise(project, agent, host, herdr_source, coding_source):
     project.mkdir()
     (project / "AGENTS.md").write_text(SENTINEL)
@@ -67,8 +78,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
     if repeat["result"]["plan"]["operations"] or repeat["result"]["plan"]["ledgerChanged"]:
         raise ValueError("{}: repeated realization changed native outputs".format(agent))
     skill = project / host / "skills" / (IDENTITY + "herdr-foreman")
-    if not (skill / "foreman/remote_owner.py").is_file() or (skill / "tests").exists():
-        raise ValueError("{}: incomplete runtime or installed development payload".format(agent))
+    verify_runtime_payload(skill)
     paths = [p for p in (project / host / "hooks").glob(IDENTITY + "*/native-hook.sh")]
     if len(paths) != 3:
         raise ValueError("{}: expected three owned hook entrypoints, got {}".format(agent, len(paths)))
@@ -98,6 +108,15 @@ def exercise(project, agent, host, herdr_source, coding_source):
                 input_text='{"session_id":"isolated-fixture","prompt":"Ordinary prompt"}\n')
     # Execute the installed owner with development trees physically absent.
     json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment, check_behavior=True))
+    # Both runtime vendor envelopes remain decodable without calibration tools.
+    for kind, payload in (("claude", [{"type": "result", "structured_output": {"fixture": "decoded"}}]),
+                          ("grok", {"text": '{"fixture":"decoded"}'})):
+        raw, decoded = project / (kind + "-envelope.json"), project / (kind + "-answer.json")
+        raw.write_text(json.dumps(payload))
+        command("python3", str(skill / "classify/extract-answer.py"), kind, str(raw), str(decoded),
+                env=environment, check_behavior=True)
+        if json.loads(decoded.read_text()) != {"fixture": "decoded"}:
+            raise BehaviorFailure("{}: installed {} envelope decoder changed the answer".format(agent, kind))
     if coding_source:
         environment.pop("HERDR_CODING_POLICY_ROOT", None)
         inputs = json.loads(command("python3", str(skill / "policy-paths.py"), "brief-inputs",
@@ -122,7 +141,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
     if SENTINEL not in (project / "AGENTS.md").read_text() or user_file.read_text() != "preserve user native content\n":
         raise ValueError("{}: lifecycle modified user-owned content".format(agent))
     return {"agent": agent, "bootstrap_listed": before.get("ok") is True, "upgrade": "pass",
-            "idempotence": "pass", "runtime": "pass", "standalone_hooks": "pass",
+            "idempotence": "pass", "runtime": "pass", "envelope_decoders": "pass", "standalone_hooks": "pass",
             "removal": "pass", "user_content": "preserved"}
 
 

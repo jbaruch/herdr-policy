@@ -27,7 +27,7 @@ undoes it (rules/script-delegation.md Bounded Classification).
 
 Band calibration: `BANDS_VERSION` names the calibration the constants came
 from. They ship uncalibrated and deliberately conservative, so an
-uncalibrated model rarely gates. `classify/scoring.py calibrate` proposes new
+uncalibrated model rarely gates. The source-only `scripts/report-calibration/scoring.py calibrate` proposes new
 values and writes nothing; they change only by a reviewed commit here
 (skills/herdr-foreman/references/report-classifier.md, Changing the Bands).
 

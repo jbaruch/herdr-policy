@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score classifier labels against recorded verdicts, and propose Jev's bands.
+"""Development scoring against recorded verdicts and proposals for Jev's bands.
 
 Usage:
   scoring.py score <results.json> <failed> <agent> <model> <split.json>
@@ -36,10 +36,11 @@ from pathlib import Path
 from typing import NoReturn
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE))
+RUNTIME = HERE.parents[1] / "skills/herdr-foreman"
+sys.path.insert(0, str(RUNTIME))
+sys.path.insert(0, str(RUNTIME / "classify"))
 
-import report_verdict  # noqa: E402 -- HERE and the skill dir are on sys.path only from here
+import report_verdict  # noqa: E402 -- canonical source runtime paths are selected above
 from foreman import report_gates  # noqa: E402
 
 #: Truths a recorded verdict determines, per question.

@@ -93,7 +93,8 @@ main() {
     fi
   done
 
-  python3 - "$work" "${#reports[@]}" "${agent:-default}" <<'PY'
+  # This assembly uses only stdlib modules, never checkout or user-site code.
+  PYTHONPATH='' python3 -P -s - "$work" "${#reports[@]}" "${agent:-default}" <<'PY'
 import json, pathlib, sys
 work, total, agent = pathlib.Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
 labels, unannotated = [], []

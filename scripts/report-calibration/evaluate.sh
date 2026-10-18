@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the report classifier over the labelled corpus and score it.
+# Development-only evaluation of the report classifier over its labelled corpus.
 #
 # The labels are not invented for this: the foreman recorded a verdict against
 # every delivered report at the time it gated the round, and those verdicts sit
@@ -59,7 +59,7 @@ case "${BASH_SOURCE[0]}" in
   *) HERE_SRC=. ;;
 esac
 if ! HERE="$(CDPATH='' cd -- "${HERE_SRC:-/}" && pwd && printf x)"; then
-  echo "evaluate: cannot enter the script directory ${HERE_SRC:-/} — restore read and search access to the plugin directory, or reinstall the plugin, then re-run" >&2
+  echo "evaluate: cannot enter the script directory ${HERE_SRC:-/} — restore read and search access to the development checkout, then re-run" >&2
   exit 2
 fi
 HERE="${HERE%x}"
@@ -153,9 +153,8 @@ PY
 
 main() {
   local state_root="${XDG_STATE_HOME:-${HOME}/.local/state}"
-  # HERE is absolute, so its parent comes from parameter expansion too (#487).
-  local skill_dir="${HERE%/*}"
-  skill_dir="${skill_dir:-/}"
+  local skill_dir="${HERE}/../../skills/herdr-foreman"
+  local classifier_dir="${skill_dir}/classify"
   local limit=0 since="" all=0 model="" agent="claude" state="" corpus_only=0 fixtures=0 keep=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -176,8 +175,8 @@ main() {
   case "$agent" in jev|codex|claude|grok) ;; *) die "--agent '${agent}' is not one of jev, codex, claude, grok" ;; esac
   [ "$all" -eq 0 ] || [ -z "$since" ] || die "--since and --all contradict each other; pass one"
   local changed
-  changed="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["changed"])' "${HERE}/report-questions.json")" \
-    || die "cannot read the questions' change date from ${HERE}/report-questions.json; restore that file (reinstall the plugin: tessl install jbaruch/herdr-policy), then rerun"
+  changed="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["changed"])' "${classifier_dir}/report-questions.json")" \
+    || die "cannot read the questions' change date from ${classifier_dir}/report-questions.json; restore the canonical runtime in this development checkout, then rerun"
   if [ "$all" -eq 0 ] && [ -z "$since" ]; then since="$changed"; fi
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/classify-eval.XXXXXX")" || die "cannot create a temporary directory; repair write access to \${TMPDIR:-/tmp} (or point TMPDIR at a writable directory), then rerun"
@@ -227,7 +226,7 @@ print(json.dumps({"schema_version":2,"scored":0,"split":split,"corpus":sum(r["so
       || die "cannot read row ${index} of ${selected}; repair write access to \${TMPDIR:-/tmp} (or point TMPDIR at a writable directory), then rerun"
     echo "  [$((index + 1))/${total}] ${report}" >&2
     local answer="${work}/answer-${index}.json"
-    if bash "${HERE}/classify-report.sh" "$report" --agent "$agent" ${model:+--model "$model"} --out "$answer" >/dev/null 2>"${work}/err-${index}"; then
+    if bash "${classifier_dir}/classify-report.sh" "$report" --agent "$agent" ${model:+--model "$model"} --out "$answer" >/dev/null 2>"${work}/err-${index}"; then
       if ! python3 - "$results" "$answer" "$selected" "$index" <<'PY'
 import json, sys
 results, answer, selected, index = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])

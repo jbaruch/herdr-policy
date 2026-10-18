@@ -47,6 +47,7 @@ fail() { FAIL=$((FAIL + 1)); echo "  ✗ FAIL: $*" >&2; }
 die() { echo "fatal: $*" >&2; exit 2; }
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../skills/../skills/herdr-foreman/classify" && pwd)" || die "cannot resolve the classify dir"
+CALIBRATION="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/report-calibration" && pwd)" || die "cannot resolve the source calibration tools"
 
 BLOCKING='{"names_open_item":{"answer":"yes","evidence":"B1: the parser accepts a quoted completion marker."},"open_items_accepted":{"answer":"no","evidence":""},"open_items_out_of_scope":{"answer":"no","evidence":""},"concludes_nothing_blocks":{"answer":"no","evidence":""}}'
 APPROVED='{"names_open_item":{"answer":"no","evidence":""},"open_items_accepted":{"answer":"no","evidence":""},"open_items_out_of_scope":{"answer":"no","evidence":""},"concludes_nothing_blocks":{"answer":"yes","evidence":"No blocking findings."}}'
@@ -300,6 +301,22 @@ assert all(label["agent"] == "claude" for label in d["labels"]), d
 '; then
     pass; else fail "one call annotates every report, got RC=$RC OUT=$OUT"; fi
 
+  local hostile="$TMP/hostile-checkout"
+  mkdir "$hostile" || die "create hostile checkout fixture"
+  cat > "$hostile/json.py" <<'PY' || die "write hostile stdlib shadow fixture"
+from pathlib import Path
+Path(__file__).with_name("consumer-import-ran").write_text("unexpected checkout import")
+raise RuntimeError("consumer json.py executed")
+PY
+  OUT="$(cd -- "$hostile" && PATH="$TMP/batch:$PATH" bash "$DIR/classify-reports.sh" --agent claude "$second" "$second" 2>"$ERRFILE")"
+  RC=$?
+  if [[ $RC -eq 0 && ! -e "$hostile/consumer-import-ran" ]] && printf '%s' "$OUT" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert len(d["labels"]) == 2 and d["unannotated"] == [], d
+'; then
+    pass; else fail "batch imported checkout-local json.py, got RC=$RC OUT=$OUT"; fi
+
   # The default batch with Jev unavailable: every report unannotated, read in full.
   OUT="$(ROOM_PROBE="$TMP/batch-room" PATH="$TMP/batch:$PATH" bash "$DIR/classify-reports.sh" "$second" 2>"$ERRFILE")"
   RC=$?
@@ -347,7 +364,7 @@ dispatches = [
 with open(state, "w", encoding="utf-8") as handle:
     json.dump({"recovery": {"dispatches": dispatches}}, handle)
 PY
-  OUT="$(bash "$DIR/evaluate.sh" --corpus-only --state "$state" --all 2>"$ERRFILE")"
+  OUT="$(bash "$CALIBRATION/evaluate.sh" --corpus-only --state "$state" --all 2>"$ERRFILE")"
   RC=$?
   # The same path twice is one report: a corpus that counted it twice would
   # score the same bytes twice. A missing file and a dispatch with no recorded
@@ -358,33 +375,33 @@ PY
 
   # Held out by default: reports recorded before the questions changed are the
   # ones they may have been written against.
-  OUT="$(bash "$DIR/evaluate.sh" --corpus-only --state "$state" 2>"$ERRFILE")"
+  OUT="$(bash "$CALIBRATION/evaluate.sh" --corpus-only --state "$state" 2>"$ERRFILE")"
   RC=$?
   ERRTEXT="$(cat "$ERRFILE")"
   if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q 'on or after 2026-09-27'; then
     pass; else fail "the default split is held out from the questions' change date, got RC=$RC ERR=$ERRTEXT"; fi
 
-  OUT="$(bash "$DIR/evaluate.sh" --corpus-only --state "$state" --since 2026-09-03 2>"$ERRFILE")"
+  OUT="$(bash "$CALIBRATION/evaluate.sh" --corpus-only --state "$state" --since 2026-09-03 2>"$ERRFILE")"
   RC=$?
   ERRTEXT="$(cat "$ERRFILE")"
   if [[ $RC -eq 0 ]] && [[ "$(field "$OUT" corpus)" == "1" ]] && printf '%s' "$ERRTEXT" | grep -q 'not held out'; then
     pass; else fail "--since before the change date scores and says it is not held out, got RC=$RC OUT=$OUT"; fi
-  OUT="$(bash "$DIR/evaluate.sh" --corpus-only --state "$state" --since 2026-09-04 2>"$ERRFILE")"
+  OUT="$(bash "$CALIBRATION/evaluate.sh" --corpus-only --state "$state" --since 2026-09-04 2>"$ERRFILE")"
   RC=$?
   ERRTEXT="$(cat "$ERRFILE")"
   if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q 'on or after 2026-09-04'; then
     pass; else fail "--since past every report names the date, got RC=$RC ERR=$ERRTEXT"; fi
-  OUT="$(bash "$DIR/evaluate.sh" --corpus-only --state "$state" --since 2026-09-03 --all 2>"$ERRFILE")"
+  OUT="$(bash "$CALIBRATION/evaluate.sh" --corpus-only --state "$state" --since 2026-09-03 --all 2>"$ERRFILE")"
   RC=$?
   if [[ $RC -eq 2 && -z "$OUT" ]]; then
     pass; else fail "--since with --all is a usage error, got RC=$RC OUT=$OUT"; fi
-  OUT="$(bash "$DIR/evaluate.sh" --corpus-only --state "$state" --all --fixtures 2>"$ERRFILE")"
+  OUT="$(bash "$CALIBRATION/evaluate.sh" --corpus-only --state "$state" --all --fixtures 2>"$ERRFILE")"
   RC=$?
   if [[ $RC -eq 0 ]] && [[ "$(field "$OUT" fixtures)" == "3" ]]; then
     pass; else fail "--fixtures adds the adversarial fixtures apart from the corpus, got RC=$RC OUT=$OUT"; fi
   # An unreadable state file is a usage error that names the recovery.
   printf '{not json' > "$TMP/broken-state.json" || die "write broken state fixture"
-  OUT="$(bash "$DIR/evaluate.sh" --corpus-only --state "$TMP/broken-state.json" --all 2>"$ERRFILE")"
+  OUT="$(bash "$CALIBRATION/evaluate.sh" --corpus-only --state "$TMP/broken-state.json" --all 2>"$ERRFILE")"
   RC=$?
   ERRTEXT="$(cat "$ERRFILE")"
   if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q 'readable UTF-8 JSON'; then
@@ -396,7 +413,7 @@ PY
   local xdg="$TMP/xdg"
   mkdir -p "$xdg/teamlead"
   cp "$state" "$xdg/teamlead/state.json"
-  OUT="$(XDG_STATE_HOME="$xdg" bash "$DIR/evaluate.sh" --corpus-only --all 2>"$ERRFILE")"
+  OUT="$(XDG_STATE_HOME="$xdg" bash "$CALIBRATION/evaluate.sh" --corpus-only --all 2>"$ERRFILE")"
   RC=$?
   ERRTEXT="$(cat "$ERRFILE")"
   if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q 'migrate-home'; then
@@ -409,7 +426,7 @@ PY
   printf 'x' > "$blocked/teamlead"
   local root
   for root in "$other" "$blocked"; do
-    OUT="$(XDG_STATE_HOME="$root" bash "$DIR/evaluate.sh" --corpus-only --all 2>"$ERRFILE")"
+    OUT="$(XDG_STATE_HOME="$root" bash "$CALIBRATION/evaluate.sh" --corpus-only --all 2>"$ERRFILE")"
     RC=$?
     ERRTEXT="$(cat "$ERRFILE")"
     if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q 'migrate-home'; then
@@ -417,7 +434,7 @@ PY
   done
   mv "$xdg/teamlead" "$xdg/foreman"
   ln -s "$xdg/foreman" "$xdg/teamlead"
-  OUT="$(XDG_STATE_HOME="$xdg" bash "$DIR/evaluate.sh" --corpus-only --all 2>"$ERRFILE")"
+  OUT="$(XDG_STATE_HOME="$xdg" bash "$CALIBRATION/evaluate.sh" --corpus-only --all 2>"$ERRFILE")"
   RC=$?
   if [[ $RC -eq 0 ]] && [[ "$(field "$OUT" corpus)" == "1" ]]; then
     pass; else fail "a migrated default home reads its corpus, got RC=$RC OUT=$OUT"; fi
@@ -426,7 +443,7 @@ PY
   # scoring a half-moved or empty store. The holder runs evaluate while it
   # holds the lock, so the overlap is deterministic, never a timing race.
   local held
-  held="$(python3 - "$xdg" "$DIR/evaluate.sh" "$ERRFILE" <<'PY'
+  held="$(python3 - "$xdg" "$CALIBRATION/evaluate.sh" "$ERRFILE" <<'PY'
 import fcntl, os, subprocess, sys
 xdg, evaluate, errfile = sys.argv[1:4]
 with open(os.path.join(xdg, ".foreman-home.lock"), "a", encoding="utf-8") as lock:
@@ -443,7 +460,7 @@ PY
 
   echo "▶ scoring" >&2
 
-  OUT="$(PATH="$TMP/ok:$PATH" bash "$DIR/evaluate.sh" --agent codex --state "$state" --all 2>"$ERRFILE")"
+  OUT="$(PATH="$TMP/ok:$PATH" bash "$CALIBRATION/evaluate.sh" --agent codex --state "$state" --all 2>"$ERRFILE")"
   RC=$?
   if [[ $RC -eq 0 ]] && [[ "$(field "$OUT" scored)" == "1" ]] && [[ "$(field "$OUT" accuracy)" == "1.0" ]] \
      && printf '%s' "$OUT" | python3 -c '
@@ -456,7 +473,7 @@ assert d["split"]["held_out"] is False, d
     pass; else fail "a correct prediction scores 1.0 with per-question accuracy, got RC=$RC OUT=$OUT"; fi
 
   stub_codex "$TMP/wrong" 0 "$INVENTED"
-  OUT="$(PATH="$TMP/wrong:$PATH" bash "$DIR/evaluate.sh" --agent codex --state "$state" --all 2>"$ERRFILE")"
+  OUT="$(PATH="$TMP/wrong:$PATH" bash "$CALIBRATION/evaluate.sh" --agent codex --state "$state" --all 2>"$ERRFILE")"
   RC=$?
   if [[ $RC -eq 0 ]] && [[ "$(field "$OUT" accuracy)" == "0.0" ]] \
      && printf '%s' "$OUT" | grep -q '"recorded": "blocking"' \
@@ -464,7 +481,7 @@ assert d["split"]["held_out"] is False, d
     pass; else fail "a disagreement is reported with both sides, got RC=$RC OUT=$OUT"; fi
 
   # Fixtures are scored apart: a verdict the injected text flipped is named.
-  OUT="$(PATH="$TMP/ok:$PATH" bash "$DIR/evaluate.sh" --agent codex --state "$state" --all --fixtures \
+  OUT="$(PATH="$TMP/ok:$PATH" bash "$CALIBRATION/evaluate.sh" --agent codex --state "$state" --all --fixtures \
     --results "$TMP/results.json" 2>"$ERRFILE")"
   RC=$?
   if [[ $RC -eq 0 ]] && [[ -s "$TMP/results.json" ]] && printf '%s' "$OUT" | python3 -c '
@@ -477,7 +494,7 @@ assert len(d["fixtures"]["flipped"]) == 3, d
     pass; else fail "fixtures are scored and reported apart, got RC=$RC OUT=$OUT ERR=$(cat "$ERRFILE")"; fi
 
   stub_codex "$TMP/broken" 1 ''
-  OUT="$(PATH="$TMP/broken:$PATH" bash "$DIR/evaluate.sh" --agent codex --state "$state" --all 2>"$ERRFILE")"
+  OUT="$(PATH="$TMP/broken:$PATH" bash "$CALIBRATION/evaluate.sh" --agent codex --state "$state" --all 2>"$ERRFILE")"
   RC=$?
   # A partial score, never an accuracy averaged over only the calls that worked.
   if [[ $RC -eq 1 ]] && [[ "$(field "$OUT" failed)" == "1" ]] \
@@ -505,7 +522,12 @@ d = json.load(sys.stdin)
 assert len(d["labels"]) == 2 and d["unannotated"] == [], d
 '; then
       pass; else fail "classify-reports.sh in a newline-named dir, got RC=$RC OUT=$OUT ERR=$(cat "$ERRFILE")"; fi
-    OUT="$(bash "$nl_dir/evaluate.sh" --corpus-only --state "$state" --all 2>"$ERRFILE")"
+    local nl_source="$TMP/calibration-source"$'\n'
+    mkdir -p "$nl_source/scripts" "$nl_source/skills/herdr-foreman" || die "create newline-named calibration source"
+    cp -R "$CALIBRATION" "$nl_source/scripts/report-calibration" || die "copy source calibration tools"
+    cp -R "$DIR" "$nl_source/skills/herdr-foreman/classify" || die "copy source classifier"
+    cp -R "$DIR/../foreman" "$nl_source/skills/herdr-foreman/foreman" || die "copy source owner modules"
+    OUT="$(bash "$nl_source/scripts/report-calibration/evaluate.sh" --corpus-only --state "$state" --all 2>"$ERRFILE")"
     RC=$?
     if [[ $RC -eq 0 ]] && [[ "$(field "$OUT" corpus)" == "1" ]]; then
       pass; else fail "evaluate.sh in a newline-named dir, got RC=$RC OUT=$OUT ERR=$(cat "$ERRFILE")"; fi

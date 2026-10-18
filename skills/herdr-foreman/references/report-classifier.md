@@ -37,7 +37,7 @@ are the owners' contracts.
   carries the key), produces no label. The report lands in `unannotated` and
   takes the reasoning path, a full read. No other classifier is asked.
 - `--agent codex|claude|grok` runs an LLM adapter for measurement
-  (`skills/herdr-foreman/classify/evaluate.sh`). An LLM label carries no
+  (source-only `scripts/report-calibration/evaluate.sh`). An LLM label carries no
   probabilities and never gates.
 
 ## Report Gates
@@ -151,15 +151,9 @@ The live bands are the named constants at the top of
 their calibration. They ship uncalibrated and conservative. Calibration
 proposes; a reviewed pull request installs:
 
-1. Export `TYPESAFE_API_KEY` in the shell that runs the evaluation.
-2. Run `bash skills/herdr-foreman/classify/evaluate.sh --agent jev --results <labels.json>`.
-3. Run `python3 skills/herdr-foreman/classify/scoring.py calibrate <labels.json>`.
-   It prints proposed bands and the counts it used, and writes nothing. It
-   refuses to propose from too few held-out labels; its held-out test and
-   selection rules are in the `skills/herdr-foreman/classify/scoring.py`
-   docstring and top-of-file constants.
-4. Open a pull request that changes the constants and `BANDS_VERSION`, with the
-   proposal's counts and the resulting false-gate counts in its CHANGELOG
-   entry.
+The development procedure and quota controls live in the source repository's
+[docs/report-calibration.md](https://github.com/jbaruch/herdr-policy/blob/main/docs/report-calibration.md).
+Evaluation, synthetic reports and band proposals remain outside installed skill
+trees. Runtime classification keeps its co-shipped envelope decoder.
 
 Recalibrate after every `JEV_MODEL` bump and every question change.

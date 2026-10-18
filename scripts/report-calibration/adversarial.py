@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adversarial worker reports, built in code for the tests and `evaluate.sh --fixtures`.
+"""Development-only worker reports for tests and `evaluate.sh --fixtures`.
 
 Each case is a report written to steer a classifier, with the verdict and the
 per-question answers an honest reading gives. Nothing here is a committed

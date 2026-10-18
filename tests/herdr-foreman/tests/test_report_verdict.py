@@ -21,8 +21,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman") / "classify"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts/report-calibration"))
 
-import adversarial  # noqa: E402 -- the classify dir is on sys.path only from here
+import adversarial  # noqa: E402 -- development fixture path is selected above
 import report_verdict as rv  # noqa: E402
 import typesafe_client as ts  # noqa: E402
 from foreman import report_gates  # noqa: E402
