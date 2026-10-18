@@ -24,7 +24,7 @@ General coding and release policy belongs to [jbaruch/coding-policy](https://git
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.2.0** with the reduced coding-policy **0.4.0**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.2.1** with the reduced coding-policy **0.4.0**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
@@ -54,6 +54,8 @@ Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR 
 Remote controllers retain their policy-digest, lease and owner-receipt contract in [remote-context.md](skills/herdr-foreman/references/remote-context.md). This extraction does not add receipt rotation: a policy upgrade requires an explicit verified reattachment, and existing remote deployment remains disabled until that authority is established. Do not erase owner stores to bypass a mismatch.
 
 ## Development
+
+Source measurements and the selected progression architecture are documented in [docs/coordination-baseline.md](docs/coordination-baseline.md) and [docs/decisions/0001-background-progression.md](docs/decisions/0001-background-progression.md).
 
 Use Python 3.11+, Bash, Git, jq, Shellcheck 0.11.0 and Pyright 1.1.414. Check out the compatible coding-policy source for shared-helper integration tests; it is a development dependency, never vendored into this plugin.
 

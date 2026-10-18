@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 — 2026-10-18
+
+- Add a read-only evidence exporter and baseline analyzer with report-bound native timing, separate assessment/resolution delays, explicit unknowns, and private provenance. Retained-source reruns preserve uncertainty rather than treating owner closures as accepted outcomes.
+- Record the Drover component-adaptation decision and comparative pilot criteria. The decision does not activate background progression or grant runtime authority.
+
 ## 0.2.0 — 2026-10-18
 
 - Preserve directory-root trailing slashes for ACR rendering and execute every installed skill selector in conformance checks, requiring native ownership and bundled script targets on each claimed host.

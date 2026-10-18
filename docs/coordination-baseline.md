@@ -35,9 +35,68 @@ outcomes and the blocked cases when interpreting apparent coordination savings.
 
 The public aggregates cannot reconstruct the original per-enrollment timelines
 or tail distributions. The original private audit working directory is not an
-input shipped here. Rerunning the historical results requires the operator-held
-native, owner, report and GitHub evidence plus a normalized export. The fixture
-tests below prove calculations; they do not regenerate these observed numbers.
+input shipped here. Retained owner, native and ledger sources support the
+conservative export below. Its explicit cohort and stricter report-binding
+requirements produce a new sample; it does not reproduce the original aggregate
+denominators by assertion. Fixtures prove calculations, not observed ROI.
+
+## Reproduce an owner-evidence sample
+
+Freeze private copies of the owner and its supervision sidecar before exporting.
+Keep the originals, copies, transcripts, ledgers and source maps outside Git.
+The exporter reads state schema 11, recovery-store schema 18 and supervision
+schema 1; an unsupported version fails without migrating or writing an owner.
+Select a trusted extracted Herdr source checkout for its existing native and
+task-ledger readers. The default is this repository after extraction.
+
+```sh
+python3 scripts/export_owner_baseline.py --owner /private/baseline/owner.json --supervision /private/baseline/supervision.json --start 2026-10-10T00:00:00Z --end 2026-10-15T07:05:37Z --provenance-output /private/baseline/provenance.json > /private/baseline/snapshot.json
+python3 scripts/coordination_baseline.py /private/baseline/snapshot.json
+```
+
+Use `--herdr-source /path/to/trusted/checkout` when evaluating an extraction
+candidate from a separate measurement checkout. Provenance is created with mode
+0600 outside the repository. Its schema 2 records the Python version, input,
+exporter and evidence hashes, every owner Python module's hash, and exclusion
+counts. An identical repeat is permitted; a differing
+existing provenance file requires a fresh output path. The CLI emits no native
+text, raw task/session identities, worker names or private paths in its snapshot.
+
+The cohort includes tasks registered or attempted inside the half-open window.
+Applied and uncertain-send dispatches remain assignment envelopes. Confirmed
+unsent attempts retain their task in the cohort but create no busy worker.
+Assignment and enrollment IDs, task and worker must agree. A missing or
+conflicting identity remains unknown. Original/refined identities and frozen
+observations of resolved enrollments supply candidates. An observation requires
+a resolution before the window end, matching pane evidence, and no identity,
+availability or observation error. It still needs native proof.
+
+The canonical source reader must prove the candidate session's latest completed
+assistant message ends with that enrollment's bare report marker. Native start
+and completion come from that turn's timestamps, not a status banner, report
+mtime or tool exit. Completion must fall after dispatch and within the window.
+Active observations without an archival time boundary remain unknown. Sources
+whose latest message changed or cannot be read are excluded, even when an older
+completion may exist. Grok's source timestamps use Unix seconds; other supported
+native records use offset-aware ISO timestamps.
+
+Assessment is the earliest matching explicit assessed assignment event in a
+canonical ledger bound to the original state identity, task, dispatch, worker
+and report, before the window end. Resolution is the recorded owner timestamp.
+Report size comes from an in-window report observation. Held-task membership
+comes from the hold's explicit enrollment dispositions. A wait for the user maps
+to `operator`; other hold reasons remain `unknown`. Holds are never subtracted
+from delay. Exclusion counts describe attempted reference reads and are not all
+unique assignments.
+
+An October 18 rerun over the window above retained 30 tasks and 392 assignment
+envelopes: 368 had report-bound native completion and 24 remained unknown. The
+resolution-delay sample had 344 pairs; the assessment-delay sample had 240.
+These differ from the original latest-day samples and cannot replace their
+reported numbers. All 30 task classes/risks and foreman effort remain unmeasured
+in this automatic export. Four owner closures prove neither integration nor
+deployment nor acceptance. Join independently verified outcome/effort and
+class/risk evidence before a comparison; do not interpret absent metrics as zero.
 
 ## Sanitized snapshot
 
@@ -131,6 +190,7 @@ tasks provide descriptive evidence, not a statistical claim of equal safety.
 If tradeoffs or missing evidence prevent a decision, preregister more observations
 or roll back. No savings percentage or universal review-round cutoff is assumed.
 
-Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/test_coordination_baseline.py` for the
-synthetic calculation checks. Actual historical export and the live pilot remain
-separate evidence requirements under #3 and #18.
+Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/test_coordination_baseline.py` and
+`PYTHONDONTWRITEBYTECODE=1 python3 tests/test_owner_baseline_export.py` for the
+calculation and normalization fixtures. The retained-source rerun supplies
+observational evidence; the live comparative pilot remains separate under #18.
