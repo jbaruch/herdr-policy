@@ -84,7 +84,7 @@ to know goes in the report.
 
 ## Policy
 
-- The resolved rule index is `{{POLICY_INDEX}}`; it links every rule file. If your
+- The resolved rule index is `{{POLICY_INDEX}}`; follow its links or native-policy routing to every applicable rule. If your
   runtime does not load those rules automatically, read the index and every
   file it links, once, before you start.
 - Required read, whatever your runtime loads: the team-round contract at

@@ -79,9 +79,11 @@ def brief_inputs(skill_dir, shared, global_tessl, explicit_root=None):
     skill_dir, shared = Path(skill_dir).resolve(), Path(shared).resolve()
     release = coding_release(skill_dir, shared, global_tessl, explicit_root)
     indexes = [shared / ".tessl/RULES.md", Path(global_tessl) / "RULES.md"]
-    if skill_dir.name == NATIVE_FOREMAN:
-        project = skill_dir.parents[2]
-        indexes = [project / "AGENTS.md", project / "CLAUDE.md", *indexes]
+    if release.name == NATIVE_RELEASE:
+        # Native adapters may host rules in CLAUDE.md, an imported instruction
+        # file, or scoped Cursor rules. A pre-existing AGENTS.md proves none of
+        # those. Use the selected general package's authored native router.
+        indexes = [release / "POLICY.md"]
     policy = next((path.resolve() for path in indexes if path.is_file() and path.stat().st_size), None)
     team = skill_dir / "references/team-operation.md"
     if policy is None or not team.is_file() or not team.stat().st_size:

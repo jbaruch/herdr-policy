@@ -85,6 +85,21 @@ def exercise(project, agent, host, herdr_source, coding_source):
                 input_text='{"session_id":"isolated-fixture","prompt":"Ordinary prompt"}\n')
     # Execute the installed owner with development trees physically absent.
     json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment))
+    if coding_source:
+        environment.pop("HERDR_CODING_POLICY_ROOT", None)
+        inputs = json.loads(command("python3", str(skill / "policy-paths.py"), "brief-inputs",
+                                    "--shared", str(project), env=environment))
+        release = project / host / "skills/acr__jbaruch__coding-policy__release"
+        if inputs["POLICY_INDEX"] != str(release / "POLICY.md"):
+            raise ValueError("{}: unrelated native instructions replaced the selected general policy".format(agent))
+        if inputs["TEAM_OPERATION"] != str(skill / "references/team-operation.md"):
+            raise ValueError("{}: team contract came from another installation".format(agent))
+        general_hooks = list((project / host / "hooks").glob("acr__jbaruch__coding-policy__*/native-hook.sh"))
+        if len(general_hooks) != 2:
+            raise ValueError("{}: generic hook bundle is incomplete".format(agent))
+        for path in general_hooks:
+            event = "session-start" if "session-start" in path.parent.name else "stop-handoff"
+            command("bash", str(path), event, env=environment, input_text='{"stop_hook_active":true}\n')
     acr("check", project)
     acr("uninstall", project, "github:jbaruch/herdr-policy")
     acr("realize", project)
@@ -107,7 +122,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="herdr-acr-conformance-") as scratch:
             for agent, host in (("codex", ".codex"), ("claude-code", ".claude"), ("cursor", ".cursor")):
-                outcomes.append(exercise(Path(scratch) / agent, agent, host, args.herdr_source, args.coding_source))
+                outcomes.append(exercise(Path(scratch).resolve() / agent, agent, host, args.herdr_source, args.coding_source))
     except ValueError as exc:
         print("check-installations: {} — fix package behavior before publication".format(exc), file=sys.stderr)
         print(json.dumps({"passed": False, "adapters": outcomes, "error": str(exc)}))

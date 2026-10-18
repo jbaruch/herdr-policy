@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
 from foreman.errors import UsageError
-from foreman.policy_paths import NATIVE_FOREMAN, NATIVE_RELEASE, RELEASE_FILES, coding_release
+from foreman.policy_paths import NATIVE_FOREMAN, NATIVE_RELEASE, RELEASE_FILES, brief_inputs, coding_release
 
 
 class PolicyPathsTest(unittest.TestCase):
@@ -82,6 +82,22 @@ class PolicyPathsTest(unittest.TestCase):
         with self.assertRaises(UsageError) as caught:
             self.resolve()
         self.assertIn("install", caught.exception.message)
+
+    def test_native_policy_uses_its_package_router_instead_of_unrelated_instructions(self):
+        for host in (".codex/skills", ".claude/skills", ".cursor/skills", ".agents/skills"):
+            with self.subTest(host=host):
+                skill = self.shared / host / NATIVE_FOREMAN
+                (skill / "references").mkdir(parents=True)
+                (skill / "references/team-operation.md").write_text("executing team contract\n")
+                release = self.bundle(skill.parent / NATIVE_RELEASE)
+                (release / "POLICY.md").write_text("package-native policy routing\n")
+                (self.shared / "AGENTS.md").write_text("unrelated user instructions\n")
+                result = brief_inputs(skill, self.shared, self.global_tessl)
+                self.assertEqual(result["POLICY_INDEX"], str(release / "POLICY.md"))
+                self.assertEqual(result["TEAM_OPERATION"], str((skill / "references/team-operation.md").resolve()))
+                (release / "POLICY.md").unlink()
+                with self.assertRaises(UsageError):
+                    brief_inputs(skill, self.shared, self.global_tessl)
 
 
 if __name__ == "__main__":
