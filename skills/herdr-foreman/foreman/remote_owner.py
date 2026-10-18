@@ -1,6 +1,6 @@
 """Single-host remote foreman authority and durable effect fencing.
 
-Only the trusted coding-policy controller constructs this owner. A transport
+Only the trusted herdr-policy controller constructs this owner. A transport
 caller receives request/query methods, never the client or its routing config.
 The controller lease is held across live identity checks and a single Herdr
 invocation. All controllers of this deployment must share this owner store;

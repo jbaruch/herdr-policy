@@ -72,7 +72,7 @@ A failed receipt commit admits no model input and leaves no delivery proof;
 replay refuses the consumed original binding. Preserve both records, restore
 storage, and use the saved owner recovery route; never retry uncertain input.
 
-Unit and subprocess coverage lives in
-`skills/herdr-foreman/tests/test_reset_input_hook.py` and
-`skills/herdr-foreman/tests/test_foreman_reset.py`; the full repository runner discovers both.
+Development unit and subprocess coverage lives in this repository's source checkout at
+`tests/herdr-foreman/tests/test_reset_input_hook.py` and
+`tests/herdr-foreman/tests/test_foreman_reset.py`; the full repository runner discovers both.
 Native validation supplements those deterministic tests, never replaces them.

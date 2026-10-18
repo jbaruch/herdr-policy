@@ -2,6 +2,7 @@
 
 ## 0.2.0 — 2026-10-18
 
+- Route capability, reset and identity recovery to the extracted Herdr owner; align judge/remote ownership instructions and source-only test references with the split packages.
 - Refuse native Stop for an empty-but-set team environment instead of treating it as standalone; preserve the refusal across unexpected hook evaluation errors without changing owner records.
 - Test development-runner discovery, selection, isolation and failure aggregation; emit diagnostics as one JSON result and remove the unused baseline installer wrapper.
 - Resolve unchanged ACR hook copies against their own native host, preserve consumer working directories with Python safe-path imports, and reject zero-exit fallback messages in installation conformance.

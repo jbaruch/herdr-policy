@@ -461,7 +461,7 @@ def normalize_identity(who, version):
         except (TypeError, ValueError):
             raise UsageError("Remote binding receipt is malformed; restore the verified controller receipt.", {}) from None
         return remote_identity(attestation, who["cwd"], owner_store_path=who["owner_store_path"])
-    raise UsageError("Foreman identity schema is unsupported; restore its matching coding-policy owner before dispatch.", {})
+    raise UsageError("Foreman identity schema is unsupported; restore its matching herdr-policy owner before dispatch.", {})
 
 
 def binding_path(who, root=None):

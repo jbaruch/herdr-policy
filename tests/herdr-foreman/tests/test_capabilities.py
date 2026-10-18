@@ -81,7 +81,7 @@ class CapabilityTableTest(unittest.TestCase):
         target.write_text(original, encoding="utf-8")
         with self.assertRaisesRegex(UsageError, "newer than this build"):
             capabilities.load(self.state)
-        with self.assertRaisesRegex(UsageError, "Update the coding-policy plugin before recording"):
+        with self.assertRaisesRegex(UsageError, "Update the herdr-policy plugin before recording"):
             capabilities.record(self.state, {"entries": [entry()]}, AT)
         self.assertEqual(target.read_text(encoding="utf-8"), original)
 

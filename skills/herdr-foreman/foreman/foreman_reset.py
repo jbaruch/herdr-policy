@@ -466,7 +466,7 @@ def _load(path, *, migrate_legacy=True):
     version = document.get("schema_version")
     if type(version) is int and version > RESET_SCHEMA_VERSION:
         raise ResetRecordNewer("Reset record {} is schema {}, newer than this build's {}. It is left untouched; update the "
-                               "coding-policy plugin, then run `{}`.".format(path, version, RESET_SCHEMA_VERSION,
+                               "herdr-policy plugin, then run `{}`.".format(path, version, RESET_SCHEMA_VERSION,
                                                                           command("foreman-reset --explicit-reset")),
                                {"record": str(path), "schema_version": version})
     migrated = _version(version, 1) or _version(version, 2)

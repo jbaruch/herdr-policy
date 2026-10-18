@@ -4,7 +4,7 @@ The seven steps of one judge round, run in order from `skills/herdr-foreman/SKIL
 Step 13. Modes, triggers and both report contracts are in
 `skills/herdr-foreman/references/round-flow.md` "The Judge".
 
-Each command resolves `CP` to the local or home plugin, or to a coding-policy clone, the same way SKILL.md does.
+Each command resolves `HS` to the local or home herdr-policy plugin, or to a verified herdr-policy clone, the same way `skills/herdr-foreman/SKILL.md` does.
 Repeat its resolver in every call.
 
 ## 1 — Compose the Judge Brief

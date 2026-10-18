@@ -546,6 +546,12 @@ class SupervisionTest(unittest.TestCase):
             self.assertEqual(store.store_path(self.path).read_text(), body)
             self.assertEqual(self.stop()["decision"], "block")
 
+    def test_unknown_identity_schema_points_to_the_extracted_owner_without_writing(self):
+        before = store.store_path(self.path).read_bytes()
+        with self.assertRaisesRegex(UsageError, "matching herdr-policy owner"):
+            store.normalize_identity(self.who, 900)
+        self.assertEqual(store.store_path(self.path).read_bytes(), before)
+
     def test_missing_owner_state_is_not_proof_of_no_active_work(self):
         store.store_path(self.path).unlink()
         self.assertEqual(self.stop()["decision"], "block")

@@ -1,6 +1,6 @@
 # Attested Remote Foreman Context
 
-This is a coding-policy-owned, single-controller Python integration surface.
+This is a herdr-policy-owned, single-controller Python integration surface.
 It is not a public command executor, SSH adapter, second LLM foreman, deployment
 service, multi-host lock or permission to merge. Native CLI and native hooks keep
 their real `HERDR_ENV`, session and foreground-process checks.
@@ -48,7 +48,7 @@ for the lease and supervision binding. This bounded surface does not claim
 production handoff or rolling-upgrade support.
 
 The workstation foreman seat is a **thin terminal anchor without an LLM**.
-The controller running the loaded coding-policy foreman is the sole brain.
+The controller running the loaded herdr-policy foreman is the sole brain.
 An agent detected in the anchor refuses preflight. Starting another agent in
 it, typing a replacement foreman prompt or closing it through the worker owner
 is forbidden. A worker may be split from the anchor; it is a separate pane.
@@ -57,7 +57,7 @@ is forbidden. A worker may be split from the anchor; it is a separate pane.
 context-ready receipt, not a waiver of repository authority, staffing, model
 tiers, reports, supervision or release gates. The trusted foreman passes the
 bound client to the existing Python owners, including `cli.main(..., client=...)`.
-It keeps using coding-policy's planner, tier selector, worker launch proof,
+It keeps using herdr-policy's planner, tier selector, worker launch proof,
 task/recovery ledger, report gates and release owner. No caller-provided model
 or provider selection reaches them. Native workers retain their genuine Herdr
 environment; the controller never manufactures one for itself.

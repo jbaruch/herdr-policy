@@ -164,7 +164,7 @@ def load(path, *, for_write=False):
     version = document.get("schema_version") if isinstance(document, dict) else None
     if isinstance(version, int) and not isinstance(version, bool) and version > SCHEMA_VERSION:
         _fail("The capability table at {} is schema {}, newer than this build's {}. Update "
-              "the coding-policy plugin before recording or reading its gates; the file is left untouched.".format(
+              "the herdr-policy plugin before recording or reading its gates; the file is left untouched.".format(
                   target, version, SCHEMA_VERSION))
     validate(document)
     if version == 1:

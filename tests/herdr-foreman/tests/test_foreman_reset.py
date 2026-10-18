@@ -943,7 +943,7 @@ class RecordTest(unittest.TestCase):
         with self.assertRaises(foreman_reset.ResetRecordNewer) as caught:
             self.schedule("2026-09-24T10:00:00+00:00", True)
         self.assertEqual(caught.exception.code, "reset_record_newer")
-        self.assertIn("update the coding-policy plugin", caught.exception.message)
+        self.assertIn("update the herdr-policy plugin", caught.exception.message)
         self.assertIn(runnable.command("foreman-reset --explicit-reset"), caught.exception.message)
         with self.assertRaises(foreman_reset.ResetRecordNewer):
             foreman_reset.claim(self.state, self.plan, self.me())
