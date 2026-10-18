@@ -41,6 +41,12 @@ Each command resolves `HS` to its installed Herdr skill or that skill in a
 herdr-policy clone. Repeat the resolver in every call. Prose `skills/...`
 paths are relative to the package root.
 
+Read the lookup rule before running these command blocks:
+
+```text
+rules/herdr-bootstrap.md
+```
+
 Before each listed owner decision, load its records and read every listed file:
 
 ```bash

@@ -2,10 +2,9 @@
 name: herdr-standup
 description: >
   Hold a daily standup with the named Herdr agents and print a table the
-  operator can find while scrolling back through a long session: ask each idle
-  worker for four lines (DONE / PLAN / BLOCKED / REPORT), fill the busy ones
-  from the round log, and render a banner-topped fixed-width block plus a
-  Markdown record.
+  operator can find while scrolling back through a long session: inspect
+  readiness, fill rows from the round log when safe delivery is unavailable,
+  and render a banner-topped fixed-width block plus a Markdown record.
   Use when the user wants a standup, a daily status round, a summary of what
   each agent is doing, "what is everyone working on", or a status table for the
   team. Requires HERDR_ENV=1.
@@ -22,6 +21,12 @@ row comes from what you already know.
 Each command resolves `HS` to its installed Herdr skill or that skill in a
 herdr-policy clone. Repeat the resolver in every call. Prose `skills/...`
 paths are relative to the package root.
+
+Read the lookup rule before running these command blocks:
+
+```text
+rules/herdr-bootstrap.md
+```
 
 ## Step 1 — Roster the Team
 
@@ -54,8 +59,12 @@ bash "$HS/standup-ask.sh" \
   <agent-name> <absolute-report-path>
 ```
 
-Sends the standup question as a plain message and emits
-`{"agent","report_path","state","sent"}`. Exit 3 means the worker was not ready
+Checks readiness without sending input and emits
+`{"agent","report_path","state","sent"}`. Herdr 0.9.2 lacks atomic
+readiness-guarded prompting. Exit 5 returns `sent: false` and
+`reason: "atomic_prompt_unavailable"`; use the round log in Step 4 and never
+substitute `agent prompt` or pane input. A sequence of idle reads grants no
+delivery authority. Exit 3 means the worker was not ready
 and nothing was sent — move it to Step 4's list. Exit 4 means the worker's live
 pane is too narrow for its `REPORT: <path>` line and nothing was sent; the JSON
 adds `pane_width` and `needed`. Relay both to the operator, who widens the pane
@@ -63,8 +72,7 @@ or picks a shorter reports directory, and move the worker to Step 4's list.
 Exit 1 is a precondition, including a report path over the script's coarse
 length bound, exit 2 a herdr or measurement failure. On exit 1 or 2 nothing
 was sent: relay the diagnostic verbatim to the operator and move the worker
-to Step 4's list. The question text and the four-line shape it demands are the
-script's contract; see the header of
+to Step 4's list. The inspection/refusal contract is in the header of
 `skills/herdr-standup/standup-ask.sh`.
 
 Proceed immediately to Step 3 with every worker whose ask exited 0. When no

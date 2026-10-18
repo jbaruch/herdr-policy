@@ -26,6 +26,12 @@ General coding and release policy belongs to [jbaruch/coding-policy](https://git
 
 Use a compatible extracted pair: herdr-policy **0.2.0** with the reduced coding-policy **0.4.0**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
+Standup remains available from existing reports and the round log. The current
+ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
+0.9.2's API has no atomic readiness precondition. No standup input is sent until
+a tested atomic adapter exists. Foreman task dispatch is separate from this
+optional standup path.
+
 ```sh
 tessl install jbaruch/coding-policy@0.4.0
 tessl install jbaruch/herdr-policy@0.2.0

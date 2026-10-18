@@ -2,6 +2,9 @@
 
 ## 0.2.0 — 2026-10-18
 
+- Withhold command operands and arbitrary server output from transport errors and traces; preserve static operation metadata, byte counts and recognized recovery codes.
+- Refuse standup prompting when atomic readiness-guarded delivery is unavailable; preserve read-only diagnostics and round-log fallback without risking input to a working agent.
+- Bind both skill entrypoints explicitly to the distributed Herdr lookup rule.
 - Keep corpus evaluation, calibration scoring and synthetic-report generation in development source; retain the vendor envelope decoder in the runtime classifier and verify both distribution inventories.
 - Isolate the runtime batch's standard-library result assembly from consumer and user-site imports while moving the classification development boundary.
 - Route capability, reset and identity recovery to the extracted Herdr owner; align judge/remote ownership instructions and source-only test references with the split packages.

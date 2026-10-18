@@ -9,17 +9,16 @@
 # (rules/error-handling.md aggregate-reporting carve-out).
 #
 # Covers:
-#   1. Idle worker    -> prompted, sent true.
-#   2. Done worker    -> prompted too; done is ready, not busy.
+#   1. Idle worker    -> exit 5, atomic delivery unavailable, nothing sent.
+#   2. Done worker    -> same capability refusal, never an unguarded prompt.
 #   3. Working worker -> exit 3, NOTHING sent (a standup never interrupts).
 #   4. Blocked worker -> exit 3, nothing sent.
-#   5. Message shape  -> `agent prompt`, never a slash command, and the four
-#                        field names plus the report path are in the text.
+#   5. Input absence  -> no prompt, send-text or send-keys on any path.
 #   6. Relative path  -> exit 1 before any herdr call.
 #  6b. Over-long path -> exit 1; the coarse length bound, before Herdr.
 #  6e. Control char   -> exit 1 before Herdr.
 #  6f. DEL, C1, U+2028/9 -> exit 1 before Herdr, in a UTF-8 locale too.
-#  6g. Non-ASCII path -> a letter such as U+00E9 is asked normally.
+#  6g. Non-ASCII path -> a letter such as U+00E9 reaches capability refusal.
 #  6c. Bad limit      -> a non-integer override is exit 1, not an abort.
 #  6d. `0100` is 100  -> a leading zero is decimal, never octal, downstream.
 #   7. Outside Herdr  -> exit 1.
@@ -27,13 +26,12 @@
 #   9. Bad payload    -> exit 2.
 #  10. Narrow pane    -> exit 4, nothing sent, the verdict names the width
 #                        and the columns the marker needs (#515).
-#  11. Exact fit      -> a pane exactly as wide as that need is asked.
+#  11. Exact fit      -> reaches atomic capability refusal without input.
 #  11b. Turn started  -> idle at the first read, working at the measurement:
 #                        exit 3, nothing sent.
 #  11c. Turn at send  -> idle at both earlier reads, working at the last read
 #                        before the send: exit 3, nothing sent (#585).
-#  11d. Read-then-send -> that last `agent get` is the herdr call right
-#                        before `agent prompt`.
+#  11d. Repeated idle -> even three idle reads cannot authorize a prompt.
 #  11e. Last read fails -> exit 2, nothing sent.
 #  12. Measure fails  -> a failed `foreman marker-fit` is exit 2, nothing sent.
 #  13. No foreman.sh  -> exit 1 before any herdr call.
@@ -122,15 +120,15 @@ main() {
   export STANDUP_REPORT_PATH_MAX_COLS=1000
   FAIL=0; PASS=0; RUN_SEQ=0
 
-  # 1. An idle worker is asked.
+  # 1. Idle does not prove atomic readiness at a future send.
   run FAKE_STATUS=idle
-  if [[ $RC -eq 0 ]] && printf '%s' "$OUT" | jq -e '.sent == true and .agent == "worker" and .state == "idle"' >/dev/null 2>&1; then
-    pass; else fail "idle: expected sent true, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+  if [[ $RC -eq 5 ]] && printf '%s' "$OUT" | jq -e '.sent == false and .agent == "worker" and .state == "idle" and .reason == "atomic_prompt_unavailable"' >/dev/null 2>&1; then
+    pass; else fail "idle: expected atomic capability refusal, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
 
   # 2. `done` is the same idle state after unseen work — also ready.
   run FAKE_STATUS=done
-  if [[ $RC -eq 0 ]] && printf '%s' "$OUT" | jq -e '.sent == true' >/dev/null 2>&1; then
-    pass; else fail "done: expected sent true, got RC=$RC OUT=$OUT"; fi
+  if [[ $RC -eq 5 ]] && printf '%s' "$OUT" | jq -e '.sent == false and .reason == "atomic_prompt_unavailable"' >/dev/null 2>&1; then
+    pass; else fail "done: expected atomic capability refusal, got RC=$RC OUT=$OUT"; fi
 
   # 3. A standup is worth less than somebody's turn.
   run FAKE_STATUS=working
@@ -143,18 +141,10 @@ main() {
   if [[ $RC -eq 3 ]] && ! printf '%s' "$ARGVTEXT" | grep -q "agent prompt"; then
     pass; else fail "blocked: expected exit 3 with nothing sent, got RC=$RC ARGV=$ARGVTEXT"; fi
 
-  # 5. The question goes as a MESSAGE, and carries the contract it asks for.
+  # 5. Ready workers receive no input through another route either.
   run FAKE_STATUS=idle
-  if printf '%s' "$ARGVTEXT" | grep -q "agent prompt worker"; then
-    pass; else fail "delivery: expected an agent prompt call, got ARGV=$ARGVTEXT"; fi
-  if ! printf '%s' "$ARGVTEXT" | grep -qE 'agent prompt worker /|pane send-text'; then
-    pass; else fail "delivery: a standup question must not go as a slash command"; fi
-  local field ok=1
-  for field in "DONE:" "PLAN:" "BLOCKED:" "REPORT:"; do
-    printf '%s' "$ARGVTEXT" | grep -q "$field" || ok=0
-  done
-  if [[ $ok -eq 1 ]] && printf '%s' "$ARGVTEXT" | grep -q "$REPORT"; then
-    pass; else fail "prompt text: expected the four fields and the report path, got ARGV=$ARGVTEXT"; fi
+  if ! printf '%s' "$ARGVTEXT" | grep -qE 'agent prompt|send-text|send-keys'; then
+    pass; else fail "delivery: capability refusal sent input: $ARGVTEXT"; fi
 
   # 6. A relative report path resolves in the WORKER's cwd, not the foreman's.
   RUN_SEQ=$((RUN_SEQ+1))
@@ -203,7 +193,7 @@ main() {
   RUN_SEQ=$((RUN_SEQ+1))
   OUT="$(env HERDR_ENV=1 HERDR_BIN="$FAKE" XDG_STATE_HOME="$TMP/xdg/state" XDG_CONFIG_HOME="$TMP/xdg/config" \
     bash "$SCRIPT" worker "$TMP/reports/caf"$'\xc3\xa9'"-"$'\xc3\x85'".md" 2>"$TMP/e6g")"; RC=$?
-  if [[ $RC -eq 0 ]] && ! grep -q "control character" "$TMP/e6g"; then
+  if [[ $RC -eq 5 ]] && ! grep -q "control character" "$TMP/e6g"; then
     pass; else fail "non-ASCII path: expected it to be asked, got RC=$RC ERR=$(cat "$TMP/e6g")"; fi
 
   # 7. Outside Herdr.
@@ -213,19 +203,25 @@ main() {
 
   # 8. A herdr failure is never a verdict about the worker.
   run FAKE_GET_ERR=1
-  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "agent_not_found"; then
+  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "herdr agent get failed" \
+     && ! printf '%s' "$ERRTEXT" | grep -q "agent_not_found"; then
     pass; else fail "herdr failure: expected exit 2, got RC=$RC OUT=$OUT"; fi
+
+  # An arbitrary status is unavailable evidence, never diagnostic prose.
+  run FAKE_STATUS=opaque-sensitive-status
+  if [[ $RC -eq 3 ]] && printf '%s' "$OUT" | jq -e '.state == "unknown" and .sent == false' >/dev/null 2>&1 \
+     && [[ "$ERRTEXT" != *opaque-sensitive-status* && "$OUT" != *opaque-sensitive-status* ]]; then
+    pass; else fail "unknown status: expected a private, non-sending refusal, got RC=$RC"; fi
 
   # 9. An unreadable payload is a tool failure too.
   run FAKE_GET_BAD=1
   if [[ $RC -eq 2 && -z "$OUT" ]]; then
     pass; else fail "bad payload: expected exit 2, got RC=$RC OUT=$OUT"; fi
 
-  # 9b. A refused prompt (the agent went blocked between the read and the send)
-  #     is surfaced, never reported as sent.
+  # 9b. Even a transport configured to reject a prompt is never invoked.
   run FAKE_STATUS=idle FAKE_PROMPT_ERR=1
-  if [[ $RC -eq 2 && -z "$OUT" ]] && printf '%s' "$ERRTEXT" | grep -q "agent_blocked"; then
-    pass; else fail "prompt refused: expected exit 2, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+  if [[ $RC -eq 5 ]] && ! printf '%s' "$ARGVTEXT" | grep -q "agent prompt"; then
+    pass; else fail "unsupported prompt: expected no call, got RC=$RC OUT=$OUT ARGV=$ARGVTEXT"; fi
 
   # 10. A pane too narrow for the marker is refused before anything is sent.
   run FAKE_STATUS=idle FAKE_WIDTH=40
@@ -234,8 +230,8 @@ main() {
      && printf '%s' "$ERRTEXT" | grep -q "40 columns"; then
     pass; else fail "narrow pane: expected exit 4 with nothing sent, got RC=$RC OUT=$OUT ARGV=$ARGVTEXT ERR=$ERRTEXT"; fi
 
-  # 11. The owner's own need is enough: a pane that wide is asked, one column
-  #     narrower is not. Its setup measures the need itself through the
+  # 11. Exact width reaches capability refusal; a narrower pane fails width
+  #     inspection. Its setup measures the need itself through the
   #     sibling foreman.sh, independent of check 10.
   local fit needed
   fit="$(env XDG_STATE_HOME="$TMP/xdg/state" XDG_CONFIG_HOME="$TMP/xdg/config" FAKE_WIDTH=1 \
@@ -243,9 +239,9 @@ main() {
     --agent worker --report "$REPORT")" || die "foreman marker-fit setup failed"
   needed="$(printf '%s' "$fit" | jq -er '.needed')" || die "could not read the needed columns from: $fit"
   run FAKE_STATUS=idle FAKE_WIDTH="$needed"
-  if [[ $RC -eq 0 ]] && printf '%s' "$OUT" | jq -e '.sent == true' >/dev/null 2>&1 \
-     && printf '%s' "$ARGVTEXT" | grep -q "agent prompt worker"; then
-    pass; else fail "exact fit: expected a ${needed}-column pane to be asked, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+  if [[ $RC -eq 5 ]] && printf '%s' "$OUT" | jq -e '.sent == false and .reason == "atomic_prompt_unavailable"' >/dev/null 2>&1 \
+     && ! printf '%s' "$ARGVTEXT" | grep -q "agent prompt worker"; then
+    pass; else fail "exact fit: expected capability refusal, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
   run FAKE_STATUS=idle FAKE_WIDTH="$((needed - 1))"
   if [[ $RC -eq 4 ]] && ! printf '%s' "$ARGVTEXT" | grep -q "agent prompt"; then
     pass; else fail "one short: expected a $((needed - 1))-column pane to be refused, got RC=$RC OUT=$OUT"; fi
@@ -265,16 +261,14 @@ main() {
      && [[ "$(printf '%s\n' "$ARGVTEXT" | grep -c "agent get")" -eq 3 ]]; then
     pass; else fail "working at the send: expected exit 3 with nothing sent, got RC=$RC OUT=$OUT ARGV=$ARGVTEXT ERR=$ERRTEXT"; fi
 
-  # 11d. The last read sits immediately before the send: the prompt call is
-  #      the very next herdr call after that third `agent get`.
-  #      The prompt text spans lines, so only lines naming a herdr call count.
+  # 11d. Repeated readiness observations still authorize no input.
   local calls
   run FAKE_STATUS_SEQ="idle" FAKE_GET_COUNT="$TMP/get-count.$((RUN_SEQ+1))"
   calls="$(printf '%s\n' "$ARGVTEXT" | grep -E '^(agent|pane) ')"
-  if [[ $RC -eq 0 ]] && [[ "$(printf '%s\n' "$calls" | tail -n 2 | head -n 1)" == "agent get worker" ]] \
+  if [[ $RC -eq 5 ]] && [[ "$(printf '%s\n' "$calls" | tail -n 1)" == "agent get worker" ]] \
      && [[ "$(printf '%s\n' "$calls" | grep -c "^agent get")" -eq 3 ]] \
-     && printf '%s\n' "$calls" | tail -n 1 | grep -q "^agent prompt worker"; then
-    pass; else fail "read before send: expected agent get then agent prompt last, got RC=$RC ARGV=$ARGVTEXT"; fi
+     && ! printf '%s\n' "$calls" | grep -qE 'agent prompt|send-text|send-keys'; then
+    pass; else fail "repeated idle: expected no input, got RC=$RC ARGV=$ARGVTEXT"; fi
 
   # 11e. A failed last read fails closed: exit 2, nothing sent.
   run FAKE_STATUS_SEQ="idle idle ERR" FAKE_GET_COUNT="$TMP/get-count.$((RUN_SEQ+1))"

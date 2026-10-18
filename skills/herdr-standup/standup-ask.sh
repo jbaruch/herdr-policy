@@ -1,33 +1,20 @@
 #!/usr/bin/env bash
-# Ask one worker for its standup, as a plain message.
+# Check one worker's readiness for a standup without sending unsafe input.
 #
-# The prompt is fixed text, the reply shape is fixed, and the report path is
-# the worker's only channel back — so the whole thing is one deterministic
-# send (`rules/script-delegation.md`). What the foreman does with the answers is
-# the reasoning part, and that stays in the skill.
-#
-# The prompt goes out as a MESSAGE, never a slash command: a standup question
-# is prose, and every slash-delivery quirk this fleet has hit (Grok reading a
-# pasted `/usage` as chat, Codex swallowing the Enter behind its autocomplete)
-# belongs to commands, not messages.
-#
-# Residual gap (#585): Herdr has no readiness-guarded send. `herdr agent
-# prompt` itself rejects a worker already `blocked` (agent_blocked, exit 2
-# here) but submits to one that is `working`. The script reads the status
-# again immediately before the send and fails closed on anything but idle or
-# done, so the window is the gap between that `agent get` and the `agent
-# prompt` call. A turn that starts inside it still receives the question.
-# Closing it needs a check-and-prompt operation in Herdr itself.
+# Herdr 0.9.2's protocol-22 AgentPromptParams has no readiness precondition.
+# A read followed by agent prompt cannot prove the worker stayed idle. This
+# entrypoint retains its readiness/path/width diagnostics but refuses delivery
+# with exit 5 until a tested atomic transport exists. Use the round log for the
+# row; never fall back to an unguarded prompt or direct pane input.
 #
 # Contract:
 #   argv  : <agent-name> <report-path>
-#           report-path must be absolute; the worker writes its four lines there.
-#   stdout: one JSON object on exits 0, 3 and 4 —
-#           {"agent":"<n>","report_path":"<p>","state":"<s>","sent":true}
+#           report-path must be absolute; checked without writing a report.
+#   stdout: one JSON object on exits 3, 4 and 5 —
+#           {"agent":"<n>","report_path":"<p>","state":"<s>","sent":false}
 #           exit 4 adds "pane_width" and "needed" (columns) with sent false.
 #   stderr: diagnostics only.
-#   exit  : 0 the prompt was accepted by a worker that was idle or done,
-#           1 precondition unmet (usage, relative, over-long or control-character
+#   exit  : 1 precondition unmet (usage, relative, over-long or control-character
 #             path, not inside Herdr,
 #             `herdr`, `jq` or the sibling foreman.sh absent),
 #           2 a herdr failure, an unreadable `agent get` payload, or a failed
@@ -40,6 +27,8 @@
 #           4 the worker's live pane is too narrow for its `REPORT: <path>`
 #             line — nothing was sent. A wrapped marker is one the wait can
 #             never confirm.
+#           5 readiness was observed, but atomic readiness-guarded delivery is
+#             unavailable; reason=atomic_prompt_unavailable, nothing sent.
 #   env   : HERDR_BIN overrides the herdr binary; the tests point it at a fake.
 #           It reaches `foreman marker-fit` as --herdr-bin, and PY_BIN passes
 #           through to the foreman launcher. marker-fit reads no foreman home.
@@ -90,23 +79,6 @@ cleanup() {
   return 0
 }
 
-# The standup question. One message, four lines back, each capped so the table
-# stays readable and a worker cannot answer with an essay.
-standup_prompt() { # <report-path>
-  printf '%s' "\
-Daily standup. Answer with EXACTLY four lines, nothing before or after, and \
-write the same four lines to ${1} (create the parent directory if needed):
-
-DONE: <what you finished since the last standup, at most 25 words>
-PLAN: <what you are doing next, at most 20 words>
-BLOCKED: <what is blocking you, or the single word none>
-REPORT: ${1}
-
-No preamble, no markdown, no bullet points. If you have done nothing since the \
-last standup, say so in DONE. Do not start any new work: answer, write the \
-file, and stop."
-}
-
 # True when the text holds a character that breaks a one-row marker: a
 # Unicode Cc control (C0 and DEL through the C locale's [[:cntrl:]], C1
 # U+0080..U+009F by its UTF-8 bytes C2 80..9F) or the line and paragraph
@@ -126,7 +98,7 @@ read_state() {
   READ_STATE=""
   raw="$("$HERDR_BIN" agent get "$AGENT" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} agent get ${AGENT}\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — run \`${HERDR_BIN} agent list\` to see the live names"
+    warn "herdr agent get failed (exit ${rc}) — inspect herdr agent list and restore the selected owner before retrying; nothing was sent"
     return 2
   fi
   rc=0
@@ -134,10 +106,12 @@ read_state() {
     if (.result.agent | type) != "object" then
       error("herdr agent get payload has no .result.agent object")
     else
-      .result.agent.agent_status // "unknown"
+      .result.agent.agent_status as $status |
+      if (["idle", "working", "blocked", "done", "unknown"] | index($status)) == null
+      then "unknown" else $status end
     end' 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "could not read the state from the herdr agent get payload (jq exit ${rc}): $(tr '\n' ' ' < "$ERRFILE")"
+    warn "could not read the state from herdr agent get (jq exit ${rc}) — restore its supported JSON response; nothing was sent"
     return 2
   fi
   return 0
@@ -215,7 +189,7 @@ main() {
   rc=0
   fit="$(bash "$FOREMAN" marker-fit --herdr-bin "$HERDR_BIN" --agent "$AGENT" --report "$REPORT_PATH" 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "\`foreman marker-fit\` for ${AGENT} failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — nothing was sent"
+    warn "foreman marker-fit failed (exit ${rc}) — inspect that owner's measurement before retrying; nothing was sent"
     return 2
   fi
   rc=0
@@ -227,11 +201,12 @@ main() {
       "\(.fits) \(.pane_width) \(.needed) \(.agent_status)"
     end' 2>"$ERRFILE")" || rc=$?
   if (( rc != 0 )); then
-    warn "could not read the \`foreman marker-fit\` verdict (jq exit ${rc}): $(tr '\n' ' ' < "$ERRFILE") — nothing was sent"
+    warn "could not read the foreman marker-fit verdict (jq exit ${rc}) — restore its supported JSON response; nothing was sent"
     return 2
   fi
   local fresh
   read -r fits width needed fresh <<<"$verdict"
+  case "$fresh" in idle|working|blocked|done|unknown) ;; *) fresh=unknown ;; esac
   # The measurement read the worker again. A turn that started since the
   # first read wins over the ask, exactly as a busy first read does.
   if [[ " $READY_STATES " != *" $fresh "* ]]; then
@@ -248,9 +223,8 @@ main() {
     return 4
   fi
 
-  # Last read, immediately before the send. Herdr has no check-and-prompt, so
-  # this narrows the window to the gap between two herdr calls; the header
-  # names what that gap still lets through. A failed read sends nothing.
+  # Preserve the final readiness diagnostic. Another read cannot turn it into
+  # atomic delivery authority; even three idle reads authorize no prompt.
   if ! read_state; then
     warn "nothing was sent"
     return 2
@@ -262,16 +236,10 @@ main() {
     return 3
   fi
 
-  rc=0
-  "$HERDR_BIN" agent prompt "$AGENT" "$(standup_prompt "$REPORT_PATH")" >/dev/null 2>"$ERRFILE" || rc=$?
-  if (( rc != 0 )); then
-    warn "\`${HERDR_BIN} agent prompt ${AGENT}\` failed (exit ${rc}): $(tr '\n' ' ' < "$ERRFILE")"
-    return 2
-  fi
-
+  warn "Atomic readiness-guarded standup delivery is unavailable — fill the row from the round log. Do not retry through agent prompt or pane input."
   jq -n --arg a "$AGENT" --arg p "$REPORT_PATH" --arg s "$state" \
-    '{agent: $a, report_path: $p, state: $s, sent: true}'
-  return 0
+    '{agent: $a, report_path: $p, state: $s, sent: false, reason: "atomic_prompt_unavailable"}'
+  return 5
 }
 
 # Entry-point guard (rules/file-hygiene.md Standalone Scripts).

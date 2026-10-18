@@ -4,6 +4,14 @@
 
 The target pair is coding-policy 0.4.0 and herdr-policy 0.2.0. Coding-policy 0.3.406 is the last monolithic reference used for extraction. Never activate both versions' team hooks together. Confirm each channel independently before changing a consumer's declared dependencies.
 
+One safety correction changes standup asking: the extracted entrypoint never
+sends an unguarded prompt. Herdr 0.9.2's protocol-22 prompt request has no atomic
+readiness condition. Ready, sufficiently wide workers receive an explicit exit-5
+refusal and the skill fills their rows from the round log. Existing report
+rendering remains available; this release does not claim an atomic prompt API.
+Transport traces and errors also withhold operands and server prose, retaining
+static operation metadata and recognized recovery codes.
+
 ## Prepare
 
 Record the installed versions, managed native files and hooks, the active coordinator identity, selected task/stage, pending deliveries, holds and recovery obligations. Preserve the ledger, reports, supervision store, receipts and operator-owned configuration. Review installed outputs, not just source manifests.
