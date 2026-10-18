@@ -1,5 +1,7 @@
 .github/
 docs/
+scripts/
+tests/
 AGENTS.md
 agent-plugin.yaml
 .editorconfig
