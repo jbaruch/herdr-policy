@@ -85,7 +85,7 @@ main() (
   }
   package_tmp="$package_dir/$filename"
   # The EXIT trap invokes this local helper indirectly.
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   cleanup() {
     if [[ -n "$package_tmp" ]] && ! rm -f "$package_tmp"; then
       review_package_warn "could not remove temporary file ${package_tmp} — remove it after inspection"

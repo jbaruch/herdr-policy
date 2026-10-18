@@ -18,6 +18,7 @@ jobs:
     secrets: inherit
   tessl:
     needs: gates
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7; Dependabot weekly
@@ -29,17 +30,17 @@ jobs:
       # Review these shared release-action pins monthly in a dedicated compatibility PR.
       - name: Capture original registry baseline
         id: baseline
-        uses: jbaruch/coding-policy/.github/actions/publish-landed-gate@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        uses: jbaruch/coding-policy/.github/actions/publish-landed-gate@894668183834d39a117bea893058820fb9e9a630
         with:
           phase: capture
       - name: Publish explicit manifest version
         id: publish
         continue-on-error: true
-        uses: jbaruch/coding-policy/.github/actions/smart-publish@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        uses: jbaruch/coding-policy/.github/actions/smart-publish@894668183834d39a117bea893058820fb9e9a630
         with:
           mode: as-is
       - name: Confirm Tessl publication
-        uses: jbaruch/coding-policy/.github/actions/publish-landed-gate@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        uses: jbaruch/coding-policy/.github/actions/publish-landed-gate@894668183834d39a117bea893058820fb9e9a630
         with:
           phase: confirm
           baseline: ${{ steps.baseline.outputs.baseline }}
@@ -65,7 +66,7 @@ jobs:
         run: GOBIN="$RUNNER_TEMP/acr-bin" go install github.com/jbaruch/agentic-context-registry/cmd/acr@f8dffcecc0eb98f13b2d7d90cd399f99208becf2
       - name: Publish immutable ACR tag and asset
         # Pin the reviewed publisher owner; renew monthly with coding-policy releases.
-        uses: jbaruch/coding-policy/.github/actions/publish-acr@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        uses: jbaruch/coding-policy/.github/actions/publish-acr@894668183834d39a117bea893058820fb9e9a630
         env:
           GH_TOKEN: ${{ github.token }}
         with:

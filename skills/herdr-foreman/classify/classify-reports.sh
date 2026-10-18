@@ -47,7 +47,12 @@ HERE="${HERE%x}"
 HERE="${HERE%$'\n'}"
 
 SCRATCH=""
-cleanup() { if [ -n "$SCRATCH" ]; then rm -rf "$SCRATCH"; fi; return 0; }
+cleanup() {
+  if [[ -n "$SCRATCH" ]] && ! rm -rf "$SCRATCH"; then
+    echo "classify-reports: warning: could not remove ${SCRATCH}; inspect and remove it manually" >&2
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 die() { echo "classify-reports: $*" >&2; exit 2; }
@@ -56,7 +61,12 @@ main() {
   local agent="" reports=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --agent) agent="${2-}"; shift 2 || die "--agent needs jev, codex, claude or grok" ;;
+      --agent)
+        case "${2-}" in
+          jev|codex|claude|grok) agent="$2"; shift 2 ;;
+          *) die "--agent needs jev, codex, claude or grok" ;;
+        esac
+        ;;
       -h|--help) sed -n '2,31p' "${BASH_SOURCE[0]}"; exit 0 ;;
       --*) die "unknown option '$1'" ;;
       *) reports+=("$1"); shift ;;

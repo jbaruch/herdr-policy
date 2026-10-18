@@ -85,7 +85,12 @@ SWEEP_BUDGET_SEC=600
 SCRATCH=""
 # An EXIT trap's final status becomes the script's, so cleanup ends on zero and
 # never rewrites the verdict (rules/error-handling.md Shell Error Handling).
-cleanup() { [ -n "$SCRATCH" ] && rm -rf "$SCRATCH"; return 0; }
+cleanup() {
+  if [[ -n "$SCRATCH" ]] && ! rm -rf "$SCRATCH"; then
+    echo "round-preflight: warning: could not remove ${SCRATCH}; inspect and remove it manually" >&2
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 die() { echo "round-preflight: $*" >&2; exit 2; }

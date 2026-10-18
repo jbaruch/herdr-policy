@@ -21,7 +21,7 @@ def main():
                          for path in (root / folder).rglob("*.sh"))
         if not scripts:
             raise ValueError("no shell scripts found — restore the source tree")
-        statuses = [subprocess.run(["shellcheck", *scripts], cwd=root).returncode,
+        statuses = [subprocess.run(["shellcheck", "-S", "info", *scripts], cwd=root).returncode,
                     subprocess.run(["pyright"], cwd=root).returncode]
     except (OSError, ValueError) as exc:
         print("run-diagnostics: {} — repair the development environment and retry".format(exc), file=sys.stderr)

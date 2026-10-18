@@ -23,15 +23,21 @@ BOOTSTRAP = "github:jbaruch/herdr-policy@8c7ab1f2182033fdc7de3c6dcb4624d1f31f598
 IDENTITY = "acr__jbaruch__herdr-policy__"
 
 
-def command(*arguments, env=None, input_text=None):
+class BehaviorFailure(RuntimeError):
+    """An installed operation failed after its tooling and source were prepared."""
+
+
+def command(*arguments, env=None, input_text=None, check_behavior=False):
     result = subprocess.run(arguments, input=input_text, capture_output=True, text=True, env=env)
     if result.returncode:
-        raise OSError("{} exited {}: {}".format(arguments[0], result.returncode, result.stderr.strip()))
+        failure = BehaviorFailure if check_behavior else OSError
+        raise failure("{} exited {}: {}".format(arguments[0], result.returncode, result.stderr.strip()))
     return result.stdout
 
 
 def acr(operation, project, *arguments):
-    return json.loads(command("acr", operation, *arguments, "--project", str(project), "--json"))
+    return json.loads(command("acr", operation, *arguments, "--project", str(project), "--json",
+                              check_behavior=operation in ("realize", "check", "uninstall")))
 
 
 def revision(value):
@@ -83,14 +89,14 @@ def exercise(project, agent, host, herdr_source, coding_source):
                                 text=True, capture_output=True)
         if (result.returncode, result.stdout, result.stderr) != (0, "", ""):
             raise ValueError("{}: standalone {} consulted team prerequisites".format(agent, event))
-        command("bash", str(path), event, env={**environment, "HERDR_ENV": "1"},
+        command("bash", str(path), event, env={**environment, "HERDR_ENV": "1"}, check_behavior=True,
                 input_text='{"session_id":"isolated-fixture","prompt":"Ordinary prompt"}\n')
     # Execute the installed owner with development trees physically absent.
-    json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment))
+    json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment, check_behavior=True))
     if coding_source:
         environment.pop("HERDR_CODING_POLICY_ROOT", None)
         inputs = json.loads(command("python3", str(skill / "policy-paths.py"), "brief-inputs",
-                                    "--shared", str(project), env=environment))
+                                    "--shared", str(project), env=environment, check_behavior=True))
         release = project / host / "skills/acr__jbaruch__coding-policy__release"
         if inputs["POLICY_INDEX"] != str(release / "POLICY.md"):
             raise ValueError("{}: unrelated native instructions replaced the selected general policy".format(agent))
@@ -101,7 +107,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
             raise ValueError("{}: generic hook bundle is incomplete".format(agent))
         for path in general_hooks:
             event = "session-start" if "session-start" in path.parent.name else "stop-handoff"
-            command("bash", str(path), event, env=environment, input_text='{"stop_hook_active":true}\n')
+            command("bash", str(path), event, env=environment, check_behavior=True, input_text='{"stop_hook_active":true}\n')
     acr("check", project)
     acr("uninstall", project, "github:jbaruch/herdr-policy")
     acr("realize", project)
@@ -125,7 +131,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix="herdr-acr-conformance-") as scratch:
             for agent, host in (("codex", ".codex"), ("claude-code", ".claude"), ("cursor", ".cursor")):
                 outcomes.append(exercise(Path(scratch).resolve() / agent, agent, host, args.herdr_source, args.coding_source))
-    except ValueError as exc:
+    except (ValueError, BehaviorFailure) as exc:
         print("check-installations: {} — fix package behavior before publication".format(exc), file=sys.stderr)
         print(json.dumps({"passed": False, "adapters": outcomes, "error": str(exc)}))
         return 1

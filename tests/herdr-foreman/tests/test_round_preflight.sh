@@ -93,7 +93,12 @@ run() { # <dir> [extra args...]
 field() { printf '%s' "$1" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(eval(sys.argv[1])))' "$2"; }
 
 # An EXIT trap's final status becomes the script's, so cleanup ends on zero.
-cleanup() { if [ -n "${TMP:-}" ]; then rm -rf "$TMP"; fi; return 0; }
+cleanup() {
+  if [[ -n "${TMP:-}" ]] && ! rm -rf "$TMP"; then
+    echo "test_round_preflight: warning: could not remove ${TMP}; inspect and remove it manually" >&2
+  fi
+  return 0
+}
 
 main() {
   TMP="$(mktemp -d "${TMPDIR:-/tmp}/preflight-tests.XXXXXX")" || die "mktemp"

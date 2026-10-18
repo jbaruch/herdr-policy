@@ -66,7 +66,12 @@ HERE="${HERE%x}"
 HERE="${HERE%$'\n'}"
 
 SCRATCH=""
-cleanup() { if [ -n "$SCRATCH" ]; then rm -rf "$SCRATCH"; fi; return 0; }
+cleanup() {
+  if [[ -n "$SCRATCH" ]] && ! rm -rf "$SCRATCH"; then
+    echo "evaluate: warning: could not remove ${SCRATCH}; inspect and remove it manually" >&2
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 die() { echo "evaluate: $*" >&2; exit 2; }

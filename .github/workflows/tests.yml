@@ -50,7 +50,7 @@ jobs:
         env:
           HERDR_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           GH_TOKEN: ${{ github.token }}
-        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" python3 scripts/check-installations.py --herdr-source "github:jbaruch/herdr-policy@$HERDR_REVISION" --coding-source github:jbaruch/coding-policy@e2f15531e1cc7df60911eeb3b4ba3971bf3119a0
+        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" python3 scripts/check-installations.py --herdr-source "github:jbaruch/herdr-policy@$HERDR_REVISION" --coding-source github:jbaruch/coding-policy@894668183834d39a117bea893058820fb9e9a630
       # Canonical changed-skills loop; the protected publisher uses the same gate.
       - name: Review changed Tessl skills
         uses: jbaruch/coding-policy/.github/actions/skill-review@9101b94c189c265ea61c82c071cb34b0e1c9fc32

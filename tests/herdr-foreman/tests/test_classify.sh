@@ -93,7 +93,12 @@ classify() { # <bin-dir> <report> [extra args...]
 field() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$2"; }
 
 # An EXIT trap's final status becomes the script's, so cleanup ends on zero.
-cleanup() { if [ -n "${TMP:-}" ]; then rm -rf "$TMP"; fi; return 0; }
+cleanup() {
+  if [[ -n "${TMP:-}" ]] && ! rm -rf "$TMP"; then
+    echo "test_classify: warning: could not remove ${TMP}; inspect and remove it manually" >&2
+  fi
+  return 0
+}
 
 main() {
   # The suite never reaches TypeSafe, whatever the runner's environment holds.
@@ -106,6 +111,20 @@ main() {
   printf '# Reviewer report\n\nB1: the parser accepts a quoted completion marker.\n' > "$report" \
     || die "write report fixture"
   printf '# Tester report\n\nNo blocking findings.\n' > "$second" || die "write second report"
+
+  echo "▶ invalid batch adapters are usage errors" >&2
+  local invalid_adapter
+  for invalid_adapter in "" gemini; do
+    OUT="$(bash "$DIR/classify-reports.sh" --agent "$invalid_adapter" "$report" 2>"$ERRFILE")"
+    RC=$?
+    ERRTEXT="$(cat "$ERRFILE")"
+    if [[ $RC -eq 2 && -z "$OUT" && "$ERRTEXT" == *"needs jev, codex, claude or grok"* ]]; then
+      pass; else fail "invalid adapter must be a usage error, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+  done
+  OUT="$(bash "$DIR/classify-reports.sh" --agent "" --agent codex "$report" 2>"$ERRFILE")"
+  RC=$?
+  if [[ $RC -eq 2 && -z "$OUT" ]]; then
+    pass; else fail "a later valid adapter must not hide an invalid earlier value, got RC=$RC OUT=$OUT"; fi
 
   echo "▶ the answer contract" >&2
 
