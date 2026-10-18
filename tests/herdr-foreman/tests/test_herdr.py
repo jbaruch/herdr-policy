@@ -709,6 +709,18 @@ class TraceRedactionTest(unittest.TestCase):
 
 
 class DiagnosticPrivacyTest(unittest.TestCase):
+    def test_malformed_lookup_shapes_withhold_selected_operands(self):
+        marker = "opaque-private-lookup-operand"
+        for method, response in (("agent_get", {"agent": None}), ("pane_get", {"pane": None}),
+                                 ("pane_width", {"layout": {"panes": []}})):
+            with self.subTest(method=method):
+                runner = FakeRunner()
+                operation = {"agent_get": "agent get", "pane_get": "pane get", "pane_width": "pane layout"}[method]
+                runner.set(operation, stdout=json.dumps({"result": response}))
+                with self.assertRaises(HerdrError) as caught:
+                    getattr(HerdrClient(runner=runner), method)(marker)
+                self.assertNotIn(marker, json.dumps(caught.exception.to_dict()))
+
     def test_arbitrary_sensitive_values_never_enter_errors_or_trace(self):
         marker = "opaque-sensitive-value-without-a-credential-pattern"
         cases = [

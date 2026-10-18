@@ -365,10 +365,9 @@ class HerdrClient:
         if delivery == SLASH_DELIVERY_TYPE:
             return self.argv_send_slash_command(pane_id, text, enter_count=enter_count)
         raise HerdrError(
-            "Unknown slash_delivery {!r} for agent {!r} - use {}.".format(
-                delivery, agent_name, " or ".join(repr(v) for v in SLASH_DELIVERIES)
-            ),
-            {"agent": agent_name, "slash_delivery": delivery},
+            "Unknown slash_delivery - set the selected worker's configuration to {}.".format(
+                " or ".join(repr(v) for v in SLASH_DELIVERIES)),
+            {},
         )
 
     def argv_pane_wait_output(self, pane_id, regex=None, match=None, source=None, lines=None, timeout_ms=None):
@@ -376,7 +375,7 @@ class HerdrClient:
             raise HerdrError(
                 "pane wait-output needs exactly one of --regex or --match - "
                 "pass a marker pattern for the agent's usage report.",
-                {"pane_id": pane_id},
+                {},
             )
         argv = self._argv("pane", "wait-output")
         if regex is not None:
@@ -623,9 +622,9 @@ class HerdrClient:
         agent = result.get("agent")
         if not isinstance(agent, dict):
             raise HerdrError(
-                "herdr agent get {} returned no agent record - confirm the name "
-                "with `herdr agent list`.".format(name),
-                {"agent": name},
+                "herdr agent get returned no agent record - confirm the selected name "
+                "with `herdr agent list`.",
+                {},
             )
         return agent
 
@@ -634,7 +633,7 @@ class HerdrClient:
         result = self._run_json(self._argv("pane", "get", pane_id))
         pane = result.get("pane")
         if not isinstance(pane, dict):
-            raise HerdrError("herdr pane get returned no pane record; restore the pane connection.", {"pane": pane_id})
+            raise HerdrError("herdr pane get returned no pane record; restore the pane connection.", {})
         return pane
 
     def argv_pane_layout(self, pane_id):
@@ -654,9 +653,9 @@ class HerdrClient:
                 if isinstance(width, int) and not isinstance(width, bool) and width > 0:
                     return width
         raise HerdrError(
-            "herdr pane layout returned no width for {}; inspect `herdr pane layout --pane {}` "
-            "and restore the pane before dispatch.".format(pane_id, pane_id),
-            {"pane": pane_id},
+            "herdr pane layout returned no width; inspect the selected pane's layout "
+            "and restore its connection before dispatch.",
+            {},
         )
 
     def pane_read(self, pane_id, lines):
@@ -771,10 +770,9 @@ class HerdrClient:
         if delivery == SLASH_DELIVERY_TYPE:
             return self.send_slash_command(pane_id, text, enter_count=enter_count, before_input=before_input, after_submit=after_submit)
         raise HerdrError(
-            "Unknown slash_delivery {!r} for agent {!r} - use {}.".format(
-                delivery, agent_name, " or ".join(repr(v) for v in SLASH_DELIVERIES)
-            ),
-            {"agent": agent_name, "slash_delivery": delivery},
+            "Unknown slash_delivery - set the selected worker's configuration to {}.".format(
+                " or ".join(repr(v) for v in SLASH_DELIVERIES)),
+            {},
         )
 
     def pane_wait_output(self, pane_id, regex=None, match=None, source=None, lines=None, timeout_ms=None):
