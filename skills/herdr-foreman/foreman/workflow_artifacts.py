@@ -307,6 +307,20 @@ def _stage_path(lifecycle):
     return Path(lifecycle["quarantine"])
 
 
+def _unrecorded_stage(lifecycle, intent):
+    """Read back an interrupted allocation at this intent's exact private path."""
+    final = _final_path(lifecycle)
+    if final.exists() or final.is_symlink():
+        raise UsageError("An unexpected final quarantine exists before allocation settled; preserve both paths.", {})
+    with _directory(lifecycle["quarantine"]) as descriptor:
+        if descriptor is None:
+            return None
+        info = os.fstat(descriptor)
+        if not intent["effects_started"] or stat.S_IMODE(info.st_mode) != 0o700 or _names(descriptor):
+            raise UsageError("Preserve an unrecorded quarantine unless this started intent identifies its exact private, empty directory.", {})
+        return _identity(info)
+
+
 def preflight(service, state, progress):
     """Read original or quarantined targets before recording an effect boundary."""
     lifecycle, intent = progress["delivery"]["artifacts"], progress["pending"]
@@ -315,10 +329,7 @@ def preflight(service, state, progress):
     rows = {row["name"]: row for row in lifecycle["remaining"]}
     with ExitStack() as held:
         if lifecycle["stage"] is None:
-            path = Path(lifecycle["quarantine"])
-            if (path.exists() or path.is_symlink() or _final_path(lifecycle).exists()
-                    or _final_path(lifecycle).is_symlink()):
-                raise UsageError("An unrecorded quarantine already exists; preserve it instead of adopting another owner's directory.", {})
+            _unrecorded_stage(lifecycle, intent)
             directory = held.enter_context(_directory(root))
             _check_directory(directory, lifecycle["root"])
             stage, names, stage_names, quarantined = None, set(_names(directory)), set(), False
@@ -369,10 +380,16 @@ def _resume(service, state, progress, *, checkpoint, before_effect):
     root, quarantine = Path(service.document["artifact_directory"]), Path(lifecycle["quarantine"])
     before_effect()
     if lifecycle["stage"] is None:
-        os.mkdir(quarantine, 0o700)
+        allocated = _unrecorded_stage(lifecycle, intent)
+        if allocated is None:
+            os.mkdir(quarantine, 0o700)
         with _directory(quarantine) as stage:
             if stage is None:
                 raise StateError("The newly created quarantine moved before its identity was recorded; preserve both paths and the intent.", {})
+            if allocated is not None:
+                _check_directory(stage, allocated)
+            if _names(stage) or stat.S_IMODE(os.fstat(stage).st_mode) != 0o700:
+                raise UsageError("The unrecorded quarantine changed before its checkpoint; preserve its contents and the original intent.", {})
             lifecycle["stage"] = _identity(os.fstat(stage))
             checkpoint()
     with _directory(_stage_path(lifecycle)) as stage:

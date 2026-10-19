@@ -381,6 +381,64 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertEqual(len([row for row in self.case.owner.state()["recovery"]["events"]
                                   if row["kind"] == "task_closed"]), 1)
 
+    def crash_after_quarantine_creation(self, runner):
+        original = os.mkdir
+        quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+        def interrupted(path, *args, **options):
+            original(path, *args, **options)
+            if Path(path) == quarantine:
+                raise SystemExit("Isolated crash before allocation checkpoint.")
+        with patch.object(workflow_artifacts.os, "mkdir", side_effect=interrupted):
+            with self.assertRaises(SystemExit):
+                runner.tick()
+        self.assertIsNone(self.case.progress()["delivery"]["artifacts"]["stage"])
+        self.assertTrue(self.case.progress()["pending"]["effects_started"])
+        return quarantine
+
+    def test_quarantine_allocation_crash_resumes_the_original_intent(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            intent_id = self.case.progress()["pending"]["id"]
+            assignments = len(self.case.owner.state()["assignments"])
+            quarantine = self.crash_after_quarantine_creation(runner)
+            self.assertEqual(self.case.progress()["pending"]["id"], intent_id)
+            restarted = self.runner(capability)
+            self.case.advance(restarted, lambda: self.case.progress()["phase"] == "complete")
+            self.assertFalse(root.exists())
+            self.assertFalse(quarantine.exists())
+            self.assertEqual(len(self.case.owner.state()["assignments"]), assignments)
+
+    def test_unrecorded_quarantine_with_foreign_contents_is_preserved(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            quarantine = self.crash_after_quarantine_creation(runner)
+            foreign = quarantine / "operator-notes.md"
+            foreign.write_bytes(b"Preserve this owner.\n")
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(self.runner(capability).tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual(foreign.read_bytes(), b"Preserve this owner.\n")
+            self.assertIsNone(self.case.progress()["delivery"]["artifacts"]["stage"])
+
+    def test_shared_unrecorded_quarantine_is_preserved(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            quarantine = self.crash_after_quarantine_creation(runner)
+            quarantine.chmod(0o750)
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(self.runner(capability).tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual(stat.S_IMODE(quarantine.stat().st_mode), 0o750)
+
     def test_directory_replacement_during_cleanup_preserves_both_owners(self):
         self.case.admit()
         with self.case.owner.session() as capability:
