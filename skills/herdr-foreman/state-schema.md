@@ -904,8 +904,9 @@ manifest. Task records in `load-set` use that same observational projection;
 the owner retains the full manifest. Native close records both report and
 delivery byte receipts in the existing enrollment resolution, checked against
 the durable close intent. Retirement requires those original receipts and all
-expected reports, delivery files, briefs, common text, plan and release review
-snapshots before any initial move. Missing or changed evidence refuses; older
+expected reports, delivery files, briefs, common text, plan and claimed release
+review snapshots before any initial move. Preparatory release outcomes need no
+snapshot file; an unclaimed file at that name stays protected. Missing or changed evidence refuses; older
 closures lacking a delivery receipt are preserved rather than adopted by name.
 Full lifecycle ownership is in `skills/herdr-foreman/references/progression.md`.
 A `complete` label without its matching merged task

@@ -174,12 +174,62 @@ class WorkflowReleaseTest(unittest.TestCase):
 
     def test_admission_preserves_the_exclusive_retirement_namespace(self):
         reserved = self.root / (".herdr-retire-" + "a" * 32)
-        self.case.document["artifact_directory"] = str(reserved)
+        events = list(self.case.native.events)
+        for selected in (reserved, reserved / "nested" / "new-task"):
+            with self.subTest(path=selected):
+                self.case.document["artifact_directory"] = str(selected)
+                with self.assertRaisesRegex(fixture.UsageError, "retirement namespace"):
+                    self.case.admit()
+        self.assertFalse(reserved.exists())
+        self.assertEqual(self.case.native.events, events)
+
+    def test_admission_preserves_a_reserved_namespace_reached_through_an_alias(self):
+        reserved = self.root / (".herdr-retire-" + "a" * 32)
+        reserved.mkdir(mode=0o700)
+        marker = reserved / "original-owner.md"
+        marker.write_text("Another lifecycle owns these bytes.\n")
+        alias = self.root / "alias"
+        alias.symlink_to(reserved, target_is_directory=True)
+        self.case.document["artifact_directory"] = str(alias / "new-task")
         events = list(self.case.native.events)
         with self.assertRaisesRegex(fixture.UsageError, "retirement namespace"):
             self.case.admit()
-        self.assertFalse(reserved.exists())
+        self.assertEqual(marker.read_text(), "Another lifecycle owns these bytes.\n")
+        self.assertFalse((reserved / "new-task").exists())
         self.assertEqual(self.case.native.events, events)
+
+    def test_ready_then_delivered_release_retires_only_claimed_review_snapshots(self):
+        self.case.admit()
+        ready_jobs = []
+        def deliver(job):
+            if job["role"] == "release" and not ready_jobs:
+                ready_jobs.append(job["id"])
+                return self.case.deliver(job, outcome="ready")
+            return self.deliver(job)
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "cleanup"
+                and self.case.progress()["delivery"]["cleanup_step"] == 5
+                and self.case.progress()["pending"] is None, delivery=deliver)
+            root = Path(self.case.document["artifact_directory"])
+            self.assertEqual(len(ready_jobs), 1)
+            preliminary = root / "reviews-{}.json".format(ready_jobs[0].replace(":", "-"))
+            self.assertFalse(preliminary.exists())
+            state = self.case.owner.state()
+            manifest = workflow_artifacts.inventory(runner, state, self.case.progress())
+            self.assertTrue(manifest["remaining"])
+            preliminary.write_bytes(b'{"foreign":"Unclaimed preliminary snapshot."}\n')
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            with self.assertRaisesRegex(fixture.UsageError, "unclaimed release snapshot"):
+                workflow_artifacts.inventory(runner, state, self.case.progress())
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            preliminary.unlink()
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete")
+            self.assertFalse(root.exists())
+            releases = [row for row in supervision.load(self.path)["members"]
+                        if row["id"].endswith(":release")]
+            self.assertEqual(len(releases), 2)
+            self.assertTrue(all(not row["active"] and row["resolution"] is not None for row in releases))
 
     def test_long_retirement_manifest_stays_out_of_current_context(self):
         self.case.admit()

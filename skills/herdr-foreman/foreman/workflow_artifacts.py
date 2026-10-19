@@ -209,13 +209,12 @@ def inventory(service, state, progress):
         known.update({Path(row["brief"]).name, report.name, delivery_name})
         if row["role"] == "release":
             review = "reviews-{}.json".format(identifier)
-            known.add(review)
             reviews[review] = report.name
     with _directory(root) as descriptor:
         if descriptor is None:
             raise StateError("The expected task artifacts are missing before retirement was recorded; preserve their owner receipts and reconcile the original evidence.", {})
         names = _names(descriptor)
-        if any(name not in known for name in names):
+        if any(name not in known | set(reviews) for name in names):
             raise UsageError("Unowned files remain in the task directory; preserve them and reconcile their purpose before cleanup.", {})
         if known - set(names):
             raise UsageError("Expected task evidence is missing before retirement was recorded; restore its exact bytes or reconcile it through its original owner.", {})
@@ -232,7 +231,13 @@ def inventory(service, state, progress):
             except UnicodeError:
                 raise UsageError("Preserve the unreadable release report and its review snapshot for owner reconciliation.", {}) from None
             expected = claim.get("review_evidence")
+            if expected is None:
+                if name in captured:
+                    raise UsageError("An unclaimed release snapshot remains; preserve it for its owner rather than adopting its predictable filename.", {})
+                continue
             recovery.validate_receipt(expected)
+            if name not in captured:
+                raise UsageError("Expected task evidence is missing before retirement: restore the closed release claim's original review snapshot.", {})
             if captured[name][0] != expected:
                 raise UsageError("The release review snapshot differs from its closed report's byte receipt; preserve both artifacts.", {})
         contents = {item[0]["path"]: item[1] for item in captured.values()}

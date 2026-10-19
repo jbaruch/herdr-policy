@@ -84,7 +84,8 @@ def contract(value, task):
     for captured in briefs.values():
         recovery.validate_receipt(captured)
     _absolute(value["artifact_directory"], "current workflow artifacts")
-    if Path(value["artifact_directory"]).name.startswith(".herdr-retire-"):
+    artifact = Path(value["artifact_directory"])
+    if any(part.startswith(".herdr-retire-") for path in (artifact, artifact.resolve()) for part in path.parts):
         raise UsageError("Reserve a task working directory outside the owner's private retirement namespace.", {})
     if Path(value["artifact_directory"]).resolve().is_relative_to(Path(repository["worktree"]).resolve()):
         raise UsageError("Keep current owner inputs outside the writer's checkout; implementation cannot replace its own workflow records.", {})
