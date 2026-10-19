@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-from .errors import UsageError
+from .errors import ForemanError, UsageError
 
 
 NATIVE_FOREMAN = "acr__jbaruch__herdr-policy__herdr-foreman"
@@ -123,9 +123,9 @@ def brief_inputs(skill_dir, shared, global_tessl, explicit_root=None):
 
 
 def main(argv=None):
-    """JSON-only lookup interface for shell owners; never executes a helper."""
+    """Read paths or current installation identity; never execute team work."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("release", "brief-inputs"))
+    parser.add_argument("operation", choices=("release", "brief-inputs", "identity"))
     parser.add_argument("--shared", type=Path, default=Path.cwd())
     parser.add_argument("--global-tessl", type=Path, default=Path.home() / ".tessl")
     parser.add_argument("--coding-policy-root", type=Path,
@@ -139,14 +139,21 @@ def main(argv=None):
             raise UsageError("Pass an existing absolute shared checkout and an absolute global Tessl root")
         if args.coding_policy_root is not None and not Path(args.coding_policy_root).is_absolute():
             raise UsageError("HERDR_CODING_POLICY_ROOT must be an absolute package root")
-        if args.operation == "release":
+        if args.operation == "identity":
+            from .native_policy import executing_policy_root
+            from .remote_owner import loaded_policy
+            root = executing_policy_root()
+            version, digest = loaded_policy(root)
+            result = {"schema_version": 1, "policy_root": str(root), "version": version, "digest": digest,
+                      "authorizes_dispatch": False}
+        elif args.operation == "release":
             result = {"release_skill": str(coding_release(skill, args.shared, args.global_tessl,
                                                          args.coding_policy_root))}
         else:
             result = brief_inputs(skill, args.shared, args.global_tessl, args.coding_policy_root)
-    except (OSError, UsageError) as exc:
+    except (OSError, ForemanError) as exc:
         print("policy-paths: {} — repair the selected installation before retrying".format(exc), file=sys.stderr)
-        if isinstance(exc, UsageError) and exc.details:
+        if isinstance(exc, ForemanError) and exc.details:
             print(json.dumps(exc.details), file=sys.stderr)
         return 2
     print(json.dumps(result))

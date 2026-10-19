@@ -145,6 +145,20 @@ def exercise(project, agent, host, herdr_source, coding_source):
                    "PYTHONDONTWRITEBYTECODE": "1", "WORKTREE_ROOT": str(project / "private-worktrees")}
     for key in ("HERDR_ENV", "HERDR_PANE_ID", "PYTHONPATH"):
         environment.pop(key, None)
+    # Run the installed identity reader with development sources absent from
+    # its interpreter path. The old package-root assumption failed here even
+    # though the package had realized successfully.
+    identity = json.loads(command("python3", str(skill / "policy-paths.py"), "identity", env=environment,
+                                  cwd=project, check_behavior=True))
+    if (identity.get("schema_version") != 1 or identity.get("policy_root") != str(skill)
+            or not isinstance(identity.get("version"), str) or not isinstance(identity.get("digest"), str)
+            or re.fullmatch(r"[a-f0-9]{64}", identity["digest"]) is None
+            or identity.get("authorizes_dispatch") is not False):
+        raise BehaviorFailure("{}: installed policy has no verified native identity".format(agent))
+    repeated_identity = json.loads(command("python3", str(skill / "policy-paths.py"), "identity", env=environment,
+                                           cwd=project, check_behavior=True))
+    if repeated_identity != identity:
+        raise BehaviorFailure("{}: unchanged installed policy identity is not stable".format(agent))
     skill_commands = {"herdr-policy": verify_skill_commands(
         project, host, "herdr-policy", "HS", ("herdr-foreman", "herdr-standup"), environment)}
     if coding_source:
