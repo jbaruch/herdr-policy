@@ -428,7 +428,7 @@ def build_parser():
     report_parser.add_argument("--pane", required=True)
     report_parser.add_argument("--report", required=True)
     report_parser.add_argument("--lines", type=int, required=True)
-    unavailable_parser = sub.add_parser("probe-unavailable", parents=[common], help="Read-only confirmation of a terminal native model/account error, with visible rows on stdin.")
+    unavailable_parser = sub.add_parser("probe-unavailable", parents=[common], help="Read-only confirmation of a terminal native availability error or content refusal, with visible rows on stdin.")
     unavailable_parser.add_argument("--agent", required=True)
     unavailable_parser.add_argument("--pane", required=True)
     unavailable_parser.add_argument("--report", required=True)
