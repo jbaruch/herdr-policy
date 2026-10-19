@@ -1,19 +1,22 @@
 """Frozen owner joins retain uncertainty and cannot manufacture acceptance."""
 
 import copy
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.coordination_baseline import summarize
-from scripts.export_owner_baseline import EvidenceReader, export as export_snapshot, native_times, opaque
+from scripts.export_owner_baseline import EvidenceReader, export as export_snapshot, main, native_times, opaque
 
 
 READER = EvidenceReader(ROOT)
@@ -53,7 +56,125 @@ def native(*_arguments):
     return {"native_started_at": "2026-10-10T00:02:00Z", "native_completed_at": "2026-10-10T00:07:00Z"}
 
 
+def transport_event(kind, at, **data):
+    return {"kind": kind, "at": at, "task": "private-task", "details": {"dispatch": "private-dispatch", **data}}
+
+
 class OwnerExportTest(unittest.TestCase):
+    def test_new_authority_schema_is_read_only_and_does_not_expose_its_private_grant(self):
+        owner, supervision = inputs()
+        owner["recovery"]["schema_version"] = 19
+        owner["recovery"]["tasks"]["private-task"].update(
+            schema_version=2, authority={"schema_version": 1, "private_binding": "private lease"})
+        before = copy.deepcopy(owner)
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(result["assignments"][0]["native_match"], "matched")
+        self.assertEqual(owner, before)
+        self.assertNotIn("private", json.dumps(result))
+
+    def test_pending_null_result_keeps_unknown_native_identity(self):
+        owner, supervision = inputs()
+        owner["recovery"]["dispatches"][0].update(status="sending", result=None)
+        supervision["members"][0]["refinements"] = []
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(result["assignments"][0]["native_match"], "unknown")
+
+    def test_retry_uses_its_send_time_instead_of_the_original_reservation(self):
+        owner, supervision = inputs()
+        current = owner["recovery"]["dispatches"][0]
+        current["at"] = "2026-10-09T23:00:00Z"
+        previous = {**current, "status": "not_sent", "result": None}
+        owner["recovery"]["events"] = [
+            transport_event("dispatch_reserved", current["at"]),
+            transport_event("dispatch_not_sent", "2026-10-09T23:01:00Z"),
+            transport_event("dispatch_transport_retry", "2026-10-10T00:10:00Z", previous=previous),
+            transport_event("dispatch_reserved", "2026-10-10T00:10:00Z"),
+            transport_event("dispatch_sending", "2026-10-10T00:11:00Z"),
+            transport_event("dispatch_recorded", "2026-10-10T00:12:00Z", status="applied")]
+        result = export(owner, supervision, START, END, lambda *_: {}, lambda *_: None)
+        self.assertEqual(len(result["tasks"]), 1)
+        self.assertEqual(len(result["assignments"]), 1)
+        self.assertEqual(result["assignments"][0]["dispatched_at"], "2026-10-10T00:11:00+00:00")
+
+    def test_future_send_does_not_make_a_reservation_into_a_busy_assignment(self):
+        owner, supervision = inputs()
+        owner["recovery"]["events"] = [
+            transport_event("dispatch_reserved", "2026-10-10T00:01:00Z"),
+            transport_event("dispatch_sending", "2026-10-10T02:00:00Z"),
+            transport_event("dispatch_recorded", "2026-10-10T02:01:00Z", status="applied")]
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(len(result["tasks"]), 1)
+        self.assertEqual(result["assignments"], [])
+
+    def test_send_at_the_excluded_end_boundary_remains_only_a_reservation(self):
+        owner, supervision = inputs()
+        owner["recovery"]["events"] = [
+            transport_event("dispatch_reserved", "2026-10-10T00:01:00Z"),
+            transport_event("dispatch_sending", END.isoformat()),
+            transport_event("dispatch_recorded", END.isoformat(), status="applied")]
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(len(result["tasks"]), 1)
+        self.assertEqual(result["assignments"], [])
+
+    def test_later_result_reconciliation_or_retry_cannot_remove_or_resolve_an_unknown_send(self):
+        for outcome in ("applied", "not_sent", "retry"):
+            with self.subTest(outcome=outcome):
+                owner, supervision = inputs()
+                current = owner["recovery"]["dispatches"][0]
+                events = [transport_event("dispatch_reserved", "2026-10-10T00:01:00Z"),
+                          transport_event("dispatch_sending", "2026-10-10T00:02:00Z")]
+                if outcome == "applied":
+                    events.append(transport_event("dispatch_recorded", "2026-10-10T02:00:00Z", status="applied"))
+                else:
+                    events.append(transport_event("dispatch_reconciled", "2026-10-10T02:00:00Z",
+                                                  reconciliation={"input": {"outcome": "not_sent"}}))
+                    if outcome == "retry":
+                        events.extend([
+                            transport_event("dispatch_transport_retry", "2026-10-10T02:01:00Z",
+                                            previous={**current, "status": "not_sent", "result": None}),
+                            transport_event("dispatch_reserved", "2026-10-10T02:01:00Z"),
+                            transport_event("dispatch_sending", "2026-10-10T02:02:00Z"),
+                            transport_event("dispatch_recorded", "2026-10-10T02:03:00Z", status="applied")])
+                    else:
+                        current.update(status="not_sent", result=None)
+                owner["recovery"]["events"] = events
+                result = export(owner, supervision, START, END, native, lambda *_: "2026-10-10T00:12:00Z")
+                self.assertEqual(len(result["assignments"]), 1)
+                envelope = result["assignments"][0]
+                self.assertEqual(envelope["native_match"], "unknown")
+                self.assertNotIn("native_completed_at", envelope)
+                self.assertNotIn("resolved_at", envelope)
+                self.assertNotIn("assessed_at", envelope)
+
+    def test_provenance_binds_normalized_window_and_refuses_reuse_for_another_window(self):
+        owner, supervision = inputs()
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            for name, value in (("owner", owner), ("supervision", supervision)):
+                (root / (name + ".json")).write_text(json.dumps(value))
+            provenance = root / "provenance.json"
+            argv = ["export", "--owner", str(root / "owner.json"), "--supervision", str(root / "supervision.json"),
+                    "--start", START.isoformat(), "--end", END.isoformat(), "--provenance-output", str(provenance)]
+            with patch("scripts.export_owner_baseline.EvidenceReader") as factory:
+                reader = factory.return_value
+                reader.native.return_value, reader.assessment.return_value, reader.closed.return_value = {}, None, False
+                reader.source_digests, reader.exclusions = set(), {}
+                with patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(), 0)
+                proof = json.loads(provenance.read_text())
+                self.assertEqual(proof["schema_version"], 3)
+                self.assertEqual(proof["window"], {"start": START.isoformat(), "end": END.isoformat()})
+                self.assertEqual(provenance.stat().st_mode & 0o777, 0o600)
+                argv[argv.index("--start") + 1] = "2026-10-09T20:00:00-04:00"
+                with patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(), 0)
+                argv[argv.index("--end") + 1] = "2026-10-10T00:50:00Z"
+                diagnostic = io.StringIO()
+                with patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()), redirect_stderr(diagnostic):
+                    self.assertEqual(main(), 2)
+                self.assertIn("choose a fresh output path", diagnostic.getvalue())
+                self.assertEqual(json.loads(provenance.read_text()), proof)
+
     def test_assessment_rejects_modified_receipts_and_accepts_original_appended_prefix(self):
         reader = EvidenceReader(ROOT)
         _owner, supervision = inputs()

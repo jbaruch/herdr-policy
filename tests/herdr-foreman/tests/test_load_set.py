@@ -8,6 +8,7 @@ _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[3] / "skills/
 import io
 import json
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -15,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
 from foreman.errors import StateError, UsageError
-from foreman.load_set import build
+from foreman.load_set import OUTPUT_BYTES, READ_BYTES, build, read_evidence
 from foreman.recovery import register_task
 from foreman.state import add_assignment, empty_state, save_state
 from tests.test_cli import CliCase
@@ -83,11 +84,13 @@ class DecisionTest(unittest.TestCase):
         self.assertIn("/r/{}.brief.md".format(ids["rev1"]), paths(result))
         self.assertIn("correction_plan", result["records"])
 
-    def test_diagnose_loads_every_round(self):
+    def test_diagnose_selects_current_round_and_preserves_unsuperseded_blockers(self):
         state, ids = two_rounds()
         result = run(state, ids, "diagnose", task="t")
-        for key in ids:
+        for key in ("dev1", "rev1", "test1"):
             self.assertIn("/r/{}.report.md".format(ids[key]), paths(result))
+        for key in ("dev0", "rev0"):
+            self.assertNotIn("/r/{}.report.md".format(ids[key]), paths(result))
         self.assertIn("/r/review-blocking.md", paths(result))
         self.assertEqual(set(result["records"]), {"assessments", "checkpoints", "diagnoses", "approaches", "plans",
                                                    "historical_attempts"})
@@ -135,7 +138,7 @@ class DecisionTest(unittest.TestCase):
         plan["last_fix"] = 2
         self.assertEqual(run(state, ids, "brief", task="t")["records"]["correction_plan"], plan)
 
-    def test_diagnose_loads_superseded_receipts_and_assessment_records(self):
+    def test_diagnose_excludes_superseded_receipts_and_retains_current_assessment(self):
         state, ids = two_rounds()
         state["recovery"]["events"].append({"sequence": 1, "kind": "review_superseded", "task": "t", "at": REVIEW_1,
                                             "details": {"previous": {"verdict": "approved", "head_revision": "c" * 40,
@@ -144,9 +147,86 @@ class DecisionTest(unittest.TestCase):
                       "summary": "Loop stalls on flaky fixture."}
         state["specialist_assessments"].append(assessment)
         result = run(state, ids, "diagnose", task="t")
-        self.assertIn("/r/superseded.md", paths(result))
+        self.assertNotIn("/r/superseded.md", paths(result))
         self.assertIn("/r/investigation.md", paths(result))
         self.assertEqual(result["records"]["assessments"], [assessment])
+
+    def test_archived_reviews_and_unrelated_tasks_do_not_expand_current_context(self):
+        state, ids = two_rounds()
+        before = run(state, ids, "diagnose", task="t")
+        for number in range(2_000):
+            state["recovery"]["events"].append({"sequence": number + 1, "kind": "review_superseded", "task": "t", "at": REVIEW_0,
+                                                "details": {"previous": {"verdict": "approved", "head_revision": "c" * 40,
+                                                                         "report": "/archive/{}.md".format(number)}}})
+        dispatch(state, REVIEW_1, "reviewer", "other", task="unrelated")
+        self.assertEqual(run(state, ids, "diagnose", task="t"), before)
+        unrelated_updates = {str(number): {"id": str(number), "kind": "update", "status": "open", "task": None,
+                                          "title": "Unrelated historical notification"} for number in range(2_000)}
+        self.assertEqual(build(state, reports(ids), unrelated_updates, set(), "diagnose", task="t", exists=lambda path: True),
+                         before)
+
+    def test_oversized_open_obligations_refuse_instead_of_disappearing(self):
+        state, ids = two_rounds()
+        entries = {"held": {"id": "held", "kind": "blocker", "status": "open", "task": "t", "title": "x" * OUTPUT_BYTES}}
+        with self.assertRaises(UsageError) as error:
+            build(state, reports(ids), entries, set(), "gate", task="t", exists=lambda path: True)
+        diagnostic = json.dumps(error.exception.to_dict())
+        self.assertLess(len(diagnostic.encode()), 1_024)
+        self.assertIn("context_budget_exceeded", diagnostic)
+
+    def test_evidence_is_question_bound_and_has_explicit_byte_continuations(self):
+        state, ids = two_rounds()
+        with tempfile.TemporaryDirectory() as scratch:
+            report = Path(scratch) / "report.md"
+            report.write_bytes(b"a" * READ_BYTES + b"tail123")
+            packet = build(state, {**reports(ids), ids["rev1"]: str(report)}, {}, set(), "gate", task="t", exists=lambda path: True)
+            first = read_evidence(packet, str(report), "Which verification failed?")
+            self.assertEqual((first["evidence"]["bytes"], first["evidence"]["next_offset"]), (READ_BYTES, READ_BYTES))
+            self.assertTrue(first["evidence"]["excerpt"])
+            self.assertFalse(first["authorizes_progression"])
+            self.assertLessEqual(len((json.dumps(first, indent=2) + "\n").encode()), OUTPUT_BYTES)
+            tail = read_evidence(packet, str(report), "What remains unread?", READ_BYTES)
+            self.assertEqual((tail["evidence"]["content"], tail["evidence"]["next_offset"]), ("tail123", None))
+            for target, question in ((str(report), ""), (str(Path(scratch) / "unlisted"), "Why?")):
+                with self.subTest(target=target), self.assertRaises(UsageError):
+                    read_evidence(packet, target, question)
+            report.unlink()
+            with self.assertRaises(StateError):
+                read_evidence(packet, str(report), "Is the required evidence available?")
+
+    def test_utf8_chunks_preserve_split_characters_and_refuse_invalid_offsets_or_bytes(self):
+        state, ids = two_rounds()
+        with tempfile.TemporaryDirectory() as scratch:
+            report = Path(scratch) / "utf8.md"
+            original = "a" * (READ_BYTES - 1) + "界tail"
+            report.write_text(original, encoding="utf-8")
+            packet = build(state, {**reports(ids), ids["rev1"]: str(report)}, {}, set(), "gate", task="t", exists=lambda path: True)
+            first = read_evidence(packet, str(report), "Read the full original text")
+            self.assertEqual(first["evidence"]["next_offset"], READ_BYTES - 1)
+            tail = read_evidence(packet, str(report), "Read the continuation", first["evidence"]["next_offset"])
+            self.assertEqual(first["evidence"]["content"] + tail["evidence"]["content"], original)
+            with self.assertRaisesRegex(UsageError, "character boundary"):
+                read_evidence(packet, str(report), "Read an invalid offset", READ_BYTES)
+            for body in (b"invalid\xff", b"truncated\xe7\x95"):
+                report.write_bytes(body)
+                with self.assertRaisesRegex(UsageError, "valid UTF-8"):
+                    read_evidence(packet, str(report), "Read valid original evidence")
+
+    def test_evidence_chunk_does_not_repeat_a_near_limit_decision_packet(self):
+        state, ids = two_rounds()
+        with tempfile.TemporaryDirectory() as scratch:
+            report = Path(scratch) / "report.md"
+            report.write_bytes(b"x" * (READ_BYTES + 100))
+            packet = build(state, {**reports(ids), ids["rev1"]: str(report)}, {}, set(), "gate", task="t", exists=lambda path: True)
+            packet["large_current_obligation"] = "x" * (OUTPUT_BYTES - len(json.dumps(packet, indent=2).encode()) - 200)
+            self.assertLess(len((json.dumps(packet, indent=2) + "\n").encode()), OUTPUT_BYTES)
+            result = read_evidence(packet, str(report), "Inspect this report")
+            self.assertEqual(result["kind"], "evidence_chunk")
+            self.assertFalse(result["decision_context_included"])
+            self.assertFalse(result["authorizes_progression"])
+            self.assertEqual(result["evidence"]["bytes"], READ_BYTES)
+            self.assertEqual(result["task"], packet["task"])
+            self.assertLess(len((json.dumps(result, indent=2) + "\n").encode()), OUTPUT_BYTES)
 
     def test_plan_names_the_queue_entry_and_the_reserved_developer(self):
         state = empty_state()
@@ -178,8 +258,36 @@ class DecisionTest(unittest.TestCase):
         self.assertEqual(result["core"]["attention"], [entries["q"]])
         self.assertEqual(result["core"]["task"]["scope"], "fix it")
 
+    def test_global_holds_and_unknown_verifier_delivery_survive_a_planning_view(self):
+        state, ids = two_rounds()
+        state["recovery"]["dispatches"][-1]["status"] = "sent_but_not_started"
+        hold = {"id": "operator-stop", "kind": "blocker", "title": "Preserve the global hold", "status": "open", "task": None}
+        result = build(state, reports(ids), {"hold": hold}, set(), "plan", task="t", exists=lambda path: True)
+        self.assertEqual(result["core"]["attention"], [hold])
+        self.assertEqual(result["core"]["unknown_dispatches"], [{"id": ids["test1"], "role": "tester", "status": "sent_but_not_started"}])
+        self.assertFalse(result["authorizes_progression"])
+
 
 class LoadSetCommandTest(CliCase):
+    def test_cli_retains_the_actual_supervision_hold_as_an_observation(self):
+        from foreman import supervision
+        state = empty_state()
+        register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "fix it",
+                                          "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
+        save_state(self.state, state)
+        evidence = self.tmp / "hold.md"
+        evidence.write_text("Await the operator's recorded continuation.\n")
+        identity = supervision.identity("fixture-owner", str(self.tmp), "fixture-team", pane_id="fixture-pane")
+        supervision.bind(self.state, identity, DEV_0, root=self.tmp / "bindings")
+        supervision.hold(self.state, {"id": "operator-stop", "kind": "waiting_for_user", "resume_condition": "Explicit continuation",
+                                     "evidence": [str(evidence)], "dispositions": []}, DEV_0)
+        code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
+        self.assertEqual(code, 0, err)
+        view = json.loads(out)["supervision"]
+        self.assertTrue(view["boundary_held"])
+        self.assertTrue(view["observation_only"])
+        self.assertEqual(view["unresumed_holds"][0]["id"], "operator-stop")
+
     def test_wake_needs_an_enrollment_and_the_rest_need_a_task(self):
         save_state(self.state, empty_state())
         for argv in (["--decision", "wake", "--task", "t"], ["--decision", "gate", "--enrollment", "e"]):
@@ -197,8 +305,33 @@ class LoadSetCommandTest(CliCase):
         code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
         self.assertEqual(code, 0, err)
         result = json.loads(out)
+        self.assertEqual(result["schema_version"], 2)
+        self.assertFalse(result["history_included"])
+        self.assertFalse(result["authorizes_progression"])
         self.assertEqual((result["decision"], result["core"]["task"]["scope"]), ("plan", "fix it"))
         self.assertEqual(result["records"]["reserved_developer"], ["grok"])
+
+    def test_cli_refuses_oversized_context_without_printing_a_partial_task(self):
+        state = empty_state()
+        register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "x" * OUTPUT_BYTES,
+                                          "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
+        save_state(self.state, state)
+        code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
+        self.assertEqual((code, out), (1, ""))
+        self.assertLess(len(err.encode()), 1_024)
+        self.assertIn("context_budget_exceeded", err)
+
+    def test_cli_requires_a_question_and_a_listed_evidence_reference(self):
+        state = empty_state()
+        register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "fix it",
+                                          "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
+        save_state(self.state, state)
+        for flags in (["--question", "Why?"], ["--read-file", "/unlisted", "--question", "Why?"]):
+            with self.subTest(flags=flags):
+                self.out, self.err = io.StringIO(), io.StringIO()
+                code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t", *flags])
+                self.assertEqual((code, out), (1, ""))
+                self.assertTrue(err)
 
     def test_an_unknown_task_or_enrollment_fails(self):
         save_state(self.state, empty_state())

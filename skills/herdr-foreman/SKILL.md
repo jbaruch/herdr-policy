@@ -8,7 +8,7 @@ description: >
   measure Herdr worker capacity, recover refused dispatches, restart or relaunch
   idle workers, collect reports, run or retrieve retrospectives,
   catch up on outstanding user attention, curate team lessons, save and resume
-  foreman handoffs, or report a task's cost or resource use through acceptance.
+  foreman handoffs, run explicitly admitted native dispatch chains, or report a task's cost or resource use through acceptance.
   Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention and cost reports work
   offline. Other standalone tasks skip this skill.
 ---
@@ -41,13 +41,22 @@ Each command resolves `HS` to its installed Herdr skill or that skill in a
 herdr-policy clone. Repeat the resolver in every call. Prose `skills/...`
 paths are relative to the package root.
 
+Explicitly admitted task progression follows:
+
+```text
+skills/herdr-foreman/references/progression.md
+```
+
+Retain the current supervision, assessment and Stop obligations; this adapter
+supplies no release approval.
+
 Read the lookup rule before running these command blocks:
 
 ```text
 rules/herdr-bootstrap.md
 ```
 
-Before each listed owner decision, load its records and read every listed file:
+Before each listed owner decision, retrieve its bounded current records:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
@@ -67,8 +76,10 @@ bash "$HS/foreman.sh" load-set --decision wake --enrollment <enrollment-id>
 | `gate` | Step 12 | `--task` |
 | `diagnose` | Step 13, diagnosis mode | `--task` |
 
-It prints JSON whose `files` list is the floor for that decision; a file with
-`present: false` is a gap to resolve, not one to skip. A non-zero exit names a
+It prints schema-2 JSON with a question-specific retrieval menu in `files`.
+Retrieve only the evidence needed for the pending question, within the command's
+budgets. Read every report fully when Team Operation requires it for gating.
+A file with `present: false` remains an unresolved gap. A non-zero exit names a
 refused task, enrollment or unreconciled dispatch on stderr; resolve it first.
 The contract is `skills/herdr-foreman/references/working-memory.md` "Load a
 decision's records".

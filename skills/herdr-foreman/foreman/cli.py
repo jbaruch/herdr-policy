@@ -30,6 +30,9 @@ from .assign import apply as apply_assignments
 from .assign import APPLY_SCHEMA_VERSION, dry_run, freeze_decision, freeze_paths, read_frozen, native_context_session, normalize_assignments, resolve_paths, validate_context_mode, validate_fix_history
 from . import no_work_recovery, bootstrap_recovery, model_unavailability, probe_recovery, renderable
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
+from . import progression_owner
+from . import progression_service
+from . import config as config_owner
 from .config import FOREMAN_CONFIG_VERSION, default_config_path, load_config, load_foreman, load_judge, load_role_costs, select_agents
 from .errors import AgentBusyError, IDENTIFIER_UNAVAILABLE_KIND, IDENTIFIER_UNAVAILABLE_RECOVERY, TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND, PlanError, StateError, ForemanError, HerdrError, UsageError, owner_recovery
 from .herdr import (
@@ -131,6 +134,8 @@ def build_parser():
     parser.add_argument("--version", action="version", version="foreman " + __version__)
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
+    progression_owner.register_commands(sub, common)
+    progression_service.register_commands(sub, common)
 
     judge_parser = sub.add_parser("start-judge", parents=[common],
                                   help="Start the plan's judge in a shell pane and verify its launch argv.")
@@ -468,11 +473,14 @@ def build_parser():
     cost_parser = sub.add_parser("cost-report", parents=[common],
                                  help="Report each task's resource use through acceptance from the owner records. Read-only.")
     cost_parser.add_argument("--task", help="Report this task alone.")
-    load_parser = sub.add_parser("load-set", parents=[common], help="List the durable records one foreman decision must load, derived from the owner records.")
+    load_parser = sub.add_parser("load-set", parents=[common], help="Return bounded current decision context without replaying task history.")
     load_parser.add_argument("--decision", required=True, choices=load_set.DECISIONS)
     load_target = load_parser.add_mutually_exclusive_group(required=True)
     load_target.add_argument("--task", help="Task identity for plan, brief, gate and diagnose.")
     load_target.add_argument("--enrollment", help="Enrollment (dispatch) id for wake.")
+    load_parser.add_argument("--read-file", help="Read a bounded excerpt from one listed current evidence reference.")
+    load_parser.add_argument("--question", help="Specific question requiring the selected evidence excerpt.")
+    load_parser.add_argument("--offset", type=int, default=0, help="Byte offset for an explicit evidence continuation.")
 
     sub.add_parser(
         "state",
@@ -795,13 +803,13 @@ def _parse_excludes(pairs):
     return excludes
 
 
-def _load_assignments(value, document=False):
+def _load_assignments(value, document=False, contents=None):
     """`--assignments` takes inline JSON or a path to a JSON file."""
     text = value.strip()
     if not text.startswith("{"):
         path = Path(text)
         try:
-            text = path.read_text(encoding="utf-8")
+            text = contents[str(path.resolve())].decode("utf-8") if contents is not None else path.read_text(encoding="utf-8")
         except FileNotFoundError:
             raise UsageError(
                 "--assignments file {} not found - pass the path to `{}` "
@@ -1009,9 +1017,9 @@ def _load_state_for_write(path, warn, *, persist_migration=True):
     return state
 
 
-def _read_record(path):
+def _read_record(path, contents=None):
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(contents[str(Path(path).resolve())] if contents is not None else Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UsageError("Cannot read record {}: {}. Supply readable UTF-8 JSON with the documented fields.".format(path, exc), {}) from None
     if not isinstance(data, dict):
@@ -1445,14 +1453,27 @@ def cmd_apply(args, client=None, warn=None, trace=None):
     # apply returns, so no verdict gate is recorded between the check and the
     # send (#646; foreman/report_gates.py `holding`).
     with ExitStack() as stack:
+        gates_held = False
         def hold_gates():
-            stack.enter_context(report_gates.holding(_state_path(args)))
+            nonlocal gates_held
+            if not gates_held:
+                stack.enter_context(report_gates.holding(_state_path(args)))
+                gates_held = True
+        for report in getattr(args, "service_gate_reports", ()):
+            hold_gates()
+            report_gates.require_clear(_state_path(args), report, True)
         return _apply(args, client, warn, trace, hold_gates)
 
 
 def _apply(args, client, warn, trace, hold_gates):
-    templates = load_config(_config_path(args))
-    document = _load_assignments(args.assignments, document=True)
+    pinned = getattr(args, "service_inputs", None)
+    try:
+        config_payload = json.loads(pinned[str(Path(_config_path(args)).resolve())]) if pinned is not None else None
+    except (KeyError, UnicodeError, ValueError):
+        raise UsageError("Restore the admitted UTF-8 config JSON before dispatch; no replacement configuration is inferred.", {}) from None
+    templates = (config_owner.parse_config(config_payload, source=str(_config_path(args)))
+                 if pinned is not None else load_config(_config_path(args)))
+    document = _load_assignments(args.assignments, document=True, contents=pinned)
     assignments = normalize_assignments(document)
     scoped = bool(templates) and all(agent.assignment_scoped for agent in templates)
     worker_kinds = document.get("worker_kinds") if isinstance(document, dict) else None
@@ -1491,7 +1512,8 @@ def _apply(args, client, warn, trace, hold_gates):
     for value in rounds.values():
         if not isinstance(value, dict) or set(value) - {"type", "context"}:
             raise UsageError("Plan round inputs allow only type and context; model overrides are forbidden.", {})
-    judge = load_judge(_config_path(args))
+    judge = (config_owner.parse_judge(config_payload, source=str(_config_path(args)))
+             if pinned is not None else load_judge(_config_path(args)))
     judge_kind = document.get("worker_kinds", {}).get("judge") if scoped else assignments.get("judge")
     if "judge" in assignments and (judge is None or judge_kind != judge.agent):
         raise UsageError("Judge assignment must use the pinned judge worker kind in config.json.", {})
@@ -1503,7 +1525,7 @@ def _apply(args, client, warn, trace, hold_gates):
     state = _load_state_for_write(state_path, warn, persist_migration=not args.dry_run)
     store = state["recovery"]
     at = args.now or now_iso()
-    work = _read_record(args.work) if args.work else None
+    work = _read_record(args.work, contents=pinned) if args.work else None
     task_context = {"task": args.task, "fix_round": args.fix_round, "plan": args.correction_plan, "work": work}
     if document.get("task_context") is not None and document["task_context"] != task_context:
         raise UsageError("Saved plan and apply name different task, count or correction bounds; replan from the current ledger.", {})
@@ -1607,8 +1629,13 @@ def _apply(args, client, warn, trace, hold_gates):
 
     decision = "frozen" if args.dry_run or not args.task else freeze_decision(assignments, is_replay)
     if decision == "frozen" and not args.dry_run:
+        source_paths = dict(paths)
         paths = freeze_paths(paths)
         contents = paths.contents
+        if pinned is not None:
+            for role, source in source_paths.items():
+                if contents[paths[role]] != pinned[str(Path(source).resolve())]:
+                    raise UsageError("Frozen dispatch bytes differ from the admitted inputs; preserve the task and obtain a new handoff.", {})
     if seated or any(key in document for key in ("slice_paths", "slice_digest", "seat_digests")):
         # Keyed on the metadata, not only on the seats: a saved plan stripped
         # of every seat would otherwise skip the check entirely and dispatch a
@@ -2348,14 +2375,26 @@ def cmd_cost_report(args, client=None, warn=None, trace=None):
 
 
 def cmd_load_set(args, client=None, warn=None, trace=None):
+    if any(value is not None and len(value.encode("utf-8")) > 1_024 for value in (args.task, args.enrollment)):
+        raise UsageError("Select a recorded task or enrollment identity of at most 1024 bytes before requesting decision context.", {})
     if (args.decision == "wake") != (args.enrollment is not None):
         raise UsageError("Pass --enrollment for wake and --task for every other decision.", {"decision": args.decision})
+    if args.read_file is None and (args.question is not None or args.offset != 0):
+        raise UsageError("Use --question and --offset only with --read-file for one listed evidence reference.", {})
     state_path = _state_path(args)
     state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
     if not usable:
         raise StateError("State file {} is unusable, so the load set cannot be derived; restore it before deciding.".format(state_path),
                          {"path": str(state_path)})
-    members = supervision.load(state_path)["members"]
+    supervision_document = supervision.load(state_path)
+    members = supervision_document["members"]
+    supervision_view = {
+        "bound": supervision_document["binding"] is not None,
+        "boundary_held": supervision.held(supervision_document),
+        "unresumed_holds": [{key: row[key] for key in ("id", "kind", "resume_condition", "evidence")}
+                            for row in supervision_document["holds"] if row["resumed_at"] is None],
+        "observation_only": True,
+    }
     reports = {row["id"]: row["assignment"].get("report") for row in members}
     busy = {row["assignment"]["task"] for row in members if row["active"]}
     _document, entries, _progress = attention.load(state_path)
@@ -2366,8 +2405,11 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
     if args.decision != "wake" and args.task not in state["recovery"]["tasks"] and not any(
             row.get("task") == args.task for row in state["assignments"]):
         raise UsageError("Task {!r} is neither registered nor assigned; check its identity with `{}`.".format(args.task, runnable.command("state")), {})
-    return load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
-                          exists=_file_present), None
+    packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
+                            exists=_file_present, supervision_view=supervision_view)
+    if args.read_file is not None:
+        packet = load_set.read_evidence(packet, args.read_file, args.question, args.offset)
+    return packet, None
 
 
 def _file_present(path):
@@ -3266,6 +3308,16 @@ def cmd_supervision(args, client=None, warn=None, trace=None):
                                            client=client, clock=now_iso, sleeper=time.sleep), None
 
 
+def cmd_progression_handoff(args, client=None, warn=None, trace=None):
+    return progression_owner.run_command(args, _state_path(args), args.now or now_iso(),
+                                         client if client is not None else _client(args, trace=trace))
+
+
+def cmd_progression_run(args, client=None, warn=None, trace=None):
+    return progression_service.run_command(args, _state_path(args),
+                                           client if client is not None else _client(args, trace=trace), sleeper=time.sleep)
+
+
 def cmd_supervision_gate(args, client=None, warn=None, trace=None):
     """Which pending supervision events need the foreman; see supervision_gate.py."""
     return supervision_gate.pending(supervision.load(_state_path(args))), None
@@ -3296,6 +3348,8 @@ COMMANDS = {
     "close-member": cmd_close_member,
     "check-member": cmd_check_member,
     "load-set": cmd_load_set,
+    **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return", "progression-reconcile")},
+    "progression-run": cmd_progression_run,
     **{command: cmd_recovery for command in ("task", "checkpoint", "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report", "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work", "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review", "recover-report", "assess-specialist", "close-task")},
     "detect-triggers": cmd_detect_triggers,
     "finding-churn": cmd_finding_churn,
@@ -3325,7 +3379,7 @@ COMMANDS = {
 HOME_FREE_COMMANDS = frozenset({"marker-fit", "finding-churn", "probe-unavailable"})
 
 
-def main(argv=None, stdout=None, stderr=None, client=None):
+def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability=None):
     """Entry point. Returns the process exit code rather than calling sys.exit."""
     stdout = stdout if stdout is not None else sys.stdout
     stderr = stderr if stderr is not None else sys.stderr
@@ -3377,9 +3431,16 @@ def main(argv=None, stdout=None, stderr=None, client=None):
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "close-member"}
-            lock = nullcontext() if readonly or separate_owner else state_lock(retrospective.canonical_state(_state_path(args)))
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "close-member", "progression-run"}
+            authority_transaction = service_capability is not None
+            lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:
+                progression_owner.require_command(_state_path(args), args, service_capability, client,
+                                                   lambda: _client(args, trace=trace))
+                if service_capability is not None and args.command == "apply":
+                    args.service_inputs = service_capability.capture_inputs(args)
+                    args.service_gate_reports = service_capability.gate_reports
+                    client = service_capability.authorized_client(client if client is not None else _client(args, trace=trace))
                 retro_lock = retrospective.lock(_state_path(args)) if not readonly and args.command in {"apply", "start-judge", "relaunch-worker", "retro-record"} else nullcontext()
                 with retro_lock:
                     payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)

@@ -44,7 +44,7 @@ denominators by assertion. Fixtures prove calculations, not observed ROI.
 
 Freeze private copies of the owner and its supervision sidecar before exporting.
 Keep the originals, copies, transcripts, ledgers and source maps outside Git.
-The exporter reads state schema 11, recovery-store schema 18 and supervision
+The exporter reads state schema 11, recovery-store schemas 18/19 and supervision
 schema 1; an unsupported version fails without migrating or writing an owner.
 Select a trusted extracted Herdr source checkout for its existing native and
 task-ledger readers. The default is this repository after extraction.
@@ -56,7 +56,8 @@ python3 scripts/coordination_baseline.py /private/baseline/snapshot.json
 
 Use `--herdr-source /path/to/trusted/checkout` when evaluating an extraction
 candidate from a separate measurement checkout. Provenance is created with mode
-0600 outside the repository. Its schema 2 records the Python version, input,
+0600 outside the repository. Its schema 3 records the normalized UTC observation
+window, Python version, input,
 exporter and evidence hashes, every owner Python module's hash, and exclusion
 counts. An identical repeat is permitted; a differing
 existing provenance file requires a fresh output path. The CLI emits no native
@@ -69,6 +70,12 @@ exclusion diagnostic. A new hash of an unverified replacement is not evidence
 for the original assessment.
 
 The cohort includes tasks registered or attempted inside the half-open window.
+Transport events separate retries and project each attempt at the observation
+boundary. Assignment timing uses the send event; later sends and outcomes do
+not rewrite that boundary. A pending send has no native or supervision timing
+until its own recorded result is available. Evidence from a later retry is never
+borrowed for an earlier attempt. Imported legacy rows without transport events
+retain their coarse reservation timing; that timing is not a precise send receipt.
 Applied, `sending` and `sent_but_not_started` dispatches remain assignment envelopes. Confirmed
 unsent attempts retain their task in the cohort but create no busy worker.
 Pre-send reservations likewise retain their task without claiming worker activity.
