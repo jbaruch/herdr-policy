@@ -169,7 +169,7 @@ def summarize(snapshot):
             holds.append({"task_id": task["id"], "start": left.isoformat(),
                           "end": right.isoformat() if right else None, "reason": reason})
     return {
-        "schema": 1, "window": {"start": start.isoformat(), "end": end.isoformat()},
+        "schema": 2, "window": {"start": start.isoformat(), "end": end.isoformat()},
         "coverage": {"tasks": len(tasks), "assignments": len(assignments),
                      "native_match": dict(Counter(item["native_match"] for item in assignments)),
                      "task_states": dict(Counter(task["state"] for task in tasks.values())),

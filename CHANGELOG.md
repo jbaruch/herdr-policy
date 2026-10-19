@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-10-19
+
+- Add measurement-summary schema 2 with pending assessment and resolution ages from the existing schema-1 sanitized input, including bounded oldest lists, omitted counts and explicit unknown-evidence exclusions. Merge overlapping waits within each task and queue, retain blocked work and report holds separately. These calculations create no additional owner history and do not establish observed ROI.
+
 ## 0.6.1 — 2026-10-19
 
 - Retire an accepted native task's private plan, brief, report and delivery/review files after confirmed publication and Git teardown. Use bounded batches in the existing cleanup intent; retain canonical owner receipts and the GitHub closure reference.

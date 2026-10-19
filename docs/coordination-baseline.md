@@ -133,7 +133,7 @@ The CLI reads only this file, emits one JSON summary, and performs no network
 or team-state operations. A malformed export exits 2 with a diagnostic and no
 measurement. Keep snapshots and their raw-source maps outside the repository.
 
-Schema 1 has these required top-level fields:
+Input schema 1 has these required top-level fields:
 
 | Field | Contract |
 | --- | --- |
@@ -175,6 +175,12 @@ and production data; opaque ids preserve joins. Exporter/version and source
 digests belong in the private provenance record, not a public transcript dump.
 
 ## Calculation and interpretation
+
+`scripts/coordination_baseline.py` owns the derived summary format. Summary
+schema 2 adds the `waiting` queues below; the exported input remains schema 1.
+Readers select their supported summary version explicitly. Regenerate a
+summary from its sanitized snapshot; this calculation never migrates or
+rewrites source evidence, owner state or previously saved reports.
 
 Latency records pair each assignment's timestamps. Native work is start to
 native completion; assessment delay is native completion to contract assessment;

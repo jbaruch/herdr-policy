@@ -33,6 +33,13 @@ def fixture():
 
 
 class BaselineTest(unittest.TestCase):
+    def test_summary_versions_its_new_shape_and_accepts_the_original_input(self):
+        data = fixture()
+        result = summarize(data)
+        self.assertEqual(data["schema"], 1)
+        self.assertEqual(result["schema"], 2)
+        self.assertEqual(set(result["waiting"]), {"assessment", "resolution"})
+
     def test_paired_delays_keep_denominators_and_overlapping_waits_separate(self):
         result = summarize(fixture())
         latency = result["latency_seconds"]
