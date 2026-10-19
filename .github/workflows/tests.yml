@@ -61,7 +61,7 @@ jobs:
         env:
           HERDR_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           GH_TOKEN: ${{ github.token }}
-        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" python3 scripts/check-installations.py --herdr-source "github:jbaruch/herdr-policy@$HERDR_REVISION" --coding-source github:jbaruch/coding-policy@894668183834d39a117bea893058820fb9e9a630
+        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" python3 scripts/check-installations.py --herdr-source "github:jbaruch/herdr-policy@$HERDR_REVISION" --coding-source github:jbaruch/coding-policy@81558e8365b8f9d9ef20de510123f3e894da7e62
   skill-review:
     runs-on: ubuntu-latest
     steps:
