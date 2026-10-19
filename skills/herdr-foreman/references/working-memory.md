@@ -212,6 +212,12 @@ needed for the specific current question. Use `--read-file` for a bounded excerp
 `next_offset` exposes unread bytes. An excerpt never proves a complete review,
 acceptance, or no unresolved findings. Recheck the current head and owner gates
 before acting. Required unavailable or unexamined evidence keeps the decision held.
+Evidence reads return a task-bound `kind: evidence_chunk` response with
+`decision_context_included: false`; they do not repeat or replace the decision
+packet. Retain the current decision context and reload it before acting. Byte
+continuations end at complete UTF-8 sequences. Invalid UTF-8 or an offset inside
+a character refuses with a recovery instruction; no replacement characters are
+substituted. Escaped text still obeys the printed output budget.
 
 The output and evidence-read budgets belong to `OUTPUT_BYTES` and `READ_BYTES`
 in `skills/herdr-foreman/foreman/load_set.py`. Oversized current obligations fail

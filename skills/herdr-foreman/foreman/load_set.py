@@ -16,6 +16,7 @@ obligations refuse rather than disappear behind truncation. No view grants
 dispatch, acceptance or release authority.
 """
 
+import codecs
 import json
 from pathlib import Path
 import sys
@@ -109,12 +110,23 @@ def read_evidence(packet, path, question, offset=0):
             raw = stream.read(READ_BYTES + 1)
     except OSError:
         raise StateError("Cannot read the selected evidence. Restore access or record its unavailability before deciding.", {}) from None
-    content = raw[:READ_BYTES]
-    return _bounded({**packet, "evidence": {
-        "path": path, "offset": offset, "bytes": len(content), "content": content.decode("utf-8", errors="replace"),
-        "next_offset": offset + len(content) if len(raw) > READ_BYTES else None,
-        "excerpt": offset != 0 or len(raw) > READ_BYTES,
-    }})
+    try:
+        decoder = codecs.getincrementaldecoder("utf-8")("strict")
+        text = decoder.decode(raw[:READ_BYTES], final=len(raw) <= READ_BYTES)
+    except UnicodeError:
+        raise UsageError("Evidence is not valid UTF-8 at this offset. Use the returned next_offset at a character boundary, or restore the original valid UTF-8 report before deciding.", {}) from None
+    # A chunk is evidence, never a second copy of the entire decision packet.
+    # Keep its current task binding and make the omitted decision context explicit.
+    result = {key: packet[key] for key in ("schema_version", "decision", "task", "enrollment", "round_start", "budget")}
+    result.update(kind="evidence_chunk", decision_context_included=False, authorizes_progression=False)
+    while True:
+        content = text.encode("utf-8")
+        more = len(raw) > len(content)
+        result["evidence"] = {"path": path, "question": question, "offset": offset, "bytes": len(content), "content": text,
+                              "next_offset": offset + len(content) if more else None, "excerpt": offset != 0 or more}
+        if len((json.dumps(result, indent=2) + "\n").encode("utf-8")) <= OUTPUT_BYTES or not text:
+            return _bounded(result)
+        text = text[:len(text) // 2]
 
 
 def _historical(store, assignments, task, since=None):

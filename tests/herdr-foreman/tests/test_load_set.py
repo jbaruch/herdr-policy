@@ -194,6 +194,40 @@ class DecisionTest(unittest.TestCase):
             with self.assertRaises(StateError):
                 read_evidence(packet, str(report), "Is the required evidence available?")
 
+    def test_utf8_chunks_preserve_split_characters_and_refuse_invalid_offsets_or_bytes(self):
+        state, ids = two_rounds()
+        with tempfile.TemporaryDirectory() as scratch:
+            report = Path(scratch) / "utf8.md"
+            original = "a" * (READ_BYTES - 1) + "界tail"
+            report.write_text(original, encoding="utf-8")
+            packet = build(state, {**reports(ids), ids["rev1"]: str(report)}, {}, set(), "gate", task="t", exists=lambda path: True)
+            first = read_evidence(packet, str(report), "Read the full original text")
+            self.assertEqual(first["evidence"]["next_offset"], READ_BYTES - 1)
+            tail = read_evidence(packet, str(report), "Read the continuation", first["evidence"]["next_offset"])
+            self.assertEqual(first["evidence"]["content"] + tail["evidence"]["content"], original)
+            with self.assertRaisesRegex(UsageError, "character boundary"):
+                read_evidence(packet, str(report), "Read an invalid offset", READ_BYTES)
+            for body in (b"invalid\xff", b"truncated\xe7\x95"):
+                report.write_bytes(body)
+                with self.assertRaisesRegex(UsageError, "valid UTF-8"):
+                    read_evidence(packet, str(report), "Read valid original evidence")
+
+    def test_evidence_chunk_does_not_repeat_a_near_limit_decision_packet(self):
+        state, ids = two_rounds()
+        with tempfile.TemporaryDirectory() as scratch:
+            report = Path(scratch) / "report.md"
+            report.write_bytes(b"x" * (READ_BYTES + 100))
+            packet = build(state, {**reports(ids), ids["rev1"]: str(report)}, {}, set(), "gate", task="t", exists=lambda path: True)
+            packet["large_current_obligation"] = "x" * (OUTPUT_BYTES - len(json.dumps(packet, indent=2).encode()) - 200)
+            self.assertLess(len((json.dumps(packet, indent=2) + "\n").encode()), OUTPUT_BYTES)
+            result = read_evidence(packet, str(report), "Inspect this report")
+            self.assertEqual(result["kind"], "evidence_chunk")
+            self.assertFalse(result["decision_context_included"])
+            self.assertFalse(result["authorizes_progression"])
+            self.assertEqual(result["evidence"]["bytes"], READ_BYTES)
+            self.assertEqual(result["task"], packet["task"])
+            self.assertLess(len((json.dumps(result, indent=2) + "\n").encode()), OUTPUT_BYTES)
+
     def test_plan_names_the_queue_entry_and_the_reserved_developer(self):
         state = empty_state()
         dispatch(state, DEV_0, "developer", "grok")
