@@ -2362,7 +2362,15 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
     if not usable:
         raise StateError("State file {} is unusable, so the load set cannot be derived; restore it before deciding.".format(state_path),
                          {"path": str(state_path)})
-    members = supervision.load(state_path)["members"]
+    supervision_document = supervision.load(state_path)
+    members = supervision_document["members"]
+    supervision_view = {
+        "bound": supervision_document["binding"] is not None,
+        "boundary_held": supervision.held(supervision_document),
+        "unresumed_holds": [{key: row[key] for key in ("id", "kind", "resume_condition", "evidence")}
+                            for row in supervision_document["holds"] if row["resumed_at"] is None],
+        "observation_only": True,
+    }
     reports = {row["id"]: row["assignment"].get("report") for row in members}
     busy = {row["assignment"]["task"] for row in members if row["active"]}
     _document, entries, _progress = attention.load(state_path)
@@ -2374,7 +2382,7 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
             row.get("task") == args.task for row in state["assignments"]):
         raise UsageError("Task {!r} is neither registered nor assigned; check its identity with `{}`.".format(args.task, runnable.command("state")), {})
     packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
-                            exists=_file_present)
+                            exists=_file_present, supervision_view=supervision_view)
     if args.read_file is not None:
         packet = load_set.read_evidence(packet, args.read_file, args.question, args.offset)
     return packet, None

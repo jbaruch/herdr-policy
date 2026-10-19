@@ -21,6 +21,7 @@ from pathlib import Path
 import sys
 
 from . import runnable
+from .attention import GATING_KINDS
 from .chronology import latest_assignment, timestamp
 from .foreman_queue import waiting
 from .errors import StateError, UsageError
@@ -69,7 +70,8 @@ def _core(state, attention_entries, task):
     return {"task": store["tasks"].get(task),
             "status": task_statuses(store, state["assignments"]).get(task),
             "attention": [entry for entry in attention_entries.values()
-                          if entry.get("task") in (None, task) and entry["status"] in OPEN_ATTENTION],
+                          if (entry.get("task") == task or entry.get("task") is None and entry.get("kind") in GATING_KINDS)
+                          and entry["status"] in OPEN_ATTENTION],
             "unknown_dispatches": [{key: row.get(key) for key in ("id", "role", "status")}
                                    for row in store["dispatches"]
                                    if row.get("task") == task and row.get("status") in PENDING_STATUSES]}
@@ -146,7 +148,7 @@ def _add_dispatch_files(files, row, reports, *, briefs=True):
     files.add(reports.get(row.get("id")), "report for " + label)
 
 
-def build(state, reports, attention_entries, busy_tasks, decision, *, task=None, enrollment=None, exists):
+def build(state, reports, attention_entries, busy_tasks, decision, *, task=None, enrollment=None, exists, supervision_view=None):
     """Return the load set for one decision.
 
     `reports` maps an enrollment (dispatch) id to its report path, from the
@@ -224,6 +226,6 @@ def build(state, reports, attention_entries, busy_tasks, decision, *, task=None,
     return _bounded({"schema_version": LOAD_SET_SCHEMA_VERSION, "decision": decision, "task": task,
             "enrollment": enrollment, "round_start": start.isoformat() if start else None,
             "core": _core(state, attention_entries, task) if task is not None else None,
-            "records": records, "files": files.rows,
+            "records": records, "files": files.rows, "supervision": supervision_view,
             "history_included": False, "authorizes_progression": False,
             "budget": {"output_bytes": OUTPUT_BYTES, "evidence_read_bytes": READ_BYTES}})

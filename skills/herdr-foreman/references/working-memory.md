@@ -201,6 +201,9 @@ Schema 2 adds `budget`, `history_included: false` and
 `authorizes_progression: false`. This ephemeral view changes no persisted owner
 schema. It retains task/budget facts, task-local and global open attention,
 unknown deliveries of every role, and current-round references.
+The supervision view retains unresumed hold references even when an event changes
+their original boundary. `boundary_held: false` never means the operator cleared
+a hold. `observation_only` and an absent binding grant no authority.
 Briefing and diagnosis retain unsuperseded blocking review references. A missing
 file stays listed with `present: false`; an unknown send still refuses the decision.
 

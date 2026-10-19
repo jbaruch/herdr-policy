@@ -160,6 +160,10 @@ class DecisionTest(unittest.TestCase):
                                                                          "report": "/archive/{}.md".format(number)}}})
         dispatch(state, REVIEW_1, "reviewer", "other", task="unrelated")
         self.assertEqual(run(state, ids, "diagnose", task="t"), before)
+        unrelated_updates = {str(number): {"id": str(number), "kind": "update", "status": "open", "task": None,
+                                          "title": "Unrelated historical notification"} for number in range(2_000)}
+        self.assertEqual(build(state, reports(ids), unrelated_updates, set(), "diagnose", task="t", exists=lambda path: True),
+                         before)
 
     def test_oversized_open_obligations_refuse_instead_of_disappearing(self):
         state, ids = two_rounds()
@@ -231,6 +235,25 @@ class DecisionTest(unittest.TestCase):
 
 
 class LoadSetCommandTest(CliCase):
+    def test_cli_retains_the_actual_supervision_hold_as_an_observation(self):
+        from foreman import supervision
+        state = empty_state()
+        register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "fix it",
+                                          "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
+        save_state(self.state, state)
+        evidence = self.tmp / "hold.md"
+        evidence.write_text("Await the operator's recorded continuation.\n")
+        identity = supervision.identity("fixture-owner", str(self.tmp), "fixture-team", pane_id="fixture-pane")
+        supervision.bind(self.state, identity, DEV_0, root=self.tmp / "bindings")
+        supervision.hold(self.state, {"id": "operator-stop", "kind": "waiting_for_user", "resume_condition": "Explicit continuation",
+                                     "evidence": [str(evidence)], "dispositions": []}, DEV_0)
+        code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
+        self.assertEqual(code, 0, err)
+        view = json.loads(out)["supervision"]
+        self.assertTrue(view["boundary_held"])
+        self.assertTrue(view["observation_only"])
+        self.assertEqual(view["unresumed_holds"][0]["id"], "operator-stop")
+
     def test_wake_needs_an_enrollment_and_the_rest_need_a_task(self):
         save_state(self.state, empty_state())
         for argv in (["--decision", "wake", "--task", "t"], ["--decision", "gate", "--enrollment", "e"]):
