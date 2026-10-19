@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -203,6 +204,32 @@ class ProgressionServiceTest(unittest.TestCase):
             result = self.runner(capability).tick()
         self.assertEqual(result["data"]["status"], "advanced", self.last_error)
         self.assertEqual(self.state()["assignments"][0]["agent"], "grok")
+
+    def test_contract_input_verification_enforces_the_total_capture_budget(self):
+        document = copy.deepcopy(self.document)
+        body = b"x" * service.CAPTURE_BYTES
+        self.fx.common.write_bytes(body)
+        for step in document["steps"]:
+            for captured in step["inputs"]:
+                if captured["path"] == str(self.fx.common):
+                    captured["sha256"] = hashlib.sha256(body).hexdigest()
+        with self.assertRaisesRegex(UsageError, "byte budget"):
+            service.prepare_contract(document, "one")
+        self.assertEqual(self.fx.runner.writes(), [])
+
+    def test_contract_plan_is_parsed_from_the_verified_bytes(self):
+        document = copy.deepcopy(self.document)
+        document["steps"] = document["steps"][:1]
+        original = service._verify_inputs
+        def replace_after_capture(step):
+            captured = original(step)
+            plan = step["argv"][step["argv"].index("--assignments") + 1]
+            Path(plan).write_text('{"release": "grok"}')
+            return captured
+        with patch("foreman.progression_service._verify_inputs", side_effect=replace_after_capture):
+            prepared = service.prepare_contract(document, "one")
+        self.assertEqual(prepared[0]["roles"], {"developer"})
+        self.assertEqual(self.fx.runner.writes(), [])
 
     def test_zero_exit_with_false_delivery_cannot_trigger_verification(self):
         with self.session() as capability:

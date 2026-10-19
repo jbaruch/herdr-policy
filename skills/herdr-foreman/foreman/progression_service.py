@@ -102,9 +102,9 @@ def prepare_contract(value, task):
             required.add(args.work)
         if not required.issubset(by_path):
             raise UsageError("Capture every config, plan, common, role brief and correction-work input before admitting progression.", {})
-        _verify_inputs(row)
+        captured_inputs = _verify_inputs(row)
         try:
-            plan = json.loads(Path(args.assignments).read_text(encoding="utf-8"))
+            plan = json.loads(captured_inputs[str(Path(args.assignments).resolve())])
         except (OSError, ValueError):
             raise UsageError("Restore the captured assignment plan before progression.", {}) from None
         roles = set(normalize_assignments(plan))
@@ -116,10 +116,22 @@ def prepare_contract(value, task):
 
 
 def _verify_inputs(step):
+    result, total = {}, 0
     for captured in step["inputs"]:
-        actual, _body = recovery.receipt(captured["path"])
-        if actual != captured:
+        try:
+            with Path(captured["path"]).open("rb") as stream:
+                body = stream.read(CAPTURE_BYTES - total + 1)
+            total += len(body)
+            if total > CAPTURE_BYTES:
+                raise UsageError("Keep the active dispatch inputs within the service byte budget; do not attach local history.", {})
+            if not body.decode("utf-8").strip():
+                raise UsageError("Restore nonempty captured dispatch inputs before service work.", {})
+        except (OSError, UnicodeError):
+            raise UsageError("Restore readable UTF-8 captured dispatch inputs before service work.", {}) from None
+        if hashlib.sha256(body).hexdigest() != captured["sha256"]:
             raise UsageError("A prepared dispatch input changed after admission; stop and obtain an explicit new handoff.", {})
+        result[str(Path(captured["path"]).resolve())] = body
+    return result
 
 
 class ProgressionService:

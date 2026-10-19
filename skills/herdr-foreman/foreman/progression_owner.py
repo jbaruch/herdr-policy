@@ -12,7 +12,6 @@ the generation. Lease death alone cannot return a task or classify a send.
 
 from copy import deepcopy
 from contextlib import contextmanager
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -246,7 +245,7 @@ class ServiceCapability:
 
     def capture_inputs(self, args):
         from .cli import build_parser
-        from .progression_service import CAPTURE_BYTES
+        from .progression_service import _verify_inputs
         if self._prepared is None:
             raise UsageError("A service apply must execute one immutable admitted step.", {})
         expected = {key: value for key, value in vars(build_parser().parse_args(self._prepared["argv"])).items()
@@ -254,20 +253,7 @@ class ServiceCapability:
         actual = {key: value for key, value in vars(args).items() if key not in {"state", "dispatch_id"}}
         if actual != expected:
             raise UsageError("Service arguments differ from the admitted step; preserve its original intent.", {})
-        result, total = {}, 0
-        for captured in self._prepared["inputs"]:
-            try:
-                with Path(captured["path"]).open("rb") as stream:
-                    body = stream.read(CAPTURE_BYTES - total + 1)
-            except OSError:
-                raise UsageError("Restore the captured dispatch inputs before service work.", {}) from None
-            total += len(body)
-            if total > CAPTURE_BYTES:
-                raise UsageError("Keep the active dispatch inputs within the service byte budget; do not attach local history.", {})
-            if hashlib.sha256(body).hexdigest() != captured["sha256"]:
-                raise UsageError("A prepared input changed; obtain a new explicit handoff before dispatch.", {})
-            result[str(Path(captured["path"]).resolve())] = body
-        return result
+        return _verify_inputs(self._prepared)
 
 
 def command_tasks(args, state_path, state):
