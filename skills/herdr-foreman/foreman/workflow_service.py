@@ -8,7 +8,6 @@ transaction. An unknown effect never becomes a new dispatch on restart.
 
 import json
 import os
-import re
 from pathlib import Path
 import time
 from typing import Callable
@@ -119,8 +118,7 @@ class WorkflowService:
                 return document["repository"]["github"]
             except ForemanError:
                 return None
-        canonical = re.fullmatch(r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#[^#\s]+", task)
-        return canonical.group(1) if canonical is not None else None
+        return None
 
     def _exception(self, state, code, sources=(), actions=("inspect_current_evidence", "return_authority")):
         progress = state["recovery"]["tasks"][self.capability.task]["progression"]
