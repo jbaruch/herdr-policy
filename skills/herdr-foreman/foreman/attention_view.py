@@ -2,16 +2,9 @@
 
 import copy
 
-from . import attention, foreman_reset
+from . import attention, context_output, foreman_reset
 from .chronology import timestamp
 from .errors import UsageError
-
-
-def _page(rows, offset, limit):
-    selected = rows[offset:offset + limit]
-    return {"total": len(rows), "offset": offset, "limit": limit, "returned": len(selected),
-            "omitted": len(rows) - len(selected), "next_offset": offset + limit if offset + limit < len(rows) else None,
-            "items": selected}
 
 
 def _short(value, limit=600):
@@ -101,9 +94,9 @@ def _render(result):
     return "\n".join(lines).rstrip() + "\n"
 
 
-def catch_up(path, at, *, task=None, limit=10, offset=0, since=None, include_closed=False):
-    if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or offset < 0:
-        raise UsageError("Catch-up needs --limit 1–50 and a nonnegative --offset; follow next_offset to read remaining obligations.", {})
+def catch_up(path, at, *, task=None, limit=context_output.DEFAULT_LIMIT, offset=0, since=None,
+             include_closed=False, compact=False):
+    context_output.validate_page(limit, offset)
     now = timestamp(at, "Catch-up checkpoint")
     cutoff = timestamp(since, "Catch-up since") if since is not None else None
     document, entries, progress = attention.load(path)
@@ -128,22 +121,30 @@ def catch_up(path, at, *, task=None, limit=10, offset=0, since=None, include_clo
     progress = [row for row in progress if (task is None or row["task"] == task)
                 and (cutoff is None or timestamp(row["at"], "Progress time") >= cutoff)]
     progress.sort(key=lambda row: (row["at"], row["id"]), reverse=True)
-    result = {"schema_version": attention.SCHEMA_VERSION, "state_path": str(attention.canonical_state(path)),
-              "attention_path": str(attention.storage_path(path)), "checked_at": attention._utc(at),
-              "task": task, "since": since, "attention": _page(actionable, offset, limit),
-              "deferred": _page(deferred, offset, limit), "progress": _page(progress, offset, limit),
-              "closed": _page(closed, offset, limit) if include_closed else None,
-              "retrospective_index": str(attention.canonical_state(path)) + ".retrospectives/index.json", "sources": [],
-              # The reset record is the durable blocker for a failed foreman reset.
-              "foreman_resets": foreman_reset.outstanding(path)}
-    sources = []
-    for section in ("attention", "deferred", "progress", "closed"):
-        page = result[section]
-        if page is not None:
-            for row in page["items"]:
-                for source in row["sources"]:
-                    if source not in sources:
-                        sources.append(copy.deepcopy(source))
-    result["sources"] = sources
-    result["markdown"] = _render(result)
-    return result
+    # Reset obligations are not dropped while shrinking optional page sizes.
+    resets = foreman_reset.outstanding(path)
+
+    def build(effective):
+        result = {"schema_version": attention.SCHEMA_VERSION, "state_path": str(attention.canonical_state(path)),
+                  "attention_path": str(attention.storage_path(path)), "checked_at": attention._utc(at),
+                  "task": task, "since": since, "attention": context_output.page(actionable, offset, effective),
+                  "deferred": context_output.page(deferred, offset, effective),
+                  "progress": context_output.page(progress, offset, effective),
+                  "closed": context_output.page(closed, offset, effective) if include_closed else None,
+                  "retrospective_index": str(attention.canonical_state(path)) + ".retrospectives/index.json",
+                  "foreman_resets": resets, "presentation_included": not compact}
+        sections = [result[name] for name in ("attention", "deferred", "progress", "closed")
+                    if result[name] is not None]
+        result["context_complete"] = all(section["omitted"] == 0 for section in sections)
+        if not compact:
+            sources = []
+            for section in sections:
+                for row in section["items"]:
+                    for source in row["sources"]:
+                        if source not in sources:
+                            sources.append(copy.deepcopy(source))
+            result["sources"] = sources
+            result["markdown"] = _render(result)
+        return result
+
+    return context_output.fit_pages(build, limit, offset)

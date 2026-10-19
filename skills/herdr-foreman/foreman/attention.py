@@ -343,6 +343,7 @@ def register_commands(sub, common):
         parser.add_argument("--offset", type=int, default=0)
         parser.add_argument("--since", help="Filter progress and closed history; never suppress open obligations.")
         parser.add_argument("--include-closed", action="store_true")
+        parser.add_argument("--compact", action="store_true", help="Return current records once, without duplicated Markdown and source lists.")
         parser.add_argument("--now", help="ISO-8601 checkpoint with timezone.")
     parser = sub.add_parser("attention-show", parents=[common], help="Read one obligation and its complete lifecycle history offline.")
     parser.add_argument("--id", required=True)
@@ -360,4 +361,5 @@ def run_command(args, state_path, now):
         return show(state_path, args.id)
     from .attention_view import catch_up
     return catch_up(state_path, getattr(args, "now", None) or now, task=args.task, limit=args.limit,
-                    offset=args.offset, since=args.since, include_closed=args.include_closed)
+                    offset=args.offset, since=args.since, include_closed=args.include_closed,
+                    compact=getattr(args, "compact", False))

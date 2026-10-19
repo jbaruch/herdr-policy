@@ -13,8 +13,8 @@ Run through the installed `skills/herdr-foreman/foreman.sh` with an explicit `ba
 | `attention-record --record entry.json [--now ISO]` | New obligation | Saved event and `replayed` |
 | `attention-update --record event.json [--now ISO]` | Explicit lifecycle transition | Saved event and `replayed` |
 | `attention-progress --record progress.json [--now ISO]` | Progress fact with ledger source; a statement about task content also cites its report as an `artifact` source | Saved event and `replayed` |
-| `attention-list [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--now ISO]` | Offline view | Same structured view as `catch-up` |
-| `catch-up [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--now ISO]` | Offline view | Actionable, deferred, progress, optional closed pages; source pointers; rendered Markdown |
+| `attention-list [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Same structured view as `catch-up` |
+| `catch-up [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Byte-bounded actionable, deferred, progress and optional closed pages |
 | `attention-show --id ID [--now ISO]` | Obligation ID | Current record and its complete lifecycle history |
 
 The owner file is `<Path(selected --state).expanduser().resolve()>.attention.json`. Its adjacent `.lock` is a live OS transaction lock. The owner uses `state_lock` and `save_state` for serialized atomic replacement. Preserve both the attention history and task ledgers outside task worktrees during cleanup. Canonical aliases of the selected state share one queue. Readers never create locks, initialize files, migrate data, update presentation markers, or contact workers.
@@ -96,6 +96,15 @@ An open `decision` or `blocker` on a task refuses `apply` and `start-judge` for 
 Catch-up ordering and page bounds are owned by `skills/herdr-foreman/foreman/attention_view.py`, `catch_up`. It includes unpresented and previously presented entries. `--since` filters only progress and closed history; old unanswered questions remain visible. `--task` explicitly limits the view to that task. Every section reports `total`, `offset`, `limit`, `returned`, `omitted`, `next_offset`, and `items`. Follow pagination before claiming to have shown all pending items. Markdown warns when actionable obligations remain outside the current page. `attention_markdown` contains only actionable obligations and pagination warnings, or an empty string when none exist; standup places it before its housekeeping table. Rendered items lead with the title, context, consequences, choices, recommendation, and needed action. Use user-readable wording in the resolution condition. Internal IDs, numeric priorities, revisions, presentation metadata, and the full source inventory remain in structured JSON. Markdown shows useful source links per item and a short still-open or resurfaced cue when applicable.
 
 The view includes future deferrals, explicitly recorded progress, optional closed entries, source references for displayed records, and the canonical retrospective-index path. It does not scan the filesystem or parse report prose to infer completion. Read the task ledger and saved retrospectives when their content is needed.
+
+Normal foreman retrieval uses `catch-up --compact`. It retains each displayed
+record and its sources once, omitting duplicate Markdown and the aggregate
+source list. Omit `--compact` when preparing the user-facing presentation.
+Both forms obey the view schema and printed-byte bound in
+`skills/herdr-foreman/foreman/context_output.py`; page sizes can shrink below the requested limit.
+Follow the returned cursor, not the requested row count. An indivisible oversized
+record refuses with `context_complete: false`; it remains in the owner queue and
+still gates dispatch. A partial page never resolves an undisplayed obligation.
 
 A progress input contains exactly `id`, `task`, `summary`, `assessment`, and `sources`. Assessment is `verified`, `reported`, or `unknown`; at least one source must be the associated `task_ledger`. Use `reported` for unaccepted worker claims. The utility records its UTC event time. The catch-up shows the timestamp with **Verified when recorded**, **Reported; acceptance unverified**, or **Acceptance unknown**. Even `verified` means verified when recorded; revalidate the actual task ledger and source evidence before claiming current acceptance. This cached summary never replaces the task ledger or treats Herdr lifecycle labels as acceptance. Give a changed fact a new progress ID; preserve the earlier claim and correction.
 

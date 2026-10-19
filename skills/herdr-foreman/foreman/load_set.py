@@ -24,12 +24,12 @@ import sys
 from . import runnable
 from .attention import GATING_KINDS
 from .chronology import latest_assignment, timestamp
+from .context_output import OUTPUT_BYTES
 from .foreman_queue import waiting
 from .errors import StateError, UsageError
 from .recovery import PENDING_STATUSES, active_plans, confirmed_fix, current_approach, developer_reservations, task_statuses
 
 LOAD_SET_SCHEMA_VERSION = 2
-OUTPUT_BYTES = 16_384
 READ_BYTES = 4_096
 DECISIONS = ("plan", "brief", "gate", "diagnose", "wake")
 OPEN_ATTENTION = frozenset({"open", "deferred"})

@@ -17,7 +17,7 @@ from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import runnable
+from . import context_output, runnable
 from . import supervision as store
 from .errors import HerdrError, StateError, ForemanError, UsageError
 from .herdr import HerdrClient, scrub_for_trace
@@ -94,7 +94,57 @@ def status(state_path, at, probe=process_identity):
     data = store.load(state_path)
     return {"schema_version": 1, "state_path": data["state_path"], "binding": data["binding"],
             "active": [row for row in data["members"] if row["active"]], "events": store.pending(data),
-            "through": len(data["events"]), "hold": store.held(data), "watcher": health(data, at, probe)}
+            "through": len(data["events"]), "hold": store.held(data), "watcher": health(data, at, probe),
+            "unresumed_holds": [row for row in data["holds"] if row["resumed_at"] is None]}
+
+
+def _event_reference(row):
+    return {"record_schema_version": row["schema_version"],
+            **{key: row[key] for key in ("id", "seq", "at", "member", "kind")}, "data_included": False}
+
+
+def event_view(result, *, compact=False, limit=context_output.DEFAULT_LIMIT, after=0):
+    """Page pending events without changing their snapshot or acknowledgement owner."""
+    context_output.validate_page(limit, 0)
+
+    def build(effective):
+        selected = context_output.sequence_page(result["events"], result["through"], after, effective,
+                                                 lambda row: row["seq"])
+        events = selected.pop("items")
+        if compact:
+            events = [_event_reference(row) for row in events]
+        return {**result, "events": events, "event_page": selected,
+                "event_data_included": not compact, "context_complete": selected["omitted"] == 0}
+
+    return context_output.fit_pages(build, limit, 0)
+
+
+def status_view(result, *, compact=False, limit=context_output.DEFAULT_LIMIT, offset=0, after=0):
+    """Keep binding, holds and live watcher facts while paging current enrollments."""
+    context_output.validate_page(limit, offset)
+    active = result["active"]
+    holds = result["unresumed_holds"]
+    if compact:
+        active = [{"record_schema_version": row["schema_version"],
+                   **{key: row[key] for key in ("id", "at", "assignment", "active")}} for row in active]
+        holds = [{"record_schema_version": row["schema_version"],
+                  **{key: value for key, value in row.items() if key not in ("schema_version", "dispositions")},
+                  "disposition_count": len(row["dispositions"]), "dispositions_included": False} for row in holds]
+
+    def build(effective):
+        selected = context_output.page(active, offset, effective)
+        events = context_output.sequence_page(result["events"], result["through"], after, effective,
+                                               lambda row: row["seq"])
+        rows = events.pop("items")
+        if compact:
+            rows = [_event_reference(row) for row in rows]
+        return {**result, "active": selected.pop("items"), "active_page": selected,
+                "unresumed_holds": holds,
+                "events": rows, "event_page": events, "observation_details_included": not compact,
+                "event_data_included": not compact,
+                "context_complete": selected["omitted"] == 0 and events["omitted"] == 0}
+
+    return context_output.fit_pages(build, limit, offset)
 
 
 def observation_error(exc, operation, agent):
@@ -285,6 +335,15 @@ def register_commands(sub, common):
             parser.add_argument("--record", metavar="FILE", help="Explicit verified native binding; otherwise discover the current foreman pane.")
         if name == "drain":
             parser.add_argument("--through", type=int)
+        if name in ("status", "drain", "watch", "ack", "resume"):
+            parser.add_argument("--compact", action="store_true", help="Return bounded current summaries without observation bodies or pending-event copies after mutations.")
+        if name == "resume":
+            parser.add_argument("--hold", action="append", dest="expected_holds", help="Each inspected unresumed hold; the complete set must still match atomically.")
+        if name in ("status", "drain", "watch"):
+            parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+            parser.add_argument("--after", type=int, default=0, help="Continue pending events after this sequence, within the through snapshot.")
+        if name == "status":
+            parser.add_argument("--offset", type=int, default=0, help="Current-enrollment page offset; event continuation uses --after.")
         if name == "watch":
             parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
             parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL)
@@ -302,17 +361,38 @@ def run_command(args, state_path, now, *, client=None, clock=None, sleeper=None,
             remote_authority=getattr(args, "herdr_authority", None)), at)
     functions = {"enroll": store.enroll, "ack": store.acknowledge, "resolve": store.resolve, "hold": store.hold}
     if action in functions:
-        return functions[action](state_path, record, at)
+        compact = action == "ack" and getattr(args, "compact", False)
+        if compact and isinstance(record, dict) and isinstance(record.get("outcomes"), list) and len(record["outcomes"]) > context_output.MAX_LIMIT:
+            raise UsageError("A compact acknowledgement batch exceeds its response bound; acknowledge the handled event page before requesting another.", {})
+        result = functions[action](state_path, record, at)
+        if compact:
+            return context_output.bounded({"schema_version": 1, "acknowledged": result["acknowledged"],
+                                           "remaining_count": len(result["remaining"]), "pending_included": False})
+        return result
     if action == "resume":
-        return store.resume(state_path, at)
+        expected = getattr(args, "expected_holds", None)
+        if getattr(args, "compact", False) and expected is None:
+            raise UsageError("Compact resume requires --hold for every inspected unresumed hold. A context reset does not authorize clearing holds; skip resume when no hold needs resuming.", {})
+        result = store.resume(state_path, at, expected_holds=expected)
+        if getattr(args, "compact", False):
+            return context_output.bounded({"schema_version": 1, "resumed": result["resumed"],
+                                           "pending_count": len(result["pending"]), "pending_included": False})
+        return result
     if action == "drain":
-        return store.drain(state_path, args.through)
+        return event_view(store.drain(state_path, args.through), compact=getattr(args, "compact", False),
+                          limit=getattr(args, "limit", context_output.DEFAULT_LIMIT), after=getattr(args, "after", 0))
     if action == "status":
-        return status(state_path, at, process_probe)
+        return status_view(status(state_path, at, process_probe), compact=getattr(args, "compact", False),
+                           limit=getattr(args, "limit", context_output.DEFAULT_LIMIT),
+                           offset=getattr(args, "offset", 0), after=getattr(args, "after", 0))
     if action == "watch":
         if clock is None or sleeper is None:
             raise UsageError("CLI must supply a clock and sleeper for bounded fleet watching.", {})
-        return watch(state_path, client or read_client(binary=getattr(args, "herdr_bin", None),
-                     context=getattr(args, "herdr_context", None), remote_authority=getattr(args, "herdr_authority", None)), at,
-                     clock=clock, sleeper=sleeper, probe=process_probe, duration=args.duration, interval=args.interval)
+        context_output.validate_page(getattr(args, "limit", context_output.DEFAULT_LIMIT), 0)
+        context_output.validate_sequence(len(store.load(state_path)["events"]), getattr(args, "after", 0))
+        result = watch(state_path, client or read_client(binary=getattr(args, "herdr_bin", None),
+                       context=getattr(args, "herdr_context", None), remote_authority=getattr(args, "herdr_authority", None)), at,
+                       clock=clock, sleeper=sleeper, probe=process_probe, duration=args.duration, interval=args.interval)
+        return event_view(result, compact=getattr(args, "compact", False),
+                          limit=getattr(args, "limit", context_output.DEFAULT_LIMIT), after=getattr(args, "after", 0))
     raise UsageError("Unknown supervision command; run `{}`.".format(runnable.command("--help")), {})

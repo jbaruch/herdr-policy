@@ -97,6 +97,11 @@ refused task, enrollment or unreconciled dispatch on stderr; resolve it first.
 The contract is `skills/herdr-foreman/references/working-memory.md` "Load a
 decision's records".
 
+Reuse policy and reference text actually loaded in this context while its
+revision and applicability remain unchanged. A path, digest or earlier context's
+claim is not loaded text. After replacement, retrieve the references needed for
+the current decision without copying complete policies into handoff captures.
+
 - Run each step's commands as that step documents them
 - Never write a throwaway helper script in a scratch directory
 - Never name a scratch file in a handoff
@@ -414,12 +419,15 @@ clear the pane or create a handoff hold merely for a round boundary.
 Run Steps 1 and 2 in this context, then continue at the saved step; resume Step 11 for enrolled observation
 obligations. A checkpoint is not a pause, completed goal or transfer of supervision.
 
-After an explicitly requested restart or replacement, the next context reads
-the stow and its required files, explicitly sets `/goal <saved objective>`
+After an explicitly requested restart or replacement, the next context retrieves
+the bounded stow and uses current owner queries for its evidence references,
+explicitly sets `/goal <saved objective>`
 and verifies the goal is active, then reconciles supervision,
 reads the queue, runs Steps 1 and 2, then takes the stow's continuation step in
 place of Step 5. The queue lists seats only; gating, release and closure resume
-at their saved step. Finish here only with no authorized work remaining or a
+at their saved step. Follow the selected view's continuations before claiming
+completeness. Preserve operator holds; a context reset supplies no permission
+to clear them. Finish here only with no authorized work remaining or a
 genuine pause or verified continuation satisfying the Stop gate.
 
 Read before acting:

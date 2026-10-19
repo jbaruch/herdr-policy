@@ -41,7 +41,15 @@ Minimal lesson input:
 
 Each revision needs a new `id`; retain `lesson_id` and set `supersedes` to its current record's `id`. An archive uses the same shape with `status: "archived"` and an archive reason. Reverification is a new revision with its actual verification time and newly captured evidence receipts. Repeating an identical command returns its original record and receipts without refreshing them. Reusing an id for changed input fails visibly.
 
-Scopes are exact labels chosen consistently by the foreman; `*` applies globally. Multiple requested scopes select their union. `memory-list` returns the latest active revision of each matching lesson, including expired lessons labeled as expired. `--include-archived` includes current archived revisions. `memory-show --id <record-id>` returns that immutable record and its lesson's complete revision history.
+Scopes are exact labels chosen consistently by the foreman; `*` applies globally.
+Multiple requested scopes select their union. `memory-list` pages the latest
+active revision of each matching lesson, including expired lessons labeled as
+expired. `--include-archived` includes current archived revisions. Follow
+`pagination.next_offset` with `--offset` for the selected question.
+`memory-show --id <record-id>` returns that immutable record without replaying
+its lesson's history. Request `--history` explicitly for bounded revision pages;
+follow `history_pagination.next_offset` with `--offset`. History is evidence for
+a specific investigation, not a normal resume input.
 
 ## Preserve specialist knowledge
 
@@ -84,7 +92,7 @@ Record a stow containing:
 - The active goal's objective, status, remaining work and remaining budget, if any, in the capture and unresolved work. Saving a stow never pauses or completes the goal.
 - The continuation step, in the unresolved work: the SKILL.md step the replacement continues at under Step 17's Resume Route.
 - Explicit gaps, including missing evidence and work the foreman could not persist. Use an empty list only after checking for gaps. Each gap is `{"missing", "task", "recovery"}`: what is missing, the task it affects, and exactly one recovery — `{"reread": "/absolute/path"}`, `{"ask": "<question for the operator>"}` or `{"accept": "<why the loss is safe>"}`. A gap without a recovery is refused, and so is a new gap naming the task `unrecorded`, which is reserved for migrated version-1 gaps.
-- Ordered, absolute paths to the durable files the replacement must read, such as the task ledger, attention queue, active assignment state, relevant retrospective notes and task context. Use actual files, not directories or a vague instruction to inspect the workspace.
+- Ordered, absolute source references for the current unresolved questions. Use actual files, not directories or a workspace scan. Retrieve owner facts through their bounded commands; do not copy owner-state dumps, GitHub history or complete policy files into a handoff.
 
 ```text
 memory-stow --record /durable/team/stow-input.json
@@ -104,7 +112,20 @@ Minimal stow input:
 }
 ```
 
-The output supplies `memory_path`, the stow record and receipts for each required read. Preserve that exact `memory_path` in the foreman handoff. Do not list the memory index as a source or required read: its path is included automatically, and writing the stow changes its bytes. The replacement first reads this index through `memory-show`, then the stow's required files in order, then the relevant lessons through `memory-list`. `memory-show` defaults to the latest stow; `--id` retrieves an earlier capture.
+The output supplies `memory_path`, the stow record and source receipts. Preserve
+that exact `memory_path` in the handoff. Do not receipt the memory index: writing
+the stow changes it. `memory-show` retrieves the latest bounded capture; `--id`
+selects an earlier one. The legacy field name `required_reads` identifies captured
+sources; it is not an instruction to print each raw file. Use `catch-up --compact`,
+the paged `foreman-queue`, and the selected task's `load-set` for current owner
+facts. Retrieve only question-specific evidence and relevant lesson pages.
+
+New memory records must fit their complete current-record response before the
+owner commits them. An oversized legacy capture refuses without discarding its
+knowledge; reset preflight uses the same bounded reader before child startup or
+pane clearing. Keep the outgoing responsibility, recover the selected questions
+through current owners, and record a concise replacement with explicit gaps.
+Do not work around refusal by dumping the index or replaying the archive.
 
 `reset_ready` is false if any required file has changed or become unavailable, or if a gap names the task `unrecorded`. Any other gap names its own recovery and does not block a reset. A true value covers only the saved local capture and its unchanged required files. It does not prove that the foreman captured every conversation fact, reconcile a fleet, satisfy the supervision gate, authorize interruption, or accept tasks. The foreman must still apply the separate handoff and supervision rules. New unresolved knowledge after the stow requires a new stow id.
 
@@ -244,3 +265,11 @@ Lesson records have `kind: "lesson"` and the lesson input fields above, replacin
 Stow records have `kind: "stow"` and the stow input fields above, replacing `required_reads` with file receipts in the supplied order. Stow records are version 2. A version-1 stow upgrades on read: each free-text gap becomes `{"missing": <text>, "task": "unrecorded", "recovery": {"ask": <a question quoting the text>}}`, since it never recorded a task or recovery. Such a gap names no task, so it keeps `reset_ready` false until a new stow records the gap with its actual task. `input_digest` keeps binding the original input. The owner's first read or write of a document holding a version-1 stow persists the upgrade under its lock; other readers never migrate. Captures and unresolved knowledge remain in the index even if those source files later disappear.
 
 Reader output adds observations to copies of saved sources: `same_bytes`, `changed`, `unavailable`, or `not_checked_offline` for URLs. Lesson views add `expired` and `use_requires_live_verification: true`. Stow views add `reset_ready` and `readiness_scope: "local_capture_only"`. These are computed views, never saved fields. Read commands return `memory_path` and `checked_at`; write commands return `memory_path` and `replayed` alongside the record. None of these fields is task acceptance evidence.
+
+CLI context responses use the view schema in
+`skills/herdr-foreman/foreman/context_output.py`, separately from the unchanged persisted schemas.
+The owner enforces the printed-byte bound before emitting JSON. Page counts,
+continuations and `context_complete` describe the selected records, not task
+acceptance; `authorizes_progression` remains false. Readiness still requires
+current owner checks. Per-decision aggregate budgets and artifact retirement
+remain separate requirements under issue #11.

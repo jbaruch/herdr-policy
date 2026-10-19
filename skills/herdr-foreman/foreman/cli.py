@@ -57,7 +57,7 @@ from .planner import plan as build_plan
 from .planner import ASSIGNMENT_PLAN_SCHEMA_VERSION, headroom_of
 from .tiers import (COORDINATION_ROUND, FOREMAN_ROLE, JUDGMENT_ROUNDS, MissingTierError,
                     parse_launch_args, parse_tiers, select_tier, worker_launch_args)
-from . import cost_report, selection, successors, tier_routing
+from . import context_output, cost_report, selection, successors, tier_routing
 from .launch import configured_running_tier, restart_worker, start_foreman, start_worker, verify_foreman, verify_running, require_empty_shell
 from .state import (
     add_assignment,
@@ -180,8 +180,10 @@ def build_parser():
                                      help="Read the saved capability table without contacting Herdr.")
     sub.add_parser("capability-migrate", parents=[common],
                    help="Owner upgrade of an older capability table, preserving historical evidence.")
-    sub.add_parser("supervision-gate", parents=[common],
-                   help="Which pending supervision events need the foreman. Read-only.")
+    gate_parser = sub.add_parser("supervision-gate", parents=[common],
+                               help="Page verdicts for pending supervision events. Read-only.")
+    gate_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    gate_parser.add_argument("--after", type=int, default=0)
 
     retro_list = sub.add_parser("retro-list", parents=[common], help="List saved retrospective notes without contacting Herdr.")
     retro_list.add_argument("--task")
@@ -469,7 +471,9 @@ def build_parser():
     check_member.add_argument("--enrollment", required=True)
     check_member.add_argument("--worktree", help="The worker's own checkout, when it has one.")
     sub.add_parser("migrate-home", parents=[common], help="Move the state and config homes from teamlead to foreman, once per machine, with every foreman stopped.")
-    sub.add_parser("foreman-queue", parents=[common], help="List open tasks waiting for their next seat, oldest first, derived from the owner records.")
+    queue_parser = sub.add_parser("foreman-queue", parents=[common], help="Page open tasks waiting for their next seat, oldest first, within a printed-byte budget.")
+    queue_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    queue_parser.add_argument("--offset", type=int, default=0)
     cost_parser = sub.add_parser("cost-report", parents=[common],
                                  help="Report each task's resource use through acceptance from the owner records. Read-only.")
     cost_parser.add_argument("--task", help="Report this task alone.")
@@ -2360,7 +2364,7 @@ def cmd_foreman_queue(args, client=None, warn=None, trace=None):
         raise StateError("State file {} is unusable, so the queue cannot be derived; restore it before planning.".format(state_path),
                          {"path": str(state_path)})
     busy = {row["assignment"]["task"] for row in supervision.load(state_path)["members"] if row["active"]}
-    return foreman_queue.waiting(state["recovery"], state["assignments"], busy), None
+    return foreman_queue.view(state["recovery"], state["assignments"], busy, limit=args.limit, offset=args.offset), None
 
 
 def cmd_cost_report(args, client=None, warn=None, trace=None):
@@ -2404,7 +2408,8 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
             args.enrollment, runnable.command("supervision-status")), {})
     if args.decision != "wake" and args.task not in state["recovery"]["tasks"] and not any(
             row.get("task") == args.task for row in state["assignments"]):
-        raise UsageError("Task {!r} is neither registered nor assigned; check its identity with `{}`.".format(args.task, runnable.command("state")), {})
+        raise UsageError("Task {!r} is neither registered nor assigned; select its canonical identity from `{}` or `{}` before retrying.".format(
+            args.task, runnable.command("foreman-queue"), runnable.command("supervision-status --compact")), {})
     packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
                             exists=_file_present, supervision_view=supervision_view)
     if args.read_file is not None:
@@ -3320,7 +3325,7 @@ def cmd_progression_run(args, client=None, warn=None, trace=None):
 
 def cmd_supervision_gate(args, client=None, warn=None, trace=None):
     """Which pending supervision events need the foreman; see supervision_gate.py."""
-    return supervision_gate.pending(supervision.load(_state_path(args))), None
+    return supervision_gate.view(supervision.load(_state_path(args)), limit=args.limit, after=args.after), None
 
 
 def cmd_restoration(args, client=None, warn=None, trace=None):
