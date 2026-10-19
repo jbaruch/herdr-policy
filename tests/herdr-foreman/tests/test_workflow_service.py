@@ -179,7 +179,7 @@ class WorkflowServiceTest(unittest.TestCase):
     def adapter(self, *args, **options):
         return NativeWorkflowAdapter(*args, **options, run=self.wait)
 
-    def runner(self, capability):
+    def runner(self, capability, *, planner=None):
         self.native.capability = capability
         # FreshOwnerNative overrides methods instead of emulating JSON argv.
         # Actual clone/fence behavior is independently tested by owner suites.
@@ -187,7 +187,7 @@ class WorkflowServiceTest(unittest.TestCase):
         patched.start()
         self.addCleanup(patched.stop)
         return workflow_service.WorkflowService(capability, self.native, clock=self.now, sleeper=lambda _: None,
-                                                native=self.adapter, planner=self.plan)
+                                                native=self.adapter, planner=self.plan if planner is None else planner)
 
     def progress(self):
         return self.owner.state()["recovery"]["tasks"]["one"]["progression"]
@@ -648,8 +648,8 @@ class WorkflowServiceTest(unittest.TestCase):
         self.configuration.write_text(json.dumps(configuration))
         self.document["config"] = recovery.receipt(str(self.configuration))[0]
 
-    def foreign_enrollment(self):
-        supervision.enroll(self.path, {"id": "foreign", "agent": "elsewhere", "task": "two",
+    def foreign_enrollment(self, task="two"):
+        supervision.enroll(self.path, {"id": "foreign", "agent": "elsewhere", "task": task,
             "report": str(self.root / "foreign-report.md"), "pane_id": None, "native_session": None}, self.now())
 
     def test_saturated_new_start_waits_without_planning_or_native_effects(self):
@@ -660,13 +660,33 @@ class WorkflowServiceTest(unittest.TestCase):
             runner = self.runner(capability)
             before = self.path.read_bytes()
             events = list(self.native.events)
-            with patch.object(runner, "planner", side_effect=AssertionError("Capacity waits before planning.")):
-                result = runner.tick()
+            result = runner.tick()
             self.assertEqual(result["data"]["status"], "waiting")
             self.assertEqual(result["data"]["reason"], "global_in_flight_limit")
             self.assertFalse(result["wake_agent"])
             self.assertEqual(self.native.events, events)
             self.assertEqual(self.path.read_bytes(), before)
+            self.assertIsNone(self.progress()["pending"])
+
+    def test_a_repository_shaped_task_name_is_not_verified_family_evidence(self):
+        self.select_backpressure()
+        configuration = json.loads(self.configuration.read_text())
+        configuration["backpressure"]["global"] = {"in_flight": 4, "integration": 4}
+        configuration["backpressure"]["repositories"] = {
+            "fixture/repository": {"in_flight": 2, "integration": 2}}
+        self.configuration.write_text(json.dumps(configuration))
+        self.document["config"] = recovery.receipt(str(self.configuration))[0]
+        self.admit()
+        self.foreign_enrollment("fixture/repository#2")
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            before, events = self.path.read_bytes(), list(self.native.events)
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "waiting")
+            self.assertEqual(result["data"]["reason"], "repository_scope_unverified")
+            self.assertEqual(result["data"]["capacity"]["counts"]["unverified_repositories"], 1)
+            self.assertEqual(self.path.read_bytes(), before)
+            self.assertEqual(self.native.events, events)
             self.assertIsNone(self.progress()["pending"])
 
     def test_full_capacity_does_not_deadlock_native_correction_review_and_release(self):
@@ -704,12 +724,13 @@ class WorkflowServiceTest(unittest.TestCase):
             for name in ("claude", "codex", "grok")}, "failed_agents": [], "skipped_agents": []})
         save_state(self.path, state)
         with self.owner.session() as capability:
-            runner = self.runner(capability)
+            runner = self.runner(capability, planner=workflow_planning.plan)
             events = list(self.native.events)
-            with patch.object(runner, "planner", wraps=workflow_planning.plan) as planner:
-                result = runner.tick()
-            self.assertTrue(planner.called)
+            result = runner.tick()
             self.assertEqual(result["data"]["status"], "exception")
+            self.assertEqual(result["data"]["reason"], "workflow_owner_refused")
+            self.assertEqual(result["data"]["exception"]["code"], "workflow_owner_refused")
+            self.assertEqual(result["data"]["exception"]["phase"], "implement")
             self.assertEqual(self.native.events, events)
             self.assertEqual(self.owner.state()["assignments"], [])
             self.assertIsNone(self.progress()["pending"])
