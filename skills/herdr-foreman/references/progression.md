@@ -120,6 +120,24 @@ plus narrowly named delivery/review artifacts. It is not a history directory.
 Workers consume the specific inputs named in their brief, never a recursive
 `.hr` or owner-state dump. GitHub remains the change and review history.
 
+After verified acceptance, selected publications and Git teardown, delivery
+schema 2 retires the private directory through the existing cleanup intent.
+It moves the directory and each file into its exclusively owned quarantine
+before checking the captured inode and bytes, then deleting. The bounded
+manifest holds at most 256 identities; each batch holds at most 32 receipts.
+Unknown entries, changed evidence, links, open report gates and unresolved enrollments preserve
+the source or quarantine. Restart resumes the same intent. The
+`.herdr-retire-` namespace belongs exclusively to this lifecycle.
+Owner-proved unsent attempts retire only their byte-bound unused briefs, with
+no active enrollment or report; their canonical no-send evidence remains.
+
+The primary owner migrates delivery 1 on read; run the owner state command
+before a read-only preview or restarted executor. Already completed history is
+marked `legacy_preserved` without a directory sweep. Older delivery-1 readers
+refuse the new lifecycle. Keep an owner that reads delivery 2 for in-flight
+cleanup. Canonical receipts and the GitHub closure reference retain completed
+history; the CLI returns a compact lifecycle view, never its file manifest.
+
 `effects` is a unique list drawn from `write`, `push`, `open_pr`, `merge` and
 `publish`. All four source effects are required; publish matches the channels.
 `publication` contains `tessl` (null or `{workspace,plugin}`), `acr` (boolean)

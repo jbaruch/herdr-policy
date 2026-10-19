@@ -68,7 +68,15 @@ def _task_dispatches(store, assignments, task, since=None):
 
 def _core(state, attention_entries, task):
     store = state["recovery"]
-    return {"task": store["tasks"].get(task),
+    record = store["tasks"].get(task)
+    progress = record.get("progression") if isinstance(record, dict) else None
+    delivery = progress.get("delivery") if isinstance(progress, dict) else None
+    if (isinstance(record, dict) and isinstance(progress, dict)
+            and isinstance(delivery, dict) and delivery.get("schema_version") == 2):
+        from .workflow_artifacts import view
+        record = {**record, "progression": {**progress, "delivery": {
+            **delivery, "artifacts": view(delivery["artifacts"])}}}
+    return {"task": record,
             "status": task_statuses(store, state["assignments"]).get(task),
             "attention": [entry for entry in attention_entries.values()
                           if (entry.get("task") == task or entry.get("task") is None and entry.get("kind") in GATING_KINDS)

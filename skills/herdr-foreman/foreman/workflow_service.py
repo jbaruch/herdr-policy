@@ -16,6 +16,7 @@ from . import cli, config, engagement, load_set, policy_paths, progression_owner
 from . import progression_runtime, recovery, report_delivery, report_gates, supervision
 from . import workflow_contract as schema, workflow_dispatch as dispatch
 from . import workflow_capacity, workflow_planning, workflow_workspace as workspace
+from . import workflow_artifacts, workflow_upgrade
 from .errors import ForemanError, UsageError
 from .progression_service import capture_contract
 from .state import TransactionBusy, latest_snapshot, save_state, state_lock
@@ -91,13 +92,16 @@ class WorkflowService:
         save_state(self.path, state)
 
     def _view(self, progress, status, reason=None, *, capacity=None):
+        delivery = progress["delivery"]
+        if delivery is not None and delivery["schema_version"] == 2:
+            delivery = {**delivery, "artifacts": workflow_artifacts.view(delivery["artifacts"])}
         result = {"schema_version": 2, "wake_agent": status == "exception", "data": {
             "task": self.capability.task, "generation": self.capability.generation,
             "status": status, "phase": progress["phase"], "correction": progress["round"],
             "jobs": progress["jobs"], "pending_intent": progress["pending"]["id"] if progress["pending"] else None,
             "reason": reason, "exception": progress["exception"],
             "exception_digest": supervision.digest(progress["exception"]) if progress["exception"] is not None else None,
-            "delivery": progress["delivery"],
+            "delivery": delivery,
             "authorizes_acceptance": False, "authorizes_release": False}}
         if capacity is not None:
             result["data"]["capacity"] = capacity
@@ -255,8 +259,8 @@ class WorkflowService:
             member = next((row for row in supervision.load(self.path)["members"] if row["id"] == job["id"]), None)
             if (member is not None and not member["active"] and member["resolution"] is not None
                     and job["report_evidence"] is not None
-                    and any(row["path"] == job["report_evidence"]["path"] and row["sha256"] == job["report_evidence"]["sha256"]
-                            for row in member["resolution"]["evidence"])):
+                    and all(any(row["path"] == expected["path"] and row["sha256"] == expected["sha256"]
+                                for row in member["resolution"]["evidence"]) for expected in intent["inputs"])):
                 progress.update(pending=None, at=self.clock())
                 self._save(state)
                 return self._view(progress, "advanced")
@@ -330,13 +334,8 @@ class WorkflowService:
         delivery_name = "delivery-{}.json".format(job["id"].replace(":", "-"))
         if (root / delivery_name).exists():
             delivery, prior = workspace.capture(root / delivery_name)
-            try:
-                waited = json.loads(prior)
-            except ValueError:
-                raise UsageError("Restore this job's original successful delivery receipt before assessment.", {}) from None
-            if (not isinstance(waited, dict) or waited.get("found") is not True
-                    or waited.get("agent") != job["agent"] or waited.get("report_path") != job["report"]):
-                raise UsageError("The preserved delivery receipt belongs to another outcome; retain it for owner reconciliation.", {})
+            if prior != encoded(observed["wait"]):
+                raise UsageError("The preserved delivery file differs from the current canonical native receipt; retain both outcomes for owner reconciliation.", {})
         else:
             delivery, _ = workspace.write_current(root, delivery_name, encoded(observed["wait"]), immutable=True)
         # This event is backed by the canonical native delivery checker, never
@@ -430,11 +429,13 @@ class WorkflowService:
                 progress["jobs"].pop("release")
                 progress.update(plan=None, at=self.clock())
             else:
+                workflow_upgrade.require_compatible_services(state, self.path)
                 progress.update(phase="merge", plan=None, at=self.clock(), delivery={
-                    "schema_version": 1, "pull_request": claims["release"]["pull_request"],
+                    "schema_version": 2, "pull_request": claims["release"]["pull_request"],
                     "merge_commit": None, "publisher_run": None, "tag": None, "tessl_version": None,
                     "tessl_confirmed": False, "acr_confirmed": False, "accepted": False,
-                    "base_checkout": str(workspace.base_checkout(self.document)), "cleanup_step": 0})
+                    "base_checkout": str(workspace.base_checkout(self.document)), "cleanup_step": 0,
+                    "artifacts": workflow_artifacts.initial()})
         self._save(state)
         return self._view(progress, "advanced")
 

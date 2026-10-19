@@ -10,6 +10,7 @@ No caller-provided environment or serialized capability is accepted.
 
 import json
 import os
+from pathlib import Path
 import subprocess
 import time
 
@@ -155,6 +156,12 @@ class NativeWorkflowAdapter:
         captured, _body = capture(job["report"], limit=REPORT_LIMIT)
         if captured != job["report_evidence"] or job["claim"] is None:
             raise UsageError("Restore the actual validated report before closing its native assignment.", {})
+        progress = self.state["recovery"]["tasks"][self.capability.task]["progression"]
+        expected = progress["pending"]["inputs"]
+        delivery_path = Path(job["report"]).with_name("delivery-{}.json".format(job["id"].replace(":", "-")))
+        if (len(expected) != 2 or expected[0] != job["report_evidence"]
+                or expected[1]["path"] != str(delivery_path) or capture(delivery_path)[0] != expected[1]):
+            raise UsageError("Restore this close intent's original report and delivery receipts before closing its native assignment.", {})
         with report_gates.holding(self.capability.state_path):
             report_gates.require_clear(self.capability.state_path, job["report"], accepted)
             def same_native():
@@ -175,7 +182,7 @@ class NativeWorkflowAdapter:
                 supervision.acknowledge(self.capability.state_path, {"through": drained["through"], "outcomes": [
                     {"event": event["id"], "outcome": outcome, "evidence": [job["report"]]} for event in events]}, self.clock())
             supervision.resolve(self.capability.state_path, {"id": job["id"], "outcome": outcome,
-                                                           "evidence": [job["report"]]}, self.clock())
+                "evidence": [row["path"] for row in expected]}, self.clock(), expected_evidence=expected)
         job["status"] = "closed"
         self.changed()
         return closure

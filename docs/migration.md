@@ -17,6 +17,7 @@ source documentation alone does not prove a version is published or installable.
 | Explicitly admitted schema-2 task execution | herdr-policy 0.4.0 |
 | Byte-bounded context views with CLI view schema 2 | herdr-policy 0.5.0 |
 | Opt-in native new-start capacity limits using config schema 9 | herdr-policy 0.6.0 |
+| Private native artifact retirement after verified acceptance | herdr-policy 0.6.1 |
 
 These are capability floors, not a promise that an older owner can read newer
 stored state. Record the actual installed pair and policy identity. Before using

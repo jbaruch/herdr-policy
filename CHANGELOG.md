@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-10-19
+
+- Refuse delivery-format migration or initial creation when any unfinished service in the owner file still requires a different admitted policy. Preserve compatible bytes and identify the blocked task and policy, including in read-only previews, so an upgrade cannot strand another task on an older reader.
+- Retain report and delivery byte receipts in the existing canonical enrollment resolution. Refuse retirement of replaced delivery bytes or missing expected evidence before creating a manifest. Keep the full manifest out of task diagnosis output as well as service views.
+- Retire ready-to-delivered release histories without inventing preliminary snapshot obligations; preserve unclaimed snapshots. Reserve every component of retirement paths, including resolved aliases, against new task writers.
+- Preserve successful Python 3.11 boolean exit codes in the test-entrypoint probe without executing test bodies a second time.
+- Retire an accepted native task's private plan, brief, report and delivery/review files after confirmed publication and Git teardown. Use bounded batches in the existing cleanup intent; retain canonical owner receipts and the GitHub closure reference.
+- Add delivery schema 2 with owner migration and an explicit bounded artifact lifecycle. Atomically quarantine targets before verifying identity and deleting; preserve changed evidence, foreign entries, links and active enrollments. Resume interrupted batches without redispatching. Existing completed directories become preserved history; legacy `.hr` cleanup remains separate.
+
 ## 0.6.0 — 2026-10-19
 
 - Add explicit config-schema-9 WIP/integration thresholds for admitted native task workflows, with repository limits and expiring task exceptions. Reuse current owner records and the initial-job transaction; reservations and uncertain work consume capacity without creating another ledger.

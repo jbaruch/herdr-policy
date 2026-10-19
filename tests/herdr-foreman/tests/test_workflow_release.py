@@ -11,15 +11,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 from copy import deepcopy
+import importlib.util
 import json
 import os
+import stat
 import subprocess
 import unittest
 from unittest.mock import patch
 
 from tests import test_workflow_service as fixture
 from foreman import recovery, supervision, workflow_contract, workflow_recovery, workflow_release, workflow_review
-from foreman.state import save_state, state_lock
+from foreman import load_set, workflow_artifacts, workflow_rename
+from foreman import progression_owner as authority
+from foreman.errors import StateError
+from foreman.state import load_state_checked, save_state, state_lock
 
 
 class WorkflowReleaseTest(unittest.TestCase):
@@ -148,6 +153,668 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertEqual(len([row for row in self.case.owner.state()["recovery"]["events"] if row["kind"] == "task_closed"]), 1)
             self.assertIsNone(progress["pending"])
             self.assertEqual(supervision.pending(supervision.load(self.path)), [])
+            self.assertFalse(Path(self.case.document["artifact_directory"]).exists())
+
+    def at_artifact_cleanup(self, runner):
+        self.case.advance(runner, lambda: self.case.progress()["phase"] == "cleanup"
+            and self.case.progress()["delivery"]["cleanup_step"] == 5
+            and self.case.progress()["pending"] is None, delivery=self.deliver)
+        return Path(self.case.document["artifact_directory"])
+
+    def test_foreign_file_preserves_the_complete_task_directory(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            (root / "operator-notes.md").write_text("Owned by the operator.\n")
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertFalse(self.case.progress()["phase"] == "complete")
+
+    def test_admission_preserves_the_exclusive_retirement_namespace(self):
+        reserved = self.root / (".herdr-retire-" + "a" * 32)
+        events = list(self.case.native.events)
+        for selected in (reserved, reserved / "nested" / "new-task"):
+            with self.subTest(path=selected):
+                self.case.document["artifact_directory"] = str(selected)
+                with self.assertRaisesRegex(fixture.UsageError, "retirement namespace"):
+                    self.case.admit()
+        self.assertFalse(reserved.exists())
+        self.assertEqual(self.case.native.events, events)
+
+    def test_admission_preserves_a_reserved_namespace_reached_through_an_alias(self):
+        reserved = self.root / (".herdr-retire-" + "a" * 32)
+        reserved.mkdir(mode=0o700)
+        marker = reserved / "original-owner.md"
+        marker.write_text("Another lifecycle owns these bytes.\n")
+        alias = self.root / "alias"
+        alias.symlink_to(reserved, target_is_directory=True)
+        self.case.document["artifact_directory"] = str(alias / "new-task")
+        events = list(self.case.native.events)
+        with self.assertRaisesRegex(fixture.UsageError, "retirement namespace"):
+            self.case.admit()
+        self.assertEqual(marker.read_text(), "Another lifecycle owns these bytes.\n")
+        self.assertFalse((reserved / "new-task").exists())
+        self.assertEqual(self.case.native.events, events)
+
+    def test_ready_then_delivered_release_retires_only_claimed_review_snapshots(self):
+        self.case.admit()
+        ready_jobs = []
+        def deliver(job):
+            if job["role"] == "release" and not ready_jobs:
+                ready_jobs.append(job["id"])
+                return self.case.deliver(job, outcome="ready")
+            return self.deliver(job)
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "cleanup"
+                and self.case.progress()["delivery"]["cleanup_step"] == 5
+                and self.case.progress()["pending"] is None, delivery=deliver)
+            root = Path(self.case.document["artifact_directory"])
+            self.assertEqual(len(ready_jobs), 1)
+            preliminary = root / "reviews-{}.json".format(ready_jobs[0].replace(":", "-"))
+            self.assertFalse(preliminary.exists())
+            state = self.case.owner.state()
+            manifest = workflow_artifacts.inventory(runner, state, self.case.progress())
+            self.assertTrue(manifest["remaining"])
+            preliminary.write_bytes(b'{"foreign":"Unclaimed preliminary snapshot."}\n')
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            with self.assertRaisesRegex(fixture.UsageError, "unclaimed release snapshot"):
+                workflow_artifacts.inventory(runner, state, self.case.progress())
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            preliminary.unlink()
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete")
+            self.assertFalse(root.exists())
+            releases = [row for row in supervision.load(self.path)["members"]
+                        if row["id"].endswith(":release")]
+            self.assertEqual(len(releases), 2)
+            self.assertTrue(all(not row["active"] and row["resolution"] is not None for row in releases))
+
+    def test_long_retirement_manifest_stays_out_of_current_context(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            state = self.case.owner.state()
+            progress = state["recovery"]["tasks"]["one"]["progression"]
+            lifecycle = progress["delivery"]["artifacts"]
+            lifecycle["phase"] = "retiring"
+            lifecycle["stage"] = {"schema_version": 1, "device": 1, "inode": 2}
+            while len(lifecycle["remaining"]) < 256:
+                count = len(lifecycle["remaining"])
+                lifecycle["remaining"].append({"schema_version": 1, "name": "retained-{}-{}".format(count, "x" * 90),
+                    "sha256": "a" * 64, "device": 1, "inode": count + 3})
+            hidden = lifecycle["remaining"][-1]["name"]
+            save_state(self.path, state)
+            members = supervision.load(self.path)["members"]
+            reports = {member["id"]: supervision.expected_assignment(member)["report"] for member in members}
+            packet = load_set.build(state, reports, {}, set(), "diagnose", task="one", exists=lambda path: Path(path).exists())
+            self.assertEqual(packet["core"]["task"]["progression"]["delivery"]["artifacts"]["remaining_count"], 256)
+            self.assertNotIn(hidden, json.dumps(packet))
+            self.assertLessEqual(len((json.dumps(packet, indent=2) + "\n").encode()), load_set.OUTPUT_BYTES)
+            self.assertEqual(len(lifecycle["remaining"]), 256)
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception")
+            self.assertEqual(result["data"]["delivery"]["artifacts"]["remaining_count"], 256)
+            rendered = (json.dumps(result, indent=2) + "\n").encode()
+            self.assertLessEqual(len(rendered), 16384)
+            self.assertNotIn(hidden.encode(), rendered)
+            self.assertEqual(len(self.case.progress()["delivery"]["artifacts"]["remaining"]), 256)
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+
+    def test_changed_closed_report_preserves_all_artifacts(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            report = next(root.glob("report-*.md"))
+            report.write_bytes(report.read_bytes() + b"Changed after native closure.\n")
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+
+    def test_replaced_delivery_json_is_preserved_against_the_canonical_closure_receipt(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            delivery = next(root.glob("delivery-*-developer.json"))
+            member = next(row for row in supervision.load(self.path)["members"]
+                          if any(proof["path"] == str(delivery) for proof in row["resolution"]["evidence"]))
+            expected = next(proof for proof in member["resolution"]["evidence"] if proof["path"] == str(delivery))
+            self.assertEqual(expected["sha256"], recovery.receipt(str(delivery))[0]["sha256"])
+            delivery.write_bytes(b'{"foreign": "Replacement bytes after native closure."}\n')
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertIsNone(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+
+    def test_missing_expected_artifacts_never_retire_the_remaining_directory(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            original = {p.name: p.read_bytes() for p in root.iterdir()}
+            release_report = next(root.glob("report-*-release.md")).name
+            snapshot = next(root.glob("reviews-*.json")).name
+            cases = [(next(root.glob("report-*-developer.md")).name,), (release_report, snapshot), (snapshot,),
+                     (next(root.glob("brief-*.md")).name,), ("common.md",), ("plan.json",),
+                     (next(root.glob("delivery-*.json")).name,)]
+            for removed in cases:
+                with self.subTest(removed=removed):
+                    for name in removed:
+                        (root / name).unlink()
+                    before = {p.name: p.read_bytes() for p in root.iterdir()}
+                    state = self.case.owner.state()
+                    progress = state["recovery"]["tasks"]["one"]["progression"]
+                    with self.assertRaisesRegex((StateError, fixture.UsageError), "evidence is missing"):
+                        workflow_artifacts.inventory(runner, state, progress)
+                    self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+                    self.assertIsNone(progress["delivery"]["artifacts"]["quarantine"])
+                    for name in removed:
+                        (root / name).write_bytes(original[name])
+            preserved = root.with_name("preserved-original-artifacts")
+            root.rename(preserved)
+            with self.assertRaisesRegex(StateError, "artifacts are missing"):
+                workflow_artifacts.inventory(runner, self.case.owner.state(), self.case.progress())
+            self.assertEqual({p.name: p.read_bytes() for p in preserved.iterdir()}, original)
+            preserved.rename(root)
+
+    def test_first_delivery_two_record_preserves_another_pinned_services_old_reader(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            def release_closed():
+                progress = self.case.progress()
+                identifier = progress["jobs"].get("release")
+                return progress["phase"] == "release" and progress["pending"] is None and identifier is not None and any(
+                    row["id"] == identifier and not row["active"] and row["resolution"] is not None
+                    for row in supervision.load(self.path)["members"])
+            self.case.advance(runner, release_closed, delivery=self.deliver)
+            other_contract = self.root / "mixed-policy-contract.json"
+            other_contract.write_text('{"schema_version": 1, "task": "two"}\n')
+            data = {**self.case.owner.data, "task": "two", "service_id": "older-service",
+                    "lease_path": str(self.root / "older-service.lease"), "contract": str(other_contract)}
+            with patch("foreman.progression_owner.loaded_policy", return_value=("0.6.0", "a" * 64)), state_lock(self.path):
+                authority.handoff(self.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+            original = deepcopy(self.case.owner.state()["recovery"]["tasks"]["two"])
+            self.assertTrue(all(row.get("progression", {}).get("delivery") is None
+                                for row in self.case.owner.state()["recovery"]["tasks"].values()))
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception")
+            state = self.case.owner.state()
+            self.assertIsNone(state["recovery"]["tasks"]["one"]["progression"]["delivery"])
+            self.assertEqual(state["recovery"]["tasks"]["two"], original)
+            self.published_workflow_reader().validate_progress(state["recovery"]["tasks"]["one"]["progression"])
+
+    def test_changed_release_review_snapshot_preserves_all_artifacts(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            snapshot = next(root.glob("reviews-*.json"))
+            snapshot.write_bytes(b'{"foreign": "Changed after release."}\n')
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+
+    def test_missing_closed_release_report_preserves_review_snapshot(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            next(root.glob("report-*-release.md")).unlink()
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+
+    def test_an_unresolved_enrollment_protects_its_directory_without_a_report_file(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            supervision.enroll(self.path, {"id": "foreign", "agent": "elsewhere", "task": "two",
+                "report": str(root / "foreign-report.md"), "pane_id": None, "native_session": None}, self.case.now())
+            before = set(root.iterdir())
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual(set(root.iterdir()), before)
+
+    def test_linked_artifact_preserves_the_foreign_target_and_directory(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            report = next(root.glob("report-*.md"))
+            other = self.root / "retained-report.md"
+            os.link(report, other)
+            before = set(root.iterdir())
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual(set(root.iterdir()), before)
+            self.assertEqual(other.read_bytes(), report.read_bytes())
+
+    def test_a_file_changed_after_intent_preparation_is_not_removed(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            self.assertEqual(runner.tick()["data"]["status"], "prepared")
+            intent = self.case.progress()["pending"]
+            delivery = next(Path(row["path"]) for row in intent["inputs"] if Path(row["path"]).name.startswith("delivery-"))
+            delivery.write_bytes(delivery.read_bytes() + b" \n")
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual(self.case.progress()["pending"]["id"], intent["id"])
+            self.assertFalse(self.case.progress()["pending"]["effects_started"])
+
+    def test_a_special_file_cannot_trap_cleanup_in_a_blocking_read(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            report = next(root.glob("report-*.md"))
+            report.unlink()
+            os.mkfifo(report)
+            before = set(root.iterdir())
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual(set(root.iterdir()), before)
+            self.assertTrue(stat.S_ISFIFO(report.lstat().st_mode))
+
+    def test_a_hold_after_artifact_preparation_preserves_every_file(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            state = self.case.owner.state()
+            task = state["recovery"]["tasks"]["one"]
+            supervision.hold(self.path, {"id": "artifact-hold", "kind": "waiting_for_user",
+                "resume_condition": "Explicit fixture operator resumes", "evidence": [str(self.case.common)],
+                "dispositions": []}, self.case.now())
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            with state_lock(self.path), self.assertRaisesRegex(fixture.UsageError, "operator hold"):
+                self.adapter.resume_cleanup(runner, state, task, task["progression"])
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertFalse(self.case.progress()["pending"]["effects_started"])
+
+    def test_a_report_gate_after_artifact_preparation_preserves_every_file(self):
+        from tests import test_report_gates as gate_fixture
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            state = self.case.owner.state()
+            task = state["recovery"]["tasks"]["one"]
+            report = next(row["assignment"]["report"] for row in supervision.load(self.path)["members"]
+                          if row["assignment"]["agent"].startswith("reviewer-"))
+            fixture.report_gates.record(self.path, {"schema_version": 2, "agent": "default", "labels": [
+                gate_fixture.label(Path(report), gate_fixture.HIGH)], "unannotated": []}, self.case.now())
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            with state_lock(self.path), self.assertRaisesRegex(fixture.UsageError, "open block gate"):
+                self.adapter.resume_cleanup(runner, state, task, task["progression"])
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertFalse(self.case.progress()["pending"]["effects_started"])
+
+    def test_owner_proved_unsent_recovery_retires_its_unused_brief(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            self.runner(capability).tick()
+        state = self.case.owner.state()
+        original = self.case.progress()["pending"]
+        unused = Path(original["job"]["brief"])
+        proof = self.root / "native-no-send-proof.json"
+        proof.write_text('{"fixture": "The original startup never existed and no prompt was sent."}\n')
+        recovery.reconcile(state["recovery"], state["assignments"], {"dispatch": original["job"]["id"],
+            "outcome": "not_sent", "reason": "Private native no-send evidence", "authorization": fixture.owner_fixture.AUTH,
+            "evidence": str(proof)}, self.case.now(), None, missing_bootstrap=True)
+        save_state(self.path, state)
+        with state_lock(self.path):
+            authority.reconcile_intent(self.path, {"task": "one", "expected_generation": 1,
+                "intent": original["id"], "authorization": fixture.owner_fixture.AUTH}, self.case.now(), self.case.owner.client)
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+            self.assertFalse(unused.exists())
+            self.assertFalse(Path(self.case.document["artifact_directory"]).exists())
+            self.assertEqual(next(row for row in self.case.owner.state()["recovery"]["dispatches"]
+                                  if row["id"] == original["job"]["id"])["status"], "not_sent")
+
+    def test_partial_file_cleanup_resumes_the_same_intent_after_interruption(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            intent_id = self.case.progress()["pending"]["id"]
+            assignments = len(self.case.owner.state()["assignments"])
+            original = os.unlink
+            removed = []
+            def interrupted(name, **options):
+                if removed:
+                    raise SystemExit("Isolated crash after one unlink.")
+                original(name, **options)
+                removed.append(name)
+            with patch.object(workflow_artifacts.os, "unlink", side_effect=interrupted):
+                with self.assertRaises(SystemExit):
+                    runner.tick()
+            pending = self.case.progress()["pending"]
+            self.assertEqual(pending["id"], intent_id)
+            self.assertTrue(pending["effects_started"])
+            self.assertEqual(len(removed), 1)
+            restarted = self.runner(capability)
+            self.case.advance(restarted, lambda: self.case.progress()["phase"] == "complete")
+            self.assertFalse(root.exists())
+            self.assertEqual(len(self.case.owner.state()["assignments"]), assignments)
+            self.assertEqual(len([row for row in self.case.owner.state()["recovery"]["events"]
+                                  if row["kind"] == "task_closed"]), 1)
+
+    def crash_after_quarantine_creation(self, runner):
+        original = os.mkdir
+        quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+        def interrupted(path, *args, **options):
+            original(path, *args, **options)
+            if Path(path) == quarantine:
+                raise SystemExit("Isolated crash before allocation checkpoint.")
+        with patch.object(workflow_artifacts.os, "mkdir", side_effect=interrupted):
+            with self.assertRaises(SystemExit):
+                runner.tick()
+        self.assertIsNone(self.case.progress()["delivery"]["artifacts"]["stage"])
+        self.assertTrue(self.case.progress()["pending"]["effects_started"])
+        return quarantine
+
+    def test_quarantine_allocation_crash_resumes_the_original_intent(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            intent_id = self.case.progress()["pending"]["id"]
+            assignments = len(self.case.owner.state()["assignments"])
+            quarantine = self.crash_after_quarantine_creation(runner)
+            self.assertEqual(self.case.progress()["pending"]["id"], intent_id)
+            restarted = self.runner(capability)
+            self.case.advance(restarted, lambda: self.case.progress()["phase"] == "complete")
+            self.assertFalse(root.exists())
+            self.assertFalse(quarantine.exists())
+            self.assertEqual(len(self.case.owner.state()["assignments"]), assignments)
+
+    def test_unrecorded_quarantine_with_foreign_contents_is_preserved(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            quarantine = self.crash_after_quarantine_creation(runner)
+            foreign = quarantine / "operator-notes.md"
+            foreign.write_bytes(b"Preserve this owner.\n")
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(self.runner(capability).tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual(foreign.read_bytes(), b"Preserve this owner.\n")
+            self.assertIsNone(self.case.progress()["delivery"]["artifacts"]["stage"])
+
+    def test_shared_unrecorded_quarantine_is_preserved(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            quarantine = self.crash_after_quarantine_creation(runner)
+            quarantine.chmod(0o750)
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(self.runner(capability).tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual(stat.S_IMODE(quarantine.stat().st_mode), 0o750)
+
+    def test_directory_replacement_during_cleanup_preserves_both_owners(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            runner.tick()
+            moved = root.with_name("retained-task-artifacts")
+            original = workflow_rename.exclusive
+            replaced = []
+            def replace_before_move(source, target, *args, **options):
+                if source == root and options.get("dst_dir_fd") is not None and not replaced:
+                    replaced.append(True)
+                    root.rename(moved)
+                    root.mkdir(mode=0o700)
+                    (root / "operator-notes.md").write_text("A different owner.\n")
+                return original(source, target, *args, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=replace_before_move):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in moved.iterdir()}, before)
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            self.assertEqual((quarantine / "task/operator-notes.md").read_text(), "A different owner.\n")
+
+    def test_file_swap_before_quarantine_preserves_the_moved_foreign_inode(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            target = Path(self.case.progress()["pending"]["inputs"][0]["path"]).name
+            expected = (root / target).read_bytes()
+            original = workflow_rename.exclusive
+            replaced = []
+            foreign = b"Unrelated bytes arriving after preflight.\n"
+            def swap_before_move(source, destination, *args, **options):
+                if source == target and options.get("src_dir_fd") is not None and not replaced:
+                    replaced.append(True)
+                    descriptor = options["src_dir_fd"]
+                    os.rename(source, "retained-original.md", src_dir_fd=descriptor, dst_dir_fd=descriptor)
+                    file = os.open(source, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=descriptor)
+                    with os.fdopen(file, "wb") as stream:
+                        stream.write(foreign)
+                return original(source, destination, *args, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=swap_before_move):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            self.assertEqual((quarantine / "task/retained-original.md").read_bytes(), expected)
+            self.assertIn(foreign, [p.read_bytes() for p in quarantine.iterdir() if p.is_file()])
+
+    def test_concurrent_task_destination_preserves_source_and_foreign_directory(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            runner.tick()
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            original = workflow_rename.exclusive
+            foreign_inode = []
+            def collide(source, target, **options):
+                if source == root:
+                    (quarantine / "task").mkdir(mode=0o700)
+                    foreign_inode.append((quarantine / "task").stat().st_ino)
+                return original(source, target, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=collide):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual([(quarantine / "task").stat().st_ino], foreign_inode)
+
+    def test_concurrent_file_destination_preserves_both_files(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            target = Path(self.case.progress()["pending"]["inputs"][0]["path"]).name
+            expected = (root / target).read_bytes()
+            original = workflow_rename.exclusive
+            foreign = b"A different owner's destination.\n"
+            destination = []
+            def collide(source, slot, **options):
+                if source == target and options.get("src_dir_fd") is not None:
+                    descriptor = os.open(slot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600,
+                                         dir_fd=options["dst_dir_fd"])
+                    with os.fdopen(descriptor, "wb") as stream:
+                        stream.write(foreign)
+                    destination.append(slot)
+                return original(source, slot, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=collide):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            self.assertEqual((quarantine / "task" / target).read_bytes(), expected)
+            self.assertEqual((quarantine / destination[0]).read_bytes(), foreign)
+
+    def test_concurrent_final_destination_preserves_both_empty_directories(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.at_artifact_cleanup(runner)
+            self.case.advance(runner, lambda: self.case.progress()["delivery"]["artifacts"]["phase"] == "retiring"
+                and not self.case.progress()["delivery"]["artifacts"]["remaining"]
+                and self.case.progress()["pending"] is None)
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            final = Path(str(quarantine) + ".retired")
+            runner.tick()
+            original = workflow_rename.exclusive
+            foreign_inode = []
+            def collide(source, destination, **options):
+                if source == quarantine:
+                    final.mkdir(mode=0o700)
+                    foreign_inode.append(final.stat().st_ino)
+                return original(source, destination, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=collide):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertTrue(quarantine.is_dir())
+            self.assertEqual([final.stat().st_ino], foreign_inode)
+            self.assertEqual(list(final.iterdir()), [])
+
+    def test_a_new_owner_at_the_original_path_survives_retirement(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            runner.tick()
+            root.mkdir(mode=0o700)
+            notes = root / "operator-notes.md"
+            notes.write_text("Another task owns this new directory.\n")
+            supervision.enroll(self.path, {"id": "new-owner", "agent": "elsewhere", "task": "two",
+                "report": str(root / "new-report.md"), "pane_id": None, "native_session": None}, self.case.now())
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete")
+            self.assertEqual(notes.read_text(), "Another task owns this new directory.\n")
+            self.assertTrue(next(row for row in supervision.load(self.path)["members"] if row["id"] == "new-owner")["active"])
+
+    def test_primary_owner_migrates_an_active_delivery_before_resuming(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            state = self.case.owner.state()
+            delivery = state["recovery"]["tasks"]["one"]["progression"]["delivery"]
+            delivery.pop("artifacts")
+            delivery["schema_version"] = 1
+            save_state(self.path, state)
+            original = self.path.read_bytes()
+            # A later installed source must preserve the old owner's readable
+            # bytes rather than committing a format its admitted reader rejects.
+            with patch("foreman.remote_owner.loaded_policy", return_value=("99.0.0", "b" * 64)):
+                for persist in (True, False):
+                    with self.subTest(persist=persist), state_lock(self.path):
+                        with self.assertRaisesRegex(StateError, "Restore that exact policy") as caught:
+                            load_state_checked(self.path, persist_migration=persist)
+                    self.assertEqual(caught.exception.details["task"], "one")
+                    self.assertEqual(caught.exception.details["blocked_tasks"], 1)
+                    self.assertEqual(self.path.read_bytes(), original)
+            self.published_workflow_reader().validate_progress(json.loads(original)["recovery"]["tasks"]["one"]["progression"])
+            with self.assertRaisesRegex(StateError, "owner migration"):
+                self.case.owner.state()
+            self.assertEqual(self.path.read_bytes(), original)
+            with state_lock(self.path):
+                migrated, usable = load_state_checked(self.path)
+            self.assertTrue(usable)
+            delivery = migrated["recovery"]["tasks"]["one"]["progression"]["delivery"]
+            self.assertEqual(delivery["schema_version"], 2)
+            self.assertEqual(delivery["artifacts"]["phase"], "pending")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete")
+            self.assertFalse(root.exists())
+
+    def test_migrated_completed_history_preserves_its_existing_directory(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+            root = Path(self.case.document["artifact_directory"])
+            root.mkdir(mode=0o700)
+            legacy = root / "legacy-history.md"
+            legacy.write_text("Prior completed owner history.\n")
+            state = self.case.owner.state()
+            delivery = state["recovery"]["tasks"]["one"]["progression"]["delivery"]
+            delivery.pop("artifacts")
+            delivery["schema_version"] = 1
+            save_state(self.path, state)
+            with patch("foreman.remote_owner.loaded_policy", return_value=("99.0.0", "b" * 64)), state_lock(self.path):
+                migrated, usable = load_state_checked(self.path)
+            self.assertTrue(usable)
+            self.assertEqual(migrated["recovery"]["tasks"]["one"]["progression"]["delivery"]["artifacts"]["phase"], "legacy_preserved")
+            self.assertEqual(self.runner(capability).tick()["data"]["status"], "complete")
+            self.assertEqual(legacy.read_text(), "Prior completed owner history.\n")
+
+    def test_completed_history_cannot_upgrade_another_unfinished_services_owner_file(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+            other_contract = self.root / "other-contract.json"
+            other_contract.write_text('{"schema_version": 1, "task": "two"}\n')
+            data = {**self.case.owner.data, "task": "two", "service_id": "other-service",
+                    "lease_path": str(self.root / "other-service.lease"), "contract": str(other_contract)}
+            with state_lock(self.path):
+                authority.handoff(self.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+            state = self.case.owner.state()
+            delivery = state["recovery"]["tasks"]["one"]["progression"]["delivery"]
+            delivery.pop("artifacts")
+            delivery["schema_version"] = 1
+            save_state(self.path, state)
+            original = self.path.read_bytes()
+            with patch("foreman.remote_owner.loaded_policy", return_value=("99.0.0", "b" * 64)), state_lock(self.path):
+                with self.assertRaisesRegex(StateError, "unfinished task 'two'") as caught:
+                    load_state_checked(self.path)
+            self.assertEqual(caught.exception.details["blocked_tasks"], 1)
+            self.assertEqual(caught.exception.details["admitted_policy"], state["recovery"]["tasks"]["two"]["authority"]["policy"])
+            self.assertEqual(self.path.read_bytes(), original)
+            self.published_workflow_reader().validate_progress(json.loads(original)["recovery"]["tasks"]["one"]["progression"])
+
+    def published_workflow_reader(self):
+        # Immutable 0.5.0 compatibility oracle; review with owner-schema changes.
+        source = subprocess.check_output(["git", "show",
+            "fb4e7c6968b0683e348ade60653df7e432efa6a2:skills/herdr-foreman/foreman/workflow_contract.py"],
+            cwd=Path(__file__).resolve().parents[3])
+        file = self.root / "published-workflow-contract.py"
+        file.write_bytes(source)
+        spec = importlib.util.spec_from_file_location("foreman._published_workflow_contract", file)
+        assert spec is not None and spec.loader is not None
+        old = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(old)
+        return old
+
+    def test_published_old_reader_refuses_the_new_delivery_lifecycle(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.at_artifact_cleanup(runner)
+            old = self.published_workflow_reader()
+            with self.assertRaisesRegex(fixture.UsageError, "workflow delivery"):
+                old.validate_progress(self.case.progress())
+
+    def test_small_cleanup_batches_retain_common_bytes_until_all_briefs_are_checked(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            with patch.object(workflow_artifacts, "BATCH_FILES", 2):
+                self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+            self.assertFalse(Path(self.case.document["artifact_directory"]).exists())
 
     def test_dual_channel_uses_same_source_run_and_confirms_both_independently(self):
         self.case.document["publication"] = {"tessl": {"workspace": "fixture", "plugin": "package"},
