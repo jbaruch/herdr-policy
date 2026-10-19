@@ -10,11 +10,15 @@ Run the bounded foreground watcher for all enrolled assignments:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/foreman.sh" supervision-watch [--state <state-file>]
+bash "$HS/foreman.sh" supervision-watch --compact [--state <state-file>]
 ```
 
 Retain and await its real execution handle. The JSON result gives `reason`,
 `through`, and durable `events`; a quiet deadline completes only that checkpoint.
+Its event page retains pending counts and a sequence continuation. Read further
+pending headers through `supervision-drain --compact`, using `--after` and the
+saved `--through`. Acknowledge only handled event IDs with `supervision-ack
+--compact`; earlier pending events remain explicit after a cursor advances.
 
 Then ask which of those events need you:
 

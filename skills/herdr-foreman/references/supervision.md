@@ -48,7 +48,7 @@ missing native identity after a confirmed send; it cannot replace known proof.
 
 ## Watch the fleet
 
-Run `supervision-watch --state <owner-state>` as a foreground tool operation and
+Run `supervision-watch --compact --state <owner-state>` as a foreground tool operation and
 retain its real execution handle while it runs. Await that handle; a saved PID,
 watcher row, or prior conversation promise is not a live handle. This command
 provides no detached daemon, native asynchronous wake delivery, or automatic
@@ -71,8 +71,22 @@ its blocked/refusal and native-delivery recovery contracts. A lifecycle event
 never satisfies those contracts. Record user-facing failures, questions, and
 promised follow-ups in the attention queue before continuing housekeeping.
 
-`supervision-status` returns binding, active assignments, unacknowledged events,
-current hold, and watcher health. Health verifies the live process identity and
+`supervision-status --compact` returns binding, a current-enrollment page, a
+pending-event page, an unresumed-hold page and watcher health. It omits cached
+observation bodies and event data; those remain in the owner and are unexamined
+by this view. Hold references retain their identity, condition, evidence and
+coverage digest/count instead of repeating every member's disposition proof.
+Compact assignments use the owner's current expected identity, including
+confirmed refinements, without replaying the original assignment's refinements.
+Use `--section active|events|holds` to inspect those collections independently.
+`active_page` and `hold_page` use `--offset`; `event_page` uses `--after`.
+Each page names its section and reports total, returned and unexamined counts.
+An unselected section has `selected: false`; switch to that section and its
+start cursor before claiming it was inspected. Collect every unresumed hold
+from `--section holds` before considering resume. Reinspect if the owner changes;
+the final atomic set check remains authoritative.
+`record_schema_version` identifies the retained source format; compact references
+are not complete persisted records. Health verifies the live process identity and
 heartbeat; a reused PID is not the recorded watcher. A live process with a stale
 heartbeat requires inspection of its existing execution handle, not a duplicate
 watcher. A failed process probe is unverified liveness, never proof of absence;
@@ -82,10 +96,10 @@ a durable loss event. Handle it before resuming observation.
 
 ## Handle and acknowledge
 
-`supervision-drain` reads a snapshot without changing anything. Its `through`
+`supervision-drain --compact` reads a snapshot without changing anything. Its `through`
 sequence bounds subsequent acknowledgements. Save each foreman outcome with its
 report checkpoint, task-ledger entry, or attention-queue handoff evidence, then
-run `supervision-ack --record <file>`:
+run `supervision-ack --compact --record <file>`:
 
 ```json
 {
@@ -113,6 +127,16 @@ Acknowledgement does not accept an assignment, complete a task, close a user
 question, or consume an event that arrived after `through`. Replaying an
 identical acknowledgement preserves its original receipt and schedule.
 Conflicting outcomes refuse without rewriting history.
+
+Status, drain, watch and gate context responses use the view schema and
+printed-byte budget in `skills/herdr-foreman/foreman/context_output.py`. Page sizes may shrink to fit.
+`event_page.next_after` continues by sequence even when earlier events have been
+acknowledged; use `--after` and the same `--through` with drain. The gate reports
+its own current `through` snapshot and retains whole-snapshot counts. An
+`earlier_pending` count never means those earlier events were handled. Enrollment
+pages use `--offset`. Compact acknowledgements return handled IDs and the
+remaining count without echoing the pending batch. None of these display views
+authorizes progression or replaces report checks.
 
 Once the foreman has reconciled an assignment's actual outcome in the task ledger,
 run `supervision-resolve --record <file>` with `id`, `outcome`, and `evidence`
@@ -181,8 +205,18 @@ before continuing supervision; the prior exact-directory binding does not gate
 that new identity. Keep the same owner-state path.
 
 On active resume, run `supervision-bind` for the current native foreman, then
-`supervision-resume`, `supervision-status`, and `supervision-drain`. Reconcile
-sources and pending events before continuing the watch loop. Retain the
+`supervision-status --compact` and `supervision-drain --compact`. A reset does
+not authorize clearing operator holds. Only when existing authority permits
+resumption and every unresumed hold's condition is satisfied, use
+`supervision-resume --compact --hold <observed-id>`, repeating `--hold` for the
+complete inspected set. The owner checks that set under its transaction lock;
+a new or otherwise changed set refuses without clearing holds. Every resume
+format requires this complete set; direct owner calls also reject an omitted set.
+Skip resume when
+no hold needs resuming. `hold: false` at a changed event boundary does not cancel
+an unresumed operator hold. Reconcile sources, pending events and all relevant
+pages before the saved continuation or watch loop. An unsatisfied hold condition
+prevents continuation. Retain the
 supervision document and binding records during worktree cleanup. Corrupt,
 missing bound-owner, or unsupported state cannot prove that work is complete;
 preserve it and restore the owner-written record.

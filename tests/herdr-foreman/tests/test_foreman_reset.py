@@ -149,7 +149,7 @@ class ResumePromptRunsTest(unittest.TestCase):
 
     def test_every_command_is_accepted_by_the_launcher(self):
         commands = self.commands()
-        self.assertEqual(len(commands), 8)
+        self.assertEqual(len(commands), 11)
         for command in commands:
             filled = (command.replace("<plan|brief|gate|diagnose>", "plan").replace("<task>", "t")
                       .replace("<enrollment-id>", "e1"))
@@ -469,6 +469,9 @@ class DeliverTest(unittest.TestCase):
         self.assertIn("Step 17's Resume Route", prompt)
         self.assertIn("continuation step the stow's unresolved work names", prompt)
         self.assertLess(prompt.index("foreman-queue"), prompt.index("Resume Route"))
+        self.assertLess(prompt.index("Follow returned cursors"), prompt.index("foreman-queue"))
+        self.assertLess(prompt.index("supervision-resume"), prompt.index("foreman-queue"))
+        self.assertIn("Do not continue while any hold condition is unsatisfied", prompt)
 
     def test_resume_requires_explicit_goal_activation_before_supervision_resumes(self):
         prompt = foreman_reset.resume_prompt("round-7", "/s.json")

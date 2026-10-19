@@ -2,16 +2,9 @@
 
 import copy
 
-from . import attention, foreman_reset
+from . import attention, context_output, foreman_reset
 from .chronology import timestamp
 from .errors import UsageError
-
-
-def _page(rows, offset, limit):
-    selected = rows[offset:offset + limit]
-    return {"total": len(rows), "offset": offset, "limit": limit, "returned": len(selected),
-            "omitted": len(rows) - len(selected), "next_offset": offset + limit if offset + limit < len(rows) else None,
-            "items": selected}
 
 
 def _short(value, limit=600):
@@ -43,7 +36,8 @@ def _useful_links(sources):
 def _pagination(page, label):
     if not page["omitted"]:
         return []
-    next_page = "Continue with --offset {}.".format(page["next_offset"]) if page["next_offset"] is not None else "Read earlier pages with --offset 0."
+    selector = "--section {} ".format(page["section"])
+    next_page = "Continue with {}--offset {}.".format(selector, page["next_offset"]) if page["next_offset"] is not None else "Read earlier pages with {}--offset 0.".format(selector)
     return ["", "**{} {} are outside this page.** {}".format(page["omitted"], label, next_page)]
 
 
@@ -52,8 +46,9 @@ def _render(result):
     for reset in result["foreman_resets"]:
         lines.extend(["## Foreman reset {} needs you".format(reset["status"]), "",
                       _short(reset["needed"]), "", "Record: {}".format(reset["record"]), ""])
+    lines.extend(_pagination(result["foreman_reset_page"], "foreman resets"))
     queue = result["attention"]
-    needs_you = bool(queue["total"] or result["foreman_resets"])
+    needs_you = bool(queue["total"] or result["foreman_reset_page"]["total"])
     if not needs_you:
         lines.append("Nothing currently needs your attention in the saved queue.")
     for row in queue["items"]:
@@ -101,9 +96,12 @@ def _render(result):
     return "\n".join(lines).rstrip() + "\n"
 
 
-def catch_up(path, at, *, task=None, limit=10, offset=0, since=None, include_closed=False):
-    if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or offset < 0:
-        raise UsageError("Catch-up needs --limit 1–50 and a nonnegative --offset; follow next_offset to read remaining obligations.", {})
+def catch_up(path, at, *, task=None, limit=context_output.DEFAULT_LIMIT, offset=0, since=None,
+             include_closed=False, compact=False, section=None):
+    context_output.validate_page(limit, offset)
+    if section not in (None, "attention", "deferred", "progress", "closed", "resets"):
+        raise UsageError("Select --section attention, deferred, progress, closed or resets.", {})
+    include_closed = include_closed or section is not None
     now = timestamp(at, "Catch-up checkpoint")
     cutoff = timestamp(since, "Catch-up since") if since is not None else None
     document, entries, progress = attention.load(path)
@@ -128,22 +126,37 @@ def catch_up(path, at, *, task=None, limit=10, offset=0, since=None, include_clo
     progress = [row for row in progress if (task is None or row["task"] == task)
                 and (cutoff is None or timestamp(row["at"], "Progress time") >= cutoff)]
     progress.sort(key=lambda row: (row["at"], row["id"]), reverse=True)
-    result = {"schema_version": attention.SCHEMA_VERSION, "state_path": str(attention.canonical_state(path)),
-              "attention_path": str(attention.storage_path(path)), "checked_at": attention._utc(at),
-              "task": task, "since": since, "attention": _page(actionable, offset, limit),
-              "deferred": _page(deferred, offset, limit), "progress": _page(progress, offset, limit),
-              "closed": _page(closed, offset, limit) if include_closed else None,
-              "retrospective_index": str(attention.canonical_state(path)) + ".retrospectives/index.json", "sources": [],
-              # The reset record is the durable blocker for a failed foreman reset.
-              "foreman_resets": foreman_reset.outstanding(path)}
-    sources = []
-    for section in ("attention", "deferred", "progress", "closed"):
-        page = result[section]
-        if page is not None:
-            for row in page["items"]:
-                for source in row["sources"]:
-                    if source not in sources:
-                        sources.append(copy.deepcopy(source))
-    result["sources"] = sources
-    result["markdown"] = _render(result)
-    return result
+    # Reset obligations remain globally counted even in a task/section-specific view.
+    resets = foreman_reset.outstanding(path)
+
+    def build(effective):
+        def selected(rows, name):
+            page = context_output.section_page(rows, offset, effective, selected=section in (None, name))
+            page["section"] = name
+            return page
+
+        reset_page = selected(resets, "resets")
+        result = {"schema_version": attention.SCHEMA_VERSION, "state_path": str(attention.canonical_state(path)),
+                  "attention_path": str(attention.storage_path(path)), "checked_at": attention._utc(at),
+                  "task": task, "since": since, "section": section, "attention": selected(actionable, "attention"),
+                  "deferred": selected(deferred, "deferred"),
+                  "progress": selected(progress, "progress"),
+                  "closed": selected(closed, "closed") if include_closed else None,
+                  "retrospective_index": str(attention.canonical_state(path)) + ".retrospectives/index.json",
+                  "foreman_resets": reset_page.pop("items"), "foreman_reset_page": reset_page,
+                  "presentation_included": not compact}
+        sections = [result[name] for name in ("attention", "deferred", "progress", "closed")
+                    if result[name] is not None]
+        result["context_complete"] = reset_page["omitted"] == 0 and all(page["omitted"] == 0 for page in sections)
+        if not compact:
+            sources = []
+            for page in sections:
+                for row in page["items"]:
+                    for source in row["sources"]:
+                        if source not in sources:
+                            sources.append(copy.deepcopy(source))
+            result["sources"] = sources
+            result["markdown"] = _render(result)
+        return result
+
+    return context_output.fit_pages(build, limit, offset)

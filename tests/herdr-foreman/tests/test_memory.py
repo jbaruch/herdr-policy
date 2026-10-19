@@ -122,7 +122,7 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(memory.list_lessons(self.state, LATER, include_archived=True)["lessons"][0]["status"], "archived")
         restored = self.revision(id="lesson-3", supersedes="lesson-2", reason="Project work resumed.")
         self.record(restored, at=LATER)
-        result = memory.show(self.state, LATER, "lesson-3")
+        result = memory.show(self.state, LATER, "lesson-3", include_history=True)
         self.assertEqual([row["id"] for row in result["history"]], ["lesson-1", "lesson-2", "lesson-3"])
         self.assertEqual(result["history"][1]["status"], "archived")
         self.assertEqual(memory.list_lessons(self.state, LATER)["lessons"][0]["status"], "active")

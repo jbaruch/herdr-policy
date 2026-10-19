@@ -117,12 +117,26 @@ a saved handoff alone is not a live successor.
 
 **Resume Route** — the next context follows one route:
 
-1. The resume prompt's reads: the stow and its required files, supervision,
-   `foreman-queue`
+1. Retrieve the bounded current stow with `memory-show`. Read its capture,
+   unresolved work and gaps. Required-file receipts are source references for
+   targeted owner queries and selected evidence; they do not require replaying
+   raw owner files or prior reports.
 2. Explicitly set `/goal <saved objective>` in the incoming foreman's host runtime
-   under the working-memory reference's Successor Goal contract
-3. Step 1, then Step 2
-4. The stow's continuation step, in place of Step 5
+   under the working-memory reference's Successor Goal contract, verify it is
+   active and preserve any remaining budget before resuming supervision.
+3. Run `supervision-bind`, then bounded `supervision-status --compact`,
+   `catch-up --compact` and `supervision-drain --compact` through the resume
+   prompt's launcher and saved owner paths. Follow relevant section/page cursors,
+   including outstanding resets and every unresumed hold; omitted or unavailable
+   evidence remains unresolved.
+4. Preserve operator holds. Only when existing authority permits resumption and
+   every hold condition is satisfied, use `supervision-resume --compact --hold
+   <observed-id>` with the complete inspected set. Skip resume when there are no
+   holds. An unmet condition or incomplete reconciliation prevents continuation;
+   the reset itself grants no authority to clear a hold.
+5. Read the bounded `foreman-queue`, then run SKILL.md Step 1 and Step 2.
+6. Take the stow's continuation step, in place of Step 5, loading the bounded
+   decision view and only the evidence selected for that question.
 
 `foreman-queue` lists seats only. Gating, release and closure return through
 the continuation step, never through the queue.

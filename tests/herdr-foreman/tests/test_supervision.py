@@ -374,7 +374,7 @@ class SupervisionTest(unittest.TestCase):
             self.hold(["dispatch-a"])
         self.hold(["dispatch-a", "dispatch-b"])
         self.assertIsNone(self.stop())
-        store.resume(self.path, AT)
+        store.resume(self.path, AT, expected_holds=["hold-1"])
         self.assertEqual(self.stop()["decision"], "block")
 
     def test_nominal_handoff_does_not_release_stop_after_a_quiet_watch_deadline(self):
