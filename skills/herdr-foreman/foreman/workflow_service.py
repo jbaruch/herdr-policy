@@ -331,6 +331,8 @@ class WorkflowService:
         # claim is malformed. A format failure cannot erase independence facts.
         claim = schema.claim(observed["body"], self.capability.task, job["role"], self.profile,
                              head["commit"], self.document["acceptance"]["criteria"])
+        if job["role"] == "developer" and claim["outcome"] == "built" and not head["paths"]:
+            raise UsageError("No authorized implementation change is present; reconcile the task's actual outcome instead of accepting an empty built claim.", {})
         job.update(report_evidence=observed["evidence"], claim=claim, status="delivered")
         if job["role"] in ("reviewer", "tester"):
             if claim["outcome"] != "verified":
@@ -341,18 +343,31 @@ class WorkflowService:
                     "head_revision": head["commit"], "verdict": "approved" if claim["outcome"] == "verified" else "blocking",
                     "review_mode": "full", "reviewer": job["agent"], "report": job["report"],
                     "changed_paths": head["paths"]}, self.clock())
-        if job["role"] == "developer":
+        if job["role"] == "developer" and claim["outcome"] == "built":
             progress["head"] = head
         self._intent(progress, "close", job=job, inputs=[observed["evidence"], delivery], dispatches=[job["id"]])
         progress["at"] = self.clock()
         self._save(state)
 
-    def _route(self, state, task, progress, jobs):
-        claims = {job["role"]: schema.claim(workspace.capture(job["report"], limit=workspace.REPORT_LIMIT)[1].decode(),
-            task["task"], job["role"], self.profile, progress["head"]["commit"],
-            self.document["acceptance"]["criteria"]) for job in jobs if job["role"] in self._roles(progress)}
+    def _route(self, state, task, progress, jobs, head):
+        claims, receipts = {}, {}
+        supervised = supervision.load(self.path)
+        for job in jobs:
+            if job["role"] not in self._roles(progress):
+                continue
+            receipt, body = workspace.capture(job["report"], limit=workspace.REPORT_LIMIT)
+            member = next(row for row in supervised["members"] if row["id"] == job["id"])
+            if (job["status"] != "closed" or member["resolution"] is None or not any(
+                    item["path"] == receipt["path"] and item["sha256"] == receipt["sha256"]
+                    for item in member["resolution"]["evidence"])):
+                raise UsageError("Restore the closed assignment's byte-bound report before routing its outcome or correction inputs.", {})
+            claims[job["role"]] = schema.claim(body.decode(), task["task"], job["role"], self.profile,
+                head["commit"], self.document["acceptance"]["criteria"])
+            receipts[job["role"]] = receipt
         if any(claim["outcome"] == "blocked" for claim in claims.values()):
             return self._exception(state, "worker_blocked", [job["report"] for job in jobs if job["role"] in claims])
+        if head != progress["head"]:
+            return self._exception(state, "verified_head_changed", [self.document["repository"]["worktree"]])
         if progress["phase"] == "implement":
             progress.update(phase="verify", plan=None, at=self.clock())
         elif progress["phase"] in ("verify", "release"):
@@ -366,7 +381,7 @@ class WorkflowService:
                 if progress["round"] >= recovery.DEFAULT_FIX_LIMIT:
                     return self._exception(state, "correction_allowance_exhausted", [job["report"] for job in jobs if job["role"] in claims],
                                            ("diagnose_task", "return_authority"))
-                blockers = [workspace.capture(job["report"], limit=workspace.REPORT_LIMIT)[0]
+                blockers = [receipts[job["role"]]
                             for job in jobs if job["role"] in claims and claims[job["role"]]["outcome"] == "blocking"]
                 progress.update(phase="implement", round=progress["round"] + 1, jobs={}, plan=None,
                                 blockers=blockers, at=self.clock())
@@ -476,10 +491,9 @@ class WorkflowService:
             active = [job for job in jobs if job["role"] in roles and job["status"] != "closed"]
             if not active:
                 # All current source checks happen again before the transition.
-                if workspace.inspect(self.document, task, built=True) != progress["head"]:
-                    return self._exception(state, "verified_head_changed", [self.document["repository"]["worktree"]])
+                head = workspace.inspect(self.document, task)
                 try:
-                    return self._route(state, task, progress, jobs)
+                    return self._route(state, task, progress, jobs, head)
                 except ForemanError as exc:
                     return self._exception(state, "evidence_owner_refused", [exc.message])
             expected_progress = supervision.digest(progress)
@@ -500,7 +514,7 @@ class WorkflowService:
                     return self._exception(state, "native_delivery_exception", [job["report"], observed["reason"]],
                                            ("reconcile_original_effect", "return_authority"))
                 try:
-                    head = workspace.inspect(self.document, task, built=True)
+                    head = workspace.inspect(self.document, task, built=job["role"] != "developer")
                     self._record_delivery(state, progress, job, observed, head)
                 except ForemanError as exc:
                     return self._exception(state, "report_contract_refused", [job["report"], exc.message])

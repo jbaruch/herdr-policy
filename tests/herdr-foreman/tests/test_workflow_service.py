@@ -196,9 +196,9 @@ class WorkflowServiceTest(unittest.TestCase):
         state, supervised = self.owner.state(), supervision.load(self.path)
         return [workflow_dispatch.current_job(state, supervised, row["id"]) for row in supervised["members"] if row["active"]]
 
-    def deliver(self, job, *, outcome=None, advisory=False, cause_settled=True):
+    def deliver(self, job, *, outcome=None, advisory=False, cause_settled=True, implement=True):
         role = job["role"]
-        if role == "developer":
+        if role == "developer" and implement:
             self.change += 1
             self.source.write_text("value = {}\n".format(self.change))
             self.git("add", "src/example.py")
@@ -390,6 +390,51 @@ class WorkflowServiceTest(unittest.TestCase):
             self.assertEqual(self.active(), [])
             self.assertEqual(report_gates.open_verdict_gates(self.path, "one", state["recovery"]["dispatches"]), [])
             self.assertEqual(supervision.pending(supervision.load(self.path)), [])
+
+    def test_blocked_developer_at_clean_base_closes_and_wakes_without_an_implementation_head(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: bool(self.progress()["jobs"]))
+            self.deliver(self.active()[0], outcome="blocked", implement=False)
+            self.advance(runner, lambda: self.progress()["pending"] is None and not self.active())
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertEqual(self.progress()["exception"]["code"], "worker_blocked")
+            self.assertIsNone(self.progress()["head"])
+            self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.base)
+            self.assertEqual(len(self.owner.state()["assignments"]), 1)
+
+    def test_empty_built_claim_cannot_become_an_implementation_head(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: bool(self.progress()["jobs"]))
+            self.deliver(self.active()[0], implement=False)
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertEqual(self.progress()["exception"]["code"], "report_contract_refused")
+            self.assertIsNone(self.progress()["head"])
+            self.assertEqual(len(self.active()), 1)
+
+    def test_post_close_report_edit_cannot_manufacture_correction_input(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: self.progress()["phase"] == "verify", delivery=self.deliver)
+            self.advance(runner, lambda: bool(self.progress()["jobs"].get("reviewer")))
+            job = self.active()[0]
+            self.deliver(job)
+            self.advance(runner, lambda: self.progress()["pending"] is None and not self.active())
+            self.deliver(job, outcome="blocking")
+            changed = Path(job["report"]).read_bytes()
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertEqual(self.progress()["exception"]["code"], "evidence_owner_refused")
+            self.assertEqual(self.progress()["round"], 0)
+            self.assertEqual(self.progress()["blockers"], [])
+            self.assertEqual(len(self.owner.state()["assignments"]), 2)
+            self.assertEqual(Path(job["report"]).read_bytes(), changed)
 
     def test_waiting_writes_no_primary_history_and_checks_outside_its_lock(self):
         self.admit()
