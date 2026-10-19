@@ -2,6 +2,8 @@
 
 ## 0.2.1 — 2026-10-18
 
+- Trigger central policy review on same-repository PR events and enroll the scheduled backstop; keep Codex authentication centralized and document the dispatch secret.
+
 - Add a read-only evidence exporter and baseline analyzer with report-bound native timing, separate assessment/resolution delays, explicit unknowns, and private provenance. Retained-source reruns preserve uncertainty rather than treating owner closures as accepted outcomes.
 - Verify assessment-ledger receipts against their original byte prefixes before parsing; legitimate later appends preserve the captured evidence, while changed original bytes remain unknown.
 - Refuse installed legacy combined team trees before resolving general helpers, including local, global and executing Tessl peers. Preserve explicit source-only development helpers and existing owner records.
