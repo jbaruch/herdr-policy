@@ -585,6 +585,17 @@ class WorkflowReleaseTest(unittest.TestCase):
             delivery["schema_version"] = 1
             save_state(self.path, state)
             original = self.path.read_bytes()
+            # A later installed source must preserve the old owner's readable
+            # bytes rather than committing a format its admitted reader rejects.
+            with patch("foreman.remote_owner.loaded_policy", return_value=("99.0.0", "b" * 64)):
+                for persist in (True, False):
+                    with self.subTest(persist=persist), state_lock(self.path):
+                        with self.assertRaisesRegex(StateError, "Restore that exact policy") as caught:
+                            load_state_checked(self.path, persist_migration=persist)
+                    self.assertEqual(caught.exception.details["task"], "one")
+                    self.assertEqual(caught.exception.details["blocked_tasks"], 1)
+                    self.assertEqual(self.path.read_bytes(), original)
+            self.published_workflow_reader().validate_progress(json.loads(original)["recovery"]["tasks"]["one"]["progression"])
             with self.assertRaisesRegex(StateError, "owner migration"):
                 self.case.owner.state()
             self.assertEqual(self.path.read_bytes(), original)
@@ -612,28 +623,57 @@ class WorkflowReleaseTest(unittest.TestCase):
             delivery.pop("artifacts")
             delivery["schema_version"] = 1
             save_state(self.path, state)
-            with state_lock(self.path):
+            with patch("foreman.remote_owner.loaded_policy", return_value=("99.0.0", "b" * 64)), state_lock(self.path):
                 migrated, usable = load_state_checked(self.path)
             self.assertTrue(usable)
             self.assertEqual(migrated["recovery"]["tasks"]["one"]["progression"]["delivery"]["artifacts"]["phase"], "legacy_preserved")
             self.assertEqual(self.runner(capability).tick()["data"]["status"], "complete")
             self.assertEqual(legacy.read_text(), "Prior completed owner history.\n")
 
+    def test_completed_history_cannot_upgrade_another_unfinished_services_owner_file(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+            other_contract = self.root / "other-contract.json"
+            other_contract.write_text('{"schema_version": 1, "task": "two"}\n')
+            data = {**self.case.owner.data, "task": "two", "service_id": "other-service",
+                    "lease_path": str(self.root / "other-service.lease"), "contract": str(other_contract)}
+            with state_lock(self.path):
+                authority.handoff(self.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+            state = self.case.owner.state()
+            delivery = state["recovery"]["tasks"]["one"]["progression"]["delivery"]
+            delivery.pop("artifacts")
+            delivery["schema_version"] = 1
+            save_state(self.path, state)
+            original = self.path.read_bytes()
+            with patch("foreman.remote_owner.loaded_policy", return_value=("99.0.0", "b" * 64)), state_lock(self.path):
+                with self.assertRaisesRegex(StateError, "unfinished task 'two'") as caught:
+                    load_state_checked(self.path)
+            self.assertEqual(caught.exception.details["blocked_tasks"], 1)
+            self.assertEqual(caught.exception.details["admitted_policy"], state["recovery"]["tasks"]["two"]["authority"]["policy"])
+            self.assertEqual(self.path.read_bytes(), original)
+            self.published_workflow_reader().validate_progress(json.loads(original)["recovery"]["tasks"]["one"]["progression"])
+
+    def published_workflow_reader(self):
+        # Immutable 0.5.0 compatibility oracle; review with owner-schema changes.
+        source = subprocess.check_output(["git", "show",
+            "fb4e7c6968b0683e348ade60653df7e432efa6a2:skills/herdr-foreman/foreman/workflow_contract.py"],
+            cwd=Path(__file__).resolve().parents[3])
+        file = self.root / "published-workflow-contract.py"
+        file.write_bytes(source)
+        spec = importlib.util.spec_from_file_location("foreman._published_workflow_contract", file)
+        assert spec is not None and spec.loader is not None
+        old = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(old)
+        return old
+
     def test_published_old_reader_refuses_the_new_delivery_lifecycle(self):
         self.case.admit()
         with self.case.owner.session() as capability:
             runner = self.runner(capability)
             self.at_artifact_cleanup(runner)
-            # Immutable 0.5.0 compatibility oracle; review with owner-schema changes.
-            source = subprocess.check_output(["git", "show",
-                "fb4e7c6968b0683e348ade60653df7e432efa6a2:skills/herdr-foreman/foreman/workflow_contract.py"],
-                cwd=Path(__file__).resolve().parents[3])
-            file = self.root / "published-workflow-contract.py"
-            file.write_bytes(source)
-            spec = importlib.util.spec_from_file_location("foreman._published_workflow_contract", file)
-            assert spec is not None and spec.loader is not None
-            old = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(old)
+            old = self.published_workflow_reader()
             with self.assertRaisesRegex(fixture.UsageError, "workflow delivery"):
                 old.validate_progress(self.case.progress())
 
