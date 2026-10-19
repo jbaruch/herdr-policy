@@ -1,19 +1,20 @@
 # Admitted task progression
 
-This initial adapter runs prepared implementation and independent-verification
-assignments while the foreman handles other decisions. It retains the normal
-role, native identity, report, correction, supervision and release contracts.
-It supplies no unattended Stop continuation, automatic acceptance, release
-adapter or risk-profile activation. Keep the real execution handle and existing
-fleet-supervision obligations. The prototype and rollout remain tracked in
-herdr-policy issues #8–#12 and #18; planning issues grant no runtime authority.
-Policy identity supports source, Tessl and realized per-adapter ACR installations.
-Native verification checks the consumer declaration, public lock/realization
-metadata and unchanged owned bytes. A fresh public ACR check can fetch locked
-dependencies and requires registry access. CI exercises the installed progression
-entrypoint's policy selection before entering authority; live admission and
-rollout still require their own verified evidence. The shared `.agents/skills`
-layout is outside this identity adapter.
+Two explicitly admitted contracts share the existing task authority owner.
+Schema 1 runs a fixed prepared assignment chain. Schema 2 executes a bounded
+or complex task through native implementation, independent verification,
+correction, release and local cleanup. Read
+`skills/herdr-foreman/references/task-workflow.md` before using schema 2.
+Installing this package starts neither contract and migrates no live team.
+Comparative cost, throughput and defect evidence still requires the real pilot
+tracked by herdr-policy epic #1; source fixtures prove no ROI improvement.
+
+Source, Tessl and realized ACR native installations can identify their actual
+policy bytes. Native ACR startup verifies the public lock/realization ledger
+and rehashes the installed owned files. `policy-paths.py identity`, invoked
+with explicit Python 3 from the selected skill, is read-only and grants no
+dispatch authority. A missing, changed or ambiguous installation refuses
+startup. Remote/attested task execution is not enabled by these adapters.
 
 ## Admit one task
 
@@ -30,7 +31,7 @@ actual generation from the task owner; an unadmitted legacy task starts at
 zero. Use a dedicated lease distinct from state files and transaction locks.
 The result names the new generation; admission alone authorizes no dispatch.
 
-## Prepare current inputs
+## Prepare a schema-1 chain
 
 The immutable contract contains `schema_version: 1`, its exact `task` and
 `steps`. Each step contains `schema_version: 1`, unique `id`, `argv`, `after`, `gate` and `inputs`.
@@ -63,13 +64,54 @@ frozen brief bytes before worker effects. A mutable replacement cannot change
 the admitted assignment. This adapter refuses arbitrary commands and release
 roles; use the existing verified release owner for that boundary.
 
+## Prepare a schema-2 task
+
+The immutable object contains exactly `schema_version: 2`, `task`, `risk`,
+`repository`, `config`, `common`, `briefs`, `artifact_directory`, `effects`,
+`publication` and `acceptance`. `foreman/workflow_contract.py` owns validation
+and bounds; unsupported or missing facts fail before worker launch.
+
+`risk` supplies every schema-1 fact accepted by `workflow_profiles.py`, without
+defaults. Bounded work combines independent review and testing; complex work
+uses separate identities. Sensitive work and required specialist coverage
+currently create an explicit pre-implementation exception. Do not misclassify
+the work to avoid that boundary.
+
+`repository` names the exact GitHub `owner/repo`, absolute additional `worktree`,
+`branch` and `base_branch`. Admission requires that clean writer at the task's
+registered base, its actual origin and a distinct base checkout. Existing
+implementation is not adopted as a new task.
+
+`config`, `common` and each `briefs` entry are `{path,sha256}` receipts of
+nonempty UTF-8 files. The config supplies assignment-scoped worker kinds with
+tier tables. Use the co-shipped `templates/workflow-common.md` and the selected
+`workflow-developer.md`, `workflow-reviewer.md`, `workflow-tester.md` and
+`workflow-release.md` as the role inputs. A bounded task omits the tester role.
+The executor appends actual scope, policy paths, native report paths and current
+evidence; templates cannot substitute for those owner-derived facts.
+
+`artifact_directory` is a private, owner-controlled absolute directory outside
+the writer. It holds current plan/common inputs, role briefs and native reports
+plus narrowly named delivery/review artifacts. It is not a history directory.
+Workers consume the specific inputs named in their brief, never a recursive
+`.hr` or owner-state dump. GitHub remains the change and review history.
+
+`effects` is a unique list drawn from `write`, `push`, `open_pr`, `merge` and
+`publish`. All four source effects are required; publish matches the channels.
+`publication` contains `tessl` (null or `{workspace,plugin}`), `acr` (boolean)
+and `workflow` (null without publication, otherwise the exact merge-triggered
+publisher). `acceptance` contains `kind` (`merge`, `deployment` or `operator`)
+and one to sixteen criteria. Only merge acceptance is automated currently;
+other kinds remain explicit exceptions until their actual evidence owner acts.
+
 ## Run and observe
 
 `progression-run --state OWNER --task TASK --generation N --service-id ID`
 claims the existing grant and dedicated kernel lease. `--once` performs one
 tick. The native adapter uses the actual inherited Herdr connection; never
 construct `HERDR_ENV`, a pane or a session identity from saved records.
-Remote delivery progression is not enabled by this initial adapter.
+Retain the process's actual execution handle; a background command submission
+alone proves neither a running executor nor continuation at Stop.
 
 The loop sleeps without a model relay, checks dependencies outside the shared
 transaction lock and writes only a current intent or cursor transition.
@@ -78,6 +120,9 @@ bounded `data` packet. Waiting stays observational. Exceptions wake the foreman
 with the task, generation, current intent and refusal; no count or timeout
 permits self-approval. Current evidence retrieval follows
 `skills/herdr-foreman/references/working-memory.md`.
+The process returns this packet on its retained execution handle; it supplies
+no generic native asynchronous message service. Keep that handle available for
+the caller's completion/exception delivery rather than relying on a PID file.
 
 ## Recover and return
 
@@ -92,13 +137,39 @@ After the dispatch owners prove every expected member of a pending step
 `progression-reconcile --state OWNER --record FILE`. The record contains `task`,
 actual `expected_generation`, exact `intent` and explicit `authorization`.
 The service lease must be free. This clears only that pending intent, leaves
-the cursor unchanged and records one owner reconciliation receipt. It does not
+the schema-1 cursor unchanged and records one owner reconciliation receipt. It does not
 dispatch, resume a hold or accept work. Missing, uncertain or partly applied
 sets remain pending. The same completed reconciliation replays without a write.
 Associated transport-retry identities also refuse this initial reconciliation
 adapter. The original no-send row never proves a later attempt had no effect.
 Pre-reservation refusals without durable dispatch proof remain pending for
 owner recovery; process exit or a refusal message alone does not clear them.
+
+For schema 2, reconciliation accepts only the exact pending launch after every
+named dispatch is owner-proved `not_sent`, all task enrollments are settled and
+no report exists. It retires the intent and current plan, preserving the task,
+generation, original base and correction counter. Subsequent execution selects
+a fresh native identity; the old no-send row remains canonical evidence.
+
+`progression-resume --state OWNER --record FILE` retries a restored schema-2
+observation or cleanup exception. The record contains `task`, actual
+`expected_generation`, the current packet's `exception_digest` as `exception`,
+and explicit `authorization`. The bound foreman, admitted policy/contract and
+binding must still match, the lease must be free and operator holds must be
+resumed through their own owner first. Resume restores the packet's exact saved
+phase; it does not reset jobs, counters, confirmed channels or pending effects.
+An already applied dispatch or closed enrollment is read back; an uncertain
+native effect refuses resume. Cleanup uses its fixed, idempotent readback.
+Disputes, changed scope, exhausted corrections, specialist work and missing
+acceptance are decisions, not generic retries. The exact retryable packet codes
+are owned by `foreman/workflow_recovery.py`.
+
+A healthy schema-2 executor can cover only its exact current task/member
+obligations at Stop. Its current supervision row must match the live process,
+kernel lock owner, admitted generation, contract, policy and binding. Pending
+unknown effects and exceptions cover nothing. Schema-1 chains never gain Stop
+authority from a heartbeat. No continuation check reconstructs a legacy round
+or reads its historical contracts to decide whether it can cover work.
 
 The bound foreman may record current exception assessments through the normal
 owners without taking the service's dispatch lease. Returning a task requires

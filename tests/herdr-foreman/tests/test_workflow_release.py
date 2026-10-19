@@ -1,0 +1,305 @@
+"""Full task delivery with actual temporary Git worktrees and fake remote APIs.
+
+No GitHub publication, live native team, operator checkout or pilot is used.
+Release helpers' documented subprocess contracts are fixtures; the controller,
+native owner/lifecycle, evidence owners and local cleanup Git commands execute.
+"""
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
+
+from copy import deepcopy
+import json
+import subprocess
+import unittest
+from unittest.mock import patch
+
+from tests import test_workflow_service as fixture
+from foreman import recovery, supervision, workflow_contract, workflow_recovery, workflow_release, workflow_review
+from foreman.state import save_state, state_lock
+
+
+class WorkflowReleaseTest(unittest.TestCase):
+    def setUp(self):
+        self.case = fixture.WorkflowServiceTest()
+        self.case.setUp()
+        self.addCleanup(self.case.doCleanups)
+        self.path, self.root = self.case.path, self.case.root
+        self.remote = self.root / "remote.git"
+        subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(self.remote)],
+                       check=True, capture_output=True)
+        self.redirect = "url.{}.insteadOf=https://github.com/fixture/repository.git".format(self.remote)
+        self.git(self.case.repository, "push", "origin", "main")
+        self.calls = []
+        self.fail_helper = None
+        self.invalid_package = False
+        self.bundle = self.root / "release-skill-fixture"
+        self.bundle.mkdir()
+        for name in ("check-closing-issues.py", "resolve-publish-run.sh", "confirm-tessl-landed.sh",
+                     "verify-moderation-cleared.sh", "verify-github-release.sh"):
+            (self.bundle / name).write_text("Private ABI fixture; never executed.\n")
+        self.adapter = workflow_release.WorkflowReleaseAdapter(run=self.run_tool)
+        patcher = patch.object(self.adapter, "_bundle", return_value=self.bundle)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.pr = None
+        self.before_cleanup = None
+        self.landed = "0.4.0"
+
+    def git(self, root, *arguments):
+        return subprocess.run(["git", "-c", self.redirect, "-C", str(root), *arguments],
+                              check=True, capture_output=True, text=True).stdout
+
+    def run_tool(self, argv, **options):
+        self.calls.append(list(argv))
+        if argv[0] == "git":
+            actual = ["git", "-c", self.redirect, *argv[1:]] if set(argv) & {"fetch", "push", "ls-remote"} else argv
+            return subprocess.run(actual, **options)
+        if argv[:2] == ["gh", "api"]:
+            payload = self.pr
+        elif argv[:3] == ["gh", "run", "watch"]:
+            payload = None
+        elif argv[:2] == ["acr", "validate"]:
+            payload = {"ok": True, "result": None if self.invalid_package else {"valid": True, "version": "0.4.0"}}
+        else:
+            helper = Path(argv[1]).name
+            if self.fail_helper == helper:
+                return subprocess.CompletedProcess(argv, 2, "", "Private indeterminate tool fixture.")
+            payload = {
+                "check-closing-issues.py": {"verdict": "ok", "closing": [], "partial_references": [], "no_issue": True},
+                "resolve-publish-run.sh": {"database_id": 42},
+                "confirm-tessl-landed.sh": self.landed,
+                "verify-moderation-cleared.sh": {"ok": True, "version": self.landed},
+                "verify-github-release.sh": {"ok": True, "tag": "v0.4.0", "assets": 3}}[helper]
+        stdout = None if options.get("stdout") == subprocess.DEVNULL else (
+            payload + "\n" if isinstance(payload, str) else json.dumps(payload) + "\n")
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    def deliver(self, job):
+        if job["role"] != "release":
+            return self.case.deliver(job)
+        # Emulate the authorized native release responsibility's completed
+        # effect, independently checked by the controller after report delivery.
+        claim = self.case.deliver(job)
+        head = self.case.git("rev-parse", "HEAD").strip()
+        self.git(self.case.worktree, "push", "origin", "feature/task")
+        self.git(self.case.repository, "merge", "--no-ff", "feature/task", "-m", "Private fixture merge")
+        merge = self.git(self.case.repository, "rev-parse", "HEAD").strip()
+        self.git(self.case.repository, "push", "origin", "main")
+        self.git(self.case.repository, "reset", "--hard", self.case.base)
+        self.git(self.case.repository, "update-ref", "-d", "refs/remotes/origin/main")
+        self.pr = {"merged": True, "merge_commit_sha": merge, "merged_at": "2026-10-19T00:10:00+00:00",
+            "head": {"sha": head, "ref": "feature/task", "repo": {"full_name": "fixture/repository"}},
+            "base": {"ref": "main", "repo": {"full_name": "fixture/repository"}}}
+        snapshot = {"pr_number": 123, "head_sha": head, "watch": {"result": "ready"},
+            "review_bodies": [{"id": 11, "body": "Private policy fixture: no blocking findings.", "author": "policy-fixture"},
+                              {"id": 12, "body": "Private advisory fixture.", "author": "copilot-fixture"}],
+            "inline_comment_bodies": [{"id": 13, "body": "Private inline advice.", "author": "copilot-fixture"}]}
+        review_path = Path(self.case.document["artifact_directory"]) / "reviews-0-release.json"
+        review_path.write_text(json.dumps(snapshot))
+        channels = self.case.document["publication"]
+        published = channels["tessl"] is not None or channels["acr"]
+        claim.update(outcome="delivered", review_snapshot=workflow_review.identity(snapshot)["sha256"],
+            review_evidence=recovery.receipt(str(review_path))[0], publication={"schema_version": 1,
+                "baseline": "0.3.1" if channels["tessl"] else None,
+                "baseline_at": self.case.now() if channels["tessl"] else None,
+                "publisher_run": 42 if published else None, "tag": "v0.4.0" if channels["acr"] else None,
+                "tessl_version": self.landed if channels["tessl"] else None})
+        Path(job["report"]).write_text("WORKFLOW: " + json.dumps(claim) + "\n")
+        return claim
+
+    def runner(self, capability):
+        runner = self.case.runner(capability)
+        runner.release = self.adapter
+        return runner
+
+    def test_real_git_teardown_and_actual_task_closure_follow_verified_native_release(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+            assert self.pr is not None
+            progress = self.case.progress()
+            self.assertTrue(progress["delivery"]["accepted"])
+            self.assertEqual(progress["delivery"]["merge_commit"], self.pr["merge_commit_sha"])
+            self.assertFalse(self.case.worktree.exists())
+            self.assertEqual(self.git(self.case.repository, "branch", "--show-current").strip(), "main")
+            self.assertEqual(self.git(self.case.repository, "rev-parse", "HEAD").strip(), self.pr["merge_commit_sha"])
+            refs = self.git(self.case.repository, "ls-remote", "--heads", "origin")
+            self.assertNotIn("feature/task", refs)
+            self.assertEqual(len([row for row in self.case.owner.state()["recovery"]["events"] if row["kind"] == "task_closed"]), 1)
+            self.assertIsNone(progress["pending"])
+            self.assertEqual(supervision.pending(supervision.load(self.path)), [])
+
+    def test_dual_channel_uses_same_source_run_and_confirms_both_independently(self):
+        self.case.document["publication"] = {"tessl": {"workspace": "fixture", "plugin": "package"},
+                                             "acr": True, "workflow": "publish.yml"}
+        self.case.document["effects"].append("publish")
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+            assert self.pr is not None
+            delivery = self.case.progress()["delivery"]
+            self.assertTrue(delivery["tessl_confirmed"])
+            self.assertTrue(delivery["acr_confirmed"])
+            self.assertEqual(delivery["publisher_run"], 42)
+            self.assertEqual(delivery["tag"], "v0.4.0")
+            names = [Path(call[1]).name for call in self.calls if call[0] == "bash"]
+            self.assertEqual(names, ["resolve-publish-run.sh", "confirm-tessl-landed.sh",
+                                     "verify-moderation-cleared.sh", "verify-github-release.sh"])
+            resolution = next(call for call in self.calls if len(call) > 1 and Path(call[1]).name == "resolve-publish-run.sh")
+            self.assertEqual(resolution[4:], [self.pr["merge_commit_sha"], "publish.yml", "main"])
+
+    def test_unknown_channel_never_claims_acceptance_or_starts_teardown(self):
+        self.case.document["publication"] = {"tessl": {"workspace": "fixture", "plugin": "package"},
+                                             "acr": True, "workflow": "publish.yml"}
+        self.case.document["effects"].append("publish")
+        self.case.admit()
+        self.fail_helper = "verify-github-release.sh"
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            self.case.advance(runner, lambda: self.case.progress()["delivery"]["tessl_confirmed"])
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertFalse(self.case.progress()["delivery"]["accepted"])
+            self.assertTrue(self.case.progress()["delivery"]["tessl_confirmed"])
+            self.assertEqual(self.case.progress()["delivery"]["publisher_run"], 42)
+            self.assertTrue(self.case.worktree.is_dir())
+            self.assertEqual(self.case.progress()["delivery"]["cleanup_step"], 0)
+            self.assertEqual([row for row in self.case.owner.state()["recovery"]["events"] if row["kind"] == "task_closed"], [])
+        self.fail_helper = None
+        packet = self.case.progress()["exception"]
+        with state_lock(self.path):
+            workflow_recovery.resume(self.path, {"task": "one", "expected_generation": 1,
+                "exception": supervision.digest(packet), "authorization": fixture.owner_fixture.AUTH},
+                self.case.now(), self.case.owner.client, fixture.ROOT)
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete")
+        self.assertEqual(len([call for call in self.calls if len(call) > 1 and Path(call[1]).name == "resolve-publish-run.sh"]), 1)
+        self.assertEqual(len([call for call in self.calls if len(call) > 1 and Path(call[1]).name == "confirm-tessl-landed.sh"]), 1)
+
+    def test_malformed_channel_evidence_stays_unaccepted_with_a_bounded_packet(self):
+        self.case.document["publication"] = {"tessl": None, "acr": True, "workflow": "publish.yml"}
+        self.case.document["effects"].append("publish")
+        self.case.admit()
+        self.invalid_package = True
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            runner.tick()  # Resolve the one actual source-bound run.
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertEqual(result["data"]["reason"], "release_evidence_unconfirmed")
+        self.assertFalse(self.case.progress()["delivery"]["accepted"])
+        self.assertFalse(self.case.progress()["delivery"]["acr_confirmed"])
+        self.assertTrue(self.case.worktree.is_dir())
+
+    def test_changed_remote_source_cannot_be_confirmed_by_an_old_release_report(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "merge", delivery=self.deliver)
+            assert self.pr is not None
+            self.pr["head"]["sha"] = "d" * 40
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertTrue(self.case.worktree.is_dir())
+            self.assertFalse(self.case.progress()["delivery"]["accepted"])
+
+    def test_merged_is_not_operator_acceptance(self):
+        self.case.document["acceptance"]["kind"] = "operator"
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertEqual(self.case.progress()["exception"]["code"], "actual_acceptance_evidence_required")
+            self.assertFalse(self.case.progress()["delivery"]["accepted"])
+            self.assertTrue(self.case.worktree.is_dir())
+
+    def cleanup_intent(self, runner, step):
+        self.case.advance(runner, lambda: self.case.progress()["phase"] == "cleanup"
+            and self.case.progress()["delivery"]["cleanup_step"] == step
+            and self.case.progress()["pending"] is not None, delivery=self.deliver)
+
+    def test_cleanup_intent_cannot_execute_substituted_arguments(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.cleanup_intent(runner, 2)
+            with state_lock(self.path):
+                state = self.case.owner.state()
+                state["recovery"]["tasks"]["one"]["progression"]["pending"]["argv"] = ["git", "status"]
+                save_state(self.path, state)
+            calls = list(self.calls)
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertEqual(self.calls, calls)
+            self.assertTrue(self.case.worktree.is_dir())
+
+    def test_new_writer_work_after_preparation_is_preserved(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.cleanup_intent(runner, 2)
+            self.case.source.write_text("value = 777\n")
+            self.case.git("commit", "-am", "Private operator work after release")
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertTrue(self.case.worktree.is_dir())
+            self.assertEqual(self.case.source.read_text(), "value = 777\n")
+            self.assertFalse(self.case.progress()["pending"]["effects_started"])
+
+    def test_changed_remote_branch_after_preparation_is_preserved(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.cleanup_intent(runner, 4)
+            assert self.pr is not None
+            subprocess.run(["git", "--git-dir", str(self.remote), "update-ref", "refs/heads/feature/task", self.pr["merge_commit_sha"]],
+                           check=True, capture_output=True)
+            before = len([call for call in self.calls if "push" in call])
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertEqual(len([call for call in self.calls if "push" in call]), before)
+            self.assertIn("refs/heads/feature/task", self.git(self.case.repository, "ls-remote", "--heads", "origin"))
+
+    def test_interrupted_cleanup_uses_actual_absent_target_readback_without_reissue(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.cleanup_intent(runner, 2)
+            self.assertEqual(runner.tick()["data"]["status"], "effect_recorded")
+            self.assertFalse(self.case.worktree.exists())
+            removals = len([call for call in self.calls if "remove" in call])
+            runner = self.runner(capability)
+            self.assertEqual(runner.tick()["data"]["status"], "advanced")
+            self.assertEqual(self.case.progress()["delivery"]["cleanup_step"], 3)
+            self.assertEqual(len([call for call in self.calls if "remove" in call]), removals)
+
+
+class ReviewIdentityTest(unittest.TestCase):
+    def test_all_authors_and_inlines_bind_reading_but_watcher_timing_does_not(self):
+        snapshot = {"pr_number": 1, "head_sha": "a" * 40, "review_bodies": [
+            {"id": 1, "body": "Policy body", "author": "policy"},
+            {"id": 2, "body": "Commented review with no inlines", "author": "other"}],
+            "inline_comment_bodies": [{"id": 3, "body": "Advisory", "author": "copilot"}],
+            "watch": {"result": "ready", "attempts": 1}}
+        expected = workflow_review.identity(snapshot)
+        snapshot["watch"]["attempts"] = 100
+        snapshot["review_bodies"].reverse()
+        self.assertEqual(workflow_review.identity(snapshot), expected)
+        for field in ("review_bodies", "inline_comment_bodies"):
+            changed = deepcopy(snapshot)
+            changed[field][0]["body"] += " edited"
+            self.assertNotEqual(workflow_review.identity(changed)["sha256"], expected["sha256"])
+
+
+if __name__ == "__main__":
+    unittest.main()

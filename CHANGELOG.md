@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 — 2026-10-19
+
+- Add explicitly admitted schema-2 task execution through native implementation, independent review/testing, same-task corrections, full native release ownership, independent publication readback and narrow local cleanup. Preserve canonical dispatch, assessment, report-gate and supervision owners instead of generating round ledgers or loading historical `.hr` content.
+- Allow foreman Stop only for exact current obligations covered by a healthy implemented executor. Bind its current supervision row to the admitted generation, policy, contract, native foreman and actual kernel lock-owner PID/inodes. Prepared chains and unknown effects provide no continuation.
+- Add installation-aware ACR policy identity checks and exercise the installed identity endpoint for Codex, Claude Code and Cursor. Preserve source/Tessl lookup and refuse changed, unrealized or unowned native payloads.
+- Add verified no-send reconciliation and exact-packet resume for restored task observations and cleanup. Preserve unknown sends, counters, accepted channel evidence and operator holds. Sensitive/specialist work and non-merge acceptance remain explicit exceptions; installation performs no live migration and makes no comparative ROI claim.
+
 ## 0.3.2 — 2026-10-19
 
 - Verify ACR native installation identity through its public locked package and realization ledger, and require installed bytes to match checked target hashes. Add read-only identity inspection and exercise it from actual Codex, Claude Code and Cursor installations in CI.

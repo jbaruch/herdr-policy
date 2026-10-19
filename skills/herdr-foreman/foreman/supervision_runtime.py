@@ -74,9 +74,10 @@ def process_identity(pid):
 
 
 def health(data, at, probe=process_identity):
-    if not data["watchers"]:
+    foreground = [row for row in data["watchers"] if row["schema_version"] == 1]
+    if not foreground:
         return {"state": "absent", "watcher": None}
-    row = data["watchers"][-1]
+    row = foreground[-1]
     if row["status"] != "running":
         return {"state": "stopped", "watcher": row["id"], "reason": row.get("reason")}
     actual = probe(row["process"]["pid"])
@@ -166,8 +167,8 @@ def sweep(state_path, client, at, watcher_id):
     with ThreadPoolExecutor(max_workers=max(1, len(members))) as pool:
         samples = list(pool.map(sample, members))
     def mutate(current):
-        watcher = current["watchers"][-1]
-        if watcher["id"] != watcher_id or watcher["status"] != "running":
+        watcher = next((row for row in current["watchers"] if row["schema_version"] == 1 and row["id"] == watcher_id), None)
+        if watcher is None or watcher["status"] != "running":
             raise StateError("This watcher no longer owns the fleet observation lease; retain its output and inspect `{}`.".format(
                 runnable.command("supervision-status")), {})
         watcher["heartbeat"] = at
@@ -216,7 +217,7 @@ def watch(state_path, client, at, *, clock, sleeper, probe=process_identity,
         if prior["state"] in ("live", "unresponsive"):
             raise UsageError("A watcher process still exists. Poll its real execution handle or inspect it; stale heartbeat alone does not permit replacement.", {"watcher": prior})
         if prior["state"] == "dead":
-            outgoing = data["watchers"][-1]
+            outgoing = [row for row in data["watchers"] if row["schema_version"] == 1][-1]
             outgoing.update(status="stopped", reason="process_lost", ended_at=at)
             store.append_event(data, at, None, "watcher_lost", {"watcher": outgoing["id"]})
         if store.pending(data):

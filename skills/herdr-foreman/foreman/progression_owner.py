@@ -19,16 +19,18 @@ import re
 
 from . import recovery, supervision
 from .errors import StateError, UsageError
-from .process_lease import process_lease
+from .process_lease import _Lease, process_lease
 from .remote_owner import loaded_policy
+from .native_policy import executing_policy_root
 from .state import STATE_SCHEMA_VERSION, load_state_checked, save_state, state_lock
 
 
-GRANT_VERSION = 1
+GRANT_VERSION = 2
 GRANT_BYTES = 4_096
 TASK_BYTES = 512
-GRANT_FIELDS = frozenset({"schema_version", "generation", "mode", "service_id", "lease_path",
-                          "contract", "policy", "binding", "authorization", "at"})
+LEGACY_GRANT_FIELDS = frozenset({"schema_version", "generation", "mode", "service_id", "lease_path",
+                                 "contract", "policy", "binding", "authorization", "at"})
+GRANT_FIELDS = LEGACY_GRANT_FIELDS | {"contract_schema"}
 IDENTIFIER = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}\Z")
 TASK_MUTATIONS = frozenset({
     "apply", "start-judge", "relaunch-worker", "task", "close-task", "checkpoint",
@@ -46,9 +48,20 @@ JUDGMENT_COMMANDS = frozenset({"record-report", "close-member", "supervision-ack
                               "recover-role-clear", "recover-context", "authorize-refused-dispatch"})
 
 
+def validate_policy_binding(policy, binding):
+    if (not isinstance(policy, dict) or set(policy) != {"version", "digest"}
+            or not isinstance(policy["version"], str) or re.fullmatch(r"\d+\.\d+\.\d+", policy["version"]) is None
+            or not isinstance(policy["digest"], str) or re.fullmatch(r"[a-f0-9]{64}", policy["digest"]) is None
+            or not isinstance(binding, dict) or set(binding) != {"generation", "digest"}
+            or type(binding["generation"]) is not int or binding["generation"] < 1
+            or not isinstance(binding["digest"], str) or re.fullmatch(r"[a-f0-9]{64}", binding["digest"]) is None):
+        raise UsageError("Restore the admitted policy and supervision binding before service work.", {})
+
+
 def validate_grant(grant):
-    if (not isinstance(grant, dict) or set(grant) != GRANT_FIELDS
-            or type(grant["schema_version"]) is not int or grant["schema_version"] != GRANT_VERSION
+    if (not isinstance(grant, dict) or type(grant.get("schema_version")) is not int
+            or grant["schema_version"] not in (1, GRANT_VERSION)
+            or set(grant) != (LEGACY_GRANT_FIELDS if grant["schema_version"] == 1 else GRANT_FIELDS)
             or type(grant["generation"]) is not int or grant["generation"] < 1
             or grant["mode"] not in ("legacy", "service")):
         raise UsageError("Unsupported task authority grant; update its owner and preserve unresolved work.", {})
@@ -58,21 +71,16 @@ def validate_grant(grant):
     recovery.authorization(grant["authorization"])
     fields = ("service_id", "lease_path", "contract", "policy", "binding")
     if grant["mode"] == "legacy":
-        if any(grant[name] is not None for name in fields):
+        if any(grant[name] is not None for name in fields) or grant.get("contract_schema") is not None:
             raise UsageError("A returned task must clear service capabilities while retaining its generation.", {})
         return
+    if grant["schema_version"] == 2 and (type(grant["contract_schema"]) is not int or grant["contract_schema"] not in (1, 2)):
+        raise UsageError("Preserve the admitted prepared-chain or task-workflow contract type; labels cannot transfer continuation authority.", {})
     if (not isinstance(grant["service_id"], str) or IDENTIFIER.fullmatch(grant["service_id"]) is None
             or not isinstance(grant["lease_path"], str) or not Path(grant["lease_path"]).is_absolute()):
         raise UsageError("Restore the admitted service identity and absolute lease path through the task owner.", {})
     recovery.validate_receipt(grant["contract"])
-    policy, binding = grant["policy"], grant["binding"]
-    if (not isinstance(policy, dict) or set(policy) != {"version", "digest"}
-            or not isinstance(policy["version"], str) or re.fullmatch(r"\d+\.\d+\.\d+", policy["version"]) is None
-            or not isinstance(policy["digest"], str) or re.fullmatch(r"[a-f0-9]{64}", policy["digest"]) is None
-            or not isinstance(binding, dict) or set(binding) != {"generation", "digest"}
-            or type(binding["generation"]) is not int or binding["generation"] < 1
-            or not isinstance(binding["digest"], str) or re.fullmatch(r"[a-f0-9]{64}", binding["digest"]) is None):
-        raise UsageError("Restore the admitted policy and supervision binding before service work.", {})
+    validate_policy_binding(grant["policy"], grant["binding"])
 
 
 def current_grant(state, task):
@@ -161,11 +169,29 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         raise UsageError("Existing operator holds prevent service admission; preserve their explicit resume conditions.", {})
     grant = {"schema_version": GRANT_VERSION, "generation": generation + 1,
              "mode": "legacy" if returning else "service", "service_id": None, "lease_path": None,
-             "contract": None, "policy": None, "binding": None,
+             "contract": None, "contract_schema": None, "policy": None, "binding": None,
              "authorization": deepcopy(data["authorization"]), "at": at}
+    workflow = None
     if not returning:
         version, digest = loaded_policy(plugin_root)
         captured, _document = capture_contract(data["contract"])
+        if (not isinstance(_document, dict) or type(_document.get("schema_version")) is not int
+                or _document["schema_version"] not in (1, 2)):
+            raise UsageError("Admit an explicitly supported prepared-chain or task-workflow contract; unknown types grant no continuation.", {})
+        grant["contract_schema"] = _document["schema_version"]
+        if isinstance(_document, dict) and _document.get("schema_version") == 2:
+            from . import workflow_contract, workflow_workspace
+            workflow_contract.contract(_document, row)
+            if any(item.get("task") == data["task"] and item.get("status") == "applied" for item in state["assignments"]):
+                raise UsageError("Admit new coherent tasks to the outcome workflow; preserve and finish existing assignments through their current owner instead of resetting their history.", {})
+            workflow_workspace.inputs(_document)
+            initial = workflow_workspace.inspect(_document, row)
+            if initial["commit"] != row["base_revision"] or initial["paths"]:
+                raise UsageError("A new outcome workflow starts at its registered clean base; existing implementation needs its recorded contributor and migration owner rather than assumed independence.", {})
+            from . import policy_paths
+            policy_paths.brief_inputs(Path(__file__).resolve().parents[1], workflow_workspace.base_checkout(_document),
+                Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
+            workflow = workflow_contract.initial_progress(generation + 1, at)
         grant.update(service_id=data["service_id"], lease_path=data["lease_path"], contract=captured,
                      policy={"version": version, "digest": digest}, binding=_binding(supervised))
     validate_grant(grant)
@@ -191,6 +217,8 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         with process_lease(lease_path):
             row.update(schema_version=2, authority=grant)
             row.pop("progression", None)
+            if workflow is not None:
+                row["progression"] = workflow
             save_state(state_path, state)
         return {"task": data["task"], "authority": deepcopy(grant), "authorizes_dispatch": False}
     return supervision.transaction(state_path, commit)
@@ -202,10 +230,14 @@ class ServiceCapability:
     def __init__(self, *, state_path, task, generation, service_id, lease, plugin_root):
         if type(generation) is not int or generation < 1:
             raise UsageError("Supply the actual positive owner generation before claiming progression.", {})
+        if not isinstance(lease, _Lease):
+            raise UsageError("Mint task service authority only inside the actual kernel lease context; serialized or duck-typed lease claims grant no authority.", {})
+        lease.require_current()
         self.state_path = Path(state_path).resolve()
         self.task, self.generation, self.service_id = task, generation, service_id
         self.lease, self.plugin_root = lease, Path(plugin_root).resolve()
         self._prepared = None
+        self._workflow_executor: object | None = None
         self.gate_reports = ()
 
     def require_current(self, state_path, state, task):
@@ -222,6 +254,11 @@ class ServiceCapability:
             raise UsageError("The supervision binding or operator hold prevents service effects; preserve pending deliveries and resume conditions.", {})
         known = {item["id"] for item in state["recovery"]["dispatches"]
                  if item["task"] == task and item["status"] != "not_sent"}
+        progress = state["recovery"]["tasks"][task].get("progression", {})
+        if progress.get("schema_version") == 2:
+            pending = progress.get("pending")
+            if pending is not None and pending.get("job") is not None:
+                known.add(pending["job"]["id"])
         if any(item["active"] and item["assignment"]["task"] == task and item["id"] not in known
                for item in supervised["members"]):
             raise UsageError("This task has an enrollment without a confirmed dispatch owner; reconcile it before service effects.", {})
@@ -231,6 +268,9 @@ class ServiceCapability:
         captured, _document = capture_contract(grant["contract"]["path"])
         if captured != grant["contract"]:
             raise UsageError("The admitted workflow contract changed; preserve the current task and hand it off explicitly.", {})
+        if (not isinstance(_document, dict)
+                or _document.get("schema_version") != grant.get("contract_schema", 1)):
+            raise UsageError("The current authority does not admit this contract type; preserve the task for its verified handoff.", {})
 
     @contextmanager
     def prepared_step(self, step_id, *, gate_reports=()):
@@ -256,7 +296,7 @@ class ServiceCapability:
     def capture_inputs(self, args):
         from .cli import build_parser
         from .progression_service import _verify_inputs
-        if self._prepared is None:
+        if self._prepared is None or self._prepared.get("kind") == "workflow":
             raise UsageError("A service apply must execute one immutable admitted step.", {})
         expected = {key: value for key, value in vars(build_parser().parse_args(self._prepared["argv"])).items()
                     if key not in {"state", "dispatch_id"}}
@@ -264,6 +304,33 @@ class ServiceCapability:
         if actual != expected:
             raise UsageError("Service arguments differ from the admitted step; preserve its original intent.", {})
         return _verify_inputs(self._prepared)
+
+    @contextmanager
+    def workflow_operation(self, state, operation, *, before_effect):
+        """Use native primitives under this task's actual durable workflow intent.
+
+        The new task owner owns its counters and current job records. Native
+        launch/composer/delivery checks are shared; legacy round metadata is
+        not manufactured or written as a second journal.
+        """
+        from .progression_service import capture_contract
+        self.require_current(self.state_path, state, self.task)
+        grant = current_grant(state, self.task)
+        assert grant is not None
+        captured, contract = capture_contract(grant["contract"]["path"])
+        progress = state["recovery"]["tasks"][self.task].get("progression", {})
+        pending = progress.get("pending")
+        if (captured != grant["contract"] or not isinstance(contract, dict) or contract.get("schema_version") != 2
+                or progress.get("schema_version") != 2 or pending is None
+                or pending["operation"] != operation or self._prepared is not None or not callable(before_effect)):
+            raise UsageError("Use the current admitted workflow intent before invoking native owner primitives.", {})
+        from .workflow_contract import contract as validate_workflow
+        validate_workflow(contract, state["recovery"]["tasks"][self.task])
+        self._prepared = {"kind": "workflow", "operation": operation, "before_effect": before_effect}
+        try:
+            yield
+        finally:
+            self._prepared = None
 
     def authorized_client(self, client):
         """Called inside the CLI's primary transaction; clone only its transport."""
@@ -275,6 +342,7 @@ class ServiceCapability:
         grant = current_grant(state, self.task)
         assert grant is not None
         expected = deepcopy(grant["binding"])
+        expected_policy = deepcopy(grant["policy"])
         original = client._runner
         def guarded(argv):
             self.lease.require_current()
@@ -284,6 +352,14 @@ class ServiceCapability:
                 who = current["binding"]["identity"]
                 if not os.environ.get("HERDR_ENV") or os.environ.get("HERDR_ENV") != who.get("herdr_env"):
                     raise UsageError("Restore the actual connected native foreman environment before worker transport; saved records cannot supply it.", {})
+                version, digest = loaded_policy(self.plugin_root)
+                if expected_policy != {"version": version, "digest": digest}:
+                    raise UsageError("The executing policy changed before native transport; preserve the original intent and obtain the current owner's explicit policy handoff.", {})
+                if self._prepared is not None and self._prepared.get("kind") == "workflow":
+                    from .herdr import REMOTE_READS
+                    operation = tuple(argv[len(client.context.argv()):][:2])
+                    if operation not in REMOTE_READS:
+                        self._prepared["before_effect"]()
                 return original(argv)
         return HerdrClient(context=client.context, runner=guarded, trace=client._trace)
 
@@ -427,6 +503,9 @@ def reconcile_intent(state_path, data, at, client):
     captured, document = capture_contract(grant["contract"]["path"])
     if captured != grant["contract"]:
         raise UsageError("Restore the admitted contract before reconciling its expected dispatch set.", {})
+    if grant.get("contract_schema") == 2:
+        from .workflow_recovery import reconcile_not_sent
+        return reconcile_not_sent(state_path, state, grant, supervised, document, data, at)
     steps = prepare_contract(document, data["task"])
     if progress["cursor"] >= len(steps):
         raise UsageError("Restore the pending cursor's admitted step before intent reconciliation.", {})
@@ -458,7 +537,7 @@ def reconcile_intent(state_path, data, at, client):
 
 
 def register_commands(sub, common):
-    for name in ("progression-admit", "progression-return", "progression-reconcile"):
+    for name in ("progression-admit", "progression-return", "progression-reconcile", "progression-resume"):
         parser = sub.add_parser(name, parents=[common], help="Explicit task authority handoff through the verified bound foreman.")
         parser.add_argument("--record", required=True, metavar="FILE")
         parser.add_argument("--now", metavar="ISO")
@@ -471,5 +550,8 @@ def run_command(args, state_path, at, client):
         raise UsageError("Restore the complete authority handoff JSON record before retrying.", {}) from None
     if args.command == "progression-reconcile":
         return reconcile_intent(state_path, data, at, client), None
-    return handoff(state_path, data, at, client, Path(__file__).resolve().parents[3],
+    if args.command == "progression-resume":
+        from .workflow_recovery import resume
+        return resume(state_path, data, at, client, executing_policy_root()), None
+    return handoff(state_path, data, at, client, executing_policy_root(),
                    returning=args.command == "progression-return"), None

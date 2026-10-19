@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import os
+import json
 import subprocess
 import sys
 import tempfile
@@ -10,7 +11,7 @@ import unittest
 SKILL = Path(__file__).resolve().parents[1] / "skills/herdr-foreman"
 sys.path.insert(0, str(SKILL))
 from foreman.errors import StateError, UsageError
-from foreman.process_lease import process_lease
+from foreman.process_lease import owned_by, process_lease
 
 
 CHILD = """
@@ -109,6 +110,40 @@ class ProcessLeaseTest(unittest.TestCase):
             _pid, status = os.waitpid(child, 0)
             self.assertEqual(os.waitstatus_to_exitcode(status), 0)
             lease.require_current()
+
+    def test_external_reader_proves_exact_kernel_owner_not_just_occupancy(self):
+        reader = """
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from foreman.process_lease import owned_by
+sys.exit(0 if owned_by(sys.argv[2], int(sys.argv[3]), json.loads(sys.argv[4])) else 7)
+"""
+        with process_lease(self.path) as lease:
+            proof = lease.proof()
+            self.assertTrue(owned_by(self.path, os.getpid(), proof))
+            self.assertFalse(owned_by(self.path, os.getpid() + 1, proof))
+            self.assertTrue(owned_by(self.path, os.getpid(), proof))
+            argv = [sys.executable, "-c", reader, str(SKILL), str(self.path), str(os.getpid()), json.dumps(proof)]
+            self.assertEqual(subprocess.run(argv, capture_output=True, timeout=10).returncode, 0)
+        self.assertEqual(subprocess.run(argv, capture_output=True, timeout=10).returncode, 7)
+        self.assertFalse(owned_by(self.path, os.getpid(), proof))
+        self.assertEqual(Path(str(self.path) + ".owner").read_bytes(), b"")
+
+    def test_process_owner_path_replacement_and_existing_records_are_preserved(self):
+        path = Path(str(self.path) + ".owner")
+        path.write_text("Preserve private fixture owner record.\n")
+        with self.assertRaises(StateError):
+            with process_lease(self.path):
+                self.fail("nonempty owner path admitted")
+        self.assertEqual(path.read_text(), "Preserve private fixture owner record.\n")
+        path.unlink()
+        with process_lease(self.path) as lease:
+            proof = lease.proof()
+            path.unlink()
+            path.write_bytes(b"")
+            with self.assertRaises(StateError):
+                lease.require_current()
+            self.assertFalse(owned_by(self.path, os.getpid(), proof))
 
 
 if __name__ == "__main__":

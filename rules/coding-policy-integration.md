@@ -16,6 +16,12 @@ description: Team-specific sync, isolation, release and cleanup contracts at the
 - The foreman carries out none of those resolutions.
 - Foreman teardown is limited to the merged task's worktree under `skills/herdr-foreman/SKILL.md` Step 15 and its binding post-merge order.
 - Workers retain diagnostics and handoff obligations on their own changed files.
+- Narrow exception for the explicitly admitted schema-2 task executor.
+- Applies only under its verified current service generation and the admission boundaries in `skills/herdr-foreman/references/task-workflow.md`.
+- Preconditions are binding: read `skills/herdr-foreman/references/task-workflow.md` Ownership and current inputs and Process lifetime and cleanup before relying on it.
+- Its isolated writer/base verification and fixed post-acceptance cleanup follow that contract instead of the legacy round's Writers and Checkouts and Step 15 paperwork.
+- Native provenance, actual merged-head verification, preservation of unrelated work and generic release gates remain binding.
+- Every other team round retains the legacy provisions above.
 
 ## Review and Release
 

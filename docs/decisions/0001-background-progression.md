@@ -77,7 +77,13 @@ New progression state belongs to `herdr-foreman`, with one documented writer, sc
 4. Implement bounded decision packets, effect/recovery checks, outcome/queue/effort telemetry, and integration backpressure. Record why each otherwise eligible task was excluded. Choose limits from measured congestion rather than copying Drover's WIP constants.
 5. Run the real pilot under verified authorization. Compare completion-to-next-action delay and coordination time/output per accepted outcome alongside defects, rework, and production effects. Retire replaced choreography only after those results support it.
 
-Issue #5 remains partly open until its dependency evidence and reproducible owner-backed progression prototype are available. The selected design is not a claim that background progression is already implemented or that ROI improved.
+The schema-2 implementation now supplies native implementation/verification,
+routine correction, full native release ownership, independent publication
+readback, local cleanup and process-owned Stop continuation for supported new
+tasks. Its isolated owner/kernel/Git fixtures do not prove a live team handoff
+or ROI. Specialist/production adapters, actual consumer migration, retention,
+telemetry/backpressure and the preregistered comparison remain separate epic
+acceptance evidence. Issue #5 is not closed by this source description.
 
 ## Reproducibility and upstream license
 

@@ -1,16 +1,17 @@
-"""Run an explicitly admitted, immutable native dispatch chain without model relays.
+"""Run admitted native progression without model relays.
 
-This initial adapter advances prepared implementation/verification assignments.
+The schema-1 adapter advances prepared implementation/verification assignments.
 It observes canonical report delivery and optional foreman assessments. It
 cannot accept work, dispatch release, change a profile, waive a gate or resolve
-an uncertain effect. Those transitions still need their dedicated adapters.
+an uncertain effect. Schema-2 tasks select WorkflowService at the CLI boundary;
+their dedicated adapters own supported outcome/release transitions.
 
 The current cursor and single pending intent live on the existing task record.
 No poll writes history, copies reports or mirrors GitHub. Existing dispatch and
 supervision owners retain all delivery/evidence authority.
 """
 
-from contextlib import redirect_stderr
+from contextlib import nullcontext, redirect_stderr
 import hashlib
 import io
 import json
@@ -50,6 +51,9 @@ def read_contract(path):
 
 
 def validate_progress(value):
+    if isinstance(value, dict) and type(value.get("schema_version")) is int and value["schema_version"] == 2:
+        from .workflow_contract import validate_progress as validate_workflow
+        return validate_workflow(value)
     if (not isinstance(value, dict) or set(value) != {"schema_version", "generation", "cursor", "pending"}
             or type(value["schema_version"]) is not int or value["schema_version"] != 1
             or type(value["generation"]) is not int or value["generation"] < 1
@@ -369,18 +373,34 @@ class ProgressionService:
 def run_command(args, state_path, client, *, sleeper):
     if not MIN_INTERVAL <= args.interval <= MAX_INTERVAL:
         raise UsageError("Select a progression interval within the service's supported bounds.", {})
-    plugin_root = Path(__file__).resolve().parents[3]
+    from .native_policy import executing_policy_root
+    plugin_root = executing_policy_root()
     with authority.service_session(state_path, args.task, args.generation, args.service_id, plugin_root) as capability:
-        service = ProgressionService(capability, client)
-        while True:
-            result = service.tick()
-            if args.once or result["wake_agent"] or result["data"]["status"] == "dispatch_chain_complete":
-                return result, None
-            sleeper(args.interval)
+        state = authority._load(state_path)
+        grant = authority.current_grant(state, args.task)
+        assert grant is not None
+        _captured, document = capture_contract(grant["contract"]["path"])
+        workflow = isinstance(document, dict) and type(document.get("schema_version")) is int and document["schema_version"] == 2
+        if workflow:
+            from . import progression_runtime
+            from .cli import now_iso
+            from .workflow_service import WorkflowService
+            service = WorkflowService(capability, client, sleeper=sleeper)
+            lifetime = progression_runtime.keep_alive(capability, now_iso)
+        else:
+            service = ProgressionService(capability, client)
+            lifetime = nullcontext(lambda: None)
+        with lifetime as require_healthy:
+            while True:
+                require_healthy()
+                result = service.tick()
+                if args.once or result["wake_agent"] or result["data"]["status"] in ("dispatch_chain_complete", "complete"):
+                    return result, None
+                sleeper(args.interval)
 
 
 def register_commands(sub, common):
-    parser = sub.add_parser("progression-run", parents=[common], help="Run an explicitly admitted native dispatch chain independently of model turns.")
+    parser = sub.add_parser("progression-run", parents=[common], help="Run an explicitly admitted native task workflow or prepared chain independently of model turns.")
     parser.add_argument("--task", required=True)
     parser.add_argument("--generation", type=int, required=True)
     parser.add_argument("--service-id", required=True)

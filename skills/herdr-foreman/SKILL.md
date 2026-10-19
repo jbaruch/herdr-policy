@@ -8,7 +8,7 @@ description: >
   measure Herdr worker capacity, recover refused dispatches, restart or relaunch
   idle workers, collect reports, run or retrieve retrospectives,
   catch up on outstanding user attention, curate team lessons, save and resume
-  foreman handoffs, run explicitly admitted native dispatch chains, or report a task's cost or resource use through acceptance.
+  foreman handoffs, run explicitly admitted native task workflows or prepared dispatch chains, or report a task's cost or resource use through acceptance.
   Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention and cost reports work
   offline. Other standalone tasks skip this skill.
 ---
@@ -17,14 +17,21 @@ description: >
 
 Process steps in order. Do not skip ahead.
 
+For a supported explicitly admitted schema-2 task workflow, read
+`skills/herdr-foreman/references/task-workflow.md` and its command reference
+`skills/herdr-foreman/references/progression.md`. That scoped contract owns its
+ordinary progression, report handling, context floor and continuation.
+Legacy rounds follow the steps below in order without skipping ahead.
+
 Before any finish with enrolled work, reconcile the whole fleet under
 `skills/herdr-foreman/references/supervision.md`. Continue observation while
 authorized work remains. Finish only after a genuine user pause or a verified
-successor/reset continuation satisfies the Stop gate. A saved handoff hold
+successor/reset continuation or healthy implemented task executor satisfies
+the Stop gate for its exact obligations. A saved handoff hold
 does not permit Stop on its own. Keep user
 attention visible under `skills/herdr-foreman/references/attention.md`.
 
-Before any team-round action outside Step 1's bounded factual lookup, read the
+Before any legacy team-round action outside Step 1's bounded factual lookup, read the
 team-round contract in full. It is the
 file `rules/agent-team-operation.md` points to, and it binds every step below.
 Every worker brief names it as a required read.

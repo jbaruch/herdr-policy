@@ -802,21 +802,28 @@ one-replacement validation lives in the owner module's `validate` function.
 
 Recovery store version 19 owns task metadata version 2. The single writer is
 the herdr-foreman owner through `progression-admit`, `progression-return`,
-`progression-reconcile` and
+`progression-reconcile`, `progression-resume` and
 the admitted `progression-run` loop. All changes share the canonical state
 transaction lock. Legacy task metadata remains version 1 with no grant;
 upgrading an older store never invents a service handoff. A version-18-or-older
 store carrying task authority is unowned newer data and fails validation.
 
 A version-2 task retains its original task fields and adds `authority`. Its
-schema-1 fields and validation/budget contract are `GRANT_FIELDS` and
+grant fields and validation/budget contract are `GRANT_FIELDS` and
 `validate_grant` in `skills/herdr-foreman/foreman/progression_owner.py`. A grant records one current
 generation, service identity, dedicated kernel lease path, immutable workflow
 receipt, loaded policy identity, supervision-binding identity, authorization
 and timestamp. Returned grants keep the generation and clear service fields.
 No second task database or local handoff history is written.
 
-An optional `progression` record starts at the first dispatch intent. Its
+New grants use schema 2 and also record `contract_schema`: 1 for a prepared
+chain, 2 for the admitted task executor, null on return. Schema-1 grants keep
+their exact older fields and remain readable without rewrite; they never gain
+task-executor Stop authority. Admission and each capability check verify the
+captured contract type. This explicit discriminator lets Stop ignore legacy
+historical contracts instead of opening them to infer an execution mode.
+
+An optional schema-1 `progression` record starts at the first dispatch intent. Its
 schema-1 fields are `schema_version`, `generation`, `cursor` and `pending`.
 `pending` is null or a schema-1 record with `step` and stable `intent` identity.
 `skills/herdr-foreman/foreman/progression_service.py` owns `validate_progress`, cursor bounds and
@@ -825,15 +832,58 @@ are owner-recorded as applied. A persisted pending intent with incomplete
 readback remains uncertain after restart. Completion of this cursor means the
 prepared assignment chain ended; it proves no acceptance, release or outcome.
 
+Schema-2 admission creates one current `progression` object with
+`schema_version`, `generation`, `phase`, `round`, `pending`, `jobs`, `head`,
+`blockers`, `exception`, `at`, `publication_baseline`, `plan` and `delivery`.
+`foreman/workflow_contract.py` owns its exact fields, cross-field validation and
+budgets. Phases are `implement`, `verify`, `release`, `merge`, `publish`,
+`cleanup`, `complete` and `exception`. `jobs` maps responsibilities to existing
+canonical dispatch IDs, never another assignment log. `head` binds the actual
+commit/tree/affected paths against the original task base. `blockers` and `plan`
+are current byte receipts. `round` is cumulative for the original task.
+
+The single schema-2 pending intent has `schema_version`, `id`, `operation`,
+`argv`, `inputs`, `effects_started`, `dispatches` and `job`. Only unresolved
+launch/close intents carry a transient full native `job`; canonical readback
+removes it. Operations are `measure`, `apply`, `record`, `close`, `merge` and
+`cleanup`; unsupported effects refuse. Worker delivery/claim shapes and limits
+are `JOB_FIELDS` and `CLAIM_FIELDS` in the same owner module, with their human
+contract in `references/task-workflow.md`. Claims never replace actual native
+delivery, independent identities, Git scope or existing gate evidence.
+
+`exception` is null or `{code, phase, sources, actions}`. `phase` preserves the
+original stage; source pointers and permitted actions are bounded, with no
+copied report/history. Resume takes the exact packet digest and explicit
+authorization, verifies the current foreman and a free lease, then restores
+only a retryable stage. One `progression_exception_resumed` owner event records
+that authorization. It cannot resolve material decisions or unknown sends.
+
+`delivery` is null or a schema-1 object with `pull_request`, `merge_commit`,
+`publisher_run`, `tag`, `tessl_version`, `tessl_confirmed`, `acr_confirmed`,
+`accepted`, `base_checkout` and `cleanup_step`. Actual confirmations are retained
+separately; one channel never substitutes for another. Cleanup has five fixed
+steps, retains its original intent during uncertainty and closes the task only
+after actual acceptance. A `complete` label without its matching merged task
+closure, accepted delivery, finished cleanup and no pending intent cannot
+release Stop obligations.
+
 `progression-reconcile` clears only a complete expected dispatch set already
 recorded `not_sent`, with no active enrollment and no live service lease. It
 keeps the cursor and grant unchanged. One `progression_intent_reconciled` event
 records the task, expected generation, intent and explicit authorization in
 `details`; that owner receipt supports idempotent replay. Missing or partially
 applied sets do not qualify. No new store or parallel task history is created.
+For schema 2 the same command retires only a proved unsent pending launch and
+its current plan, preserving generation, task, base, jobs and correction count.
+It requires settled enrollments and no report; a later execution plans a fresh
+native identity rather than reusing an uncertain attempt.
 
 The kernel lease is a dedicated empty file, not a schema-bearing authority
-record. Process death releases its lock but neither returns the task nor
+record. Its separate empty `.owner` sibling holds a process-associated lock;
+`F_GETLK` joins the exact PID to both actual inode identities. A live process
+plus another process's occupied flock is not continuation proof. Same-process
+checks require the actual registered in-memory lease capability. Process death
+releases its locks but neither returns the task nor
 classifies an effect. Every service mutation verifies its live capability,
 task generation, policy, contract and supervision binding inside the owner
 transaction. The real bound foreman retains exception assessment; foreground
@@ -1146,11 +1196,21 @@ store requires recovery of its history before rebinding or writing.
   `waiting_for_user` hold may authorize Stop. A current `handoff` hold does not
   authorize Stop until its exact live reset continuation is verified. More
   than one current handoff is ambiguous and authorizes no Stop.
-- `watchers`: `{schema_version, id, at, heartbeat, deadline, process, status,
+- Schema-1 `watchers`: `{schema_version, id, at, heartbeat, deadline, process, status,
   reason, ended_at}`. `process` contains positive `pid` and an `identity` digest
   of its observed start time and argv. `status` is `running|stopped`; `reason`
   and `ended_at` are null until the watch stops. Health also checks a fresh
   heartbeat and bounded deadline. A PID alone proves no live watcher.
+- Schema-2 task `watchers` add `task`, `generation`, `service_id`, `lease_path`,
+  `policy`, `binding` and `lease_proof` to those fields. Only the actual live
+  service capability writes the current task row through
+  `foreman/progression_runtime.py`; schema-2 grants additionally require an
+  initialized task executor. Pulses replace one row without events/history.
+  `lease_proof` is schema 1 with `lease` and `owner` inode pairs `[device,inode]`.
+  Health joins the exact kernel owner PID and both current physical paths to
+  the OS process, fresh pulse and unchanged admitted authority. A foreground
+  watcher never borrows this row as its own health. Stop reads only current
+  schema-2 obligations; legacy chains provide no delegated continuation.
 - `evidence` arrays contain readable file receipts:
   `{schema_version: 1, path, sha256, size}` with canonical absolute `path`,
   lowercase 64-character SHA-256, and nonnegative byte `size`. They preserve
