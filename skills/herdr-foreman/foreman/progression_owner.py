@@ -265,6 +265,28 @@ class ServiceCapability:
             raise UsageError("Service arguments differ from the admitted step; preserve its original intent.", {})
         return _verify_inputs(self._prepared)
 
+    def authorized_client(self, client):
+        """Called inside the CLI's primary transaction; clone only its transport."""
+        from .herdr import HerdrClient
+        if self._prepared is None or not isinstance(client, HerdrClient) or client.context.mode != "native":
+            raise UsageError("Use the admitted prepared step and native Herdr client for service effects.", {})
+        state = _load(self.state_path)
+        self.require_current(self.state_path, state, self.task)
+        grant = current_grant(state, self.task)
+        assert grant is not None
+        expected = deepcopy(grant["binding"])
+        original = client._runner
+        def guarded(argv):
+            self.lease.require_current()
+            with supervision.effect_boundary(self.state_path) as current:
+                if _binding(current) != expected or _unresumed_hold(current):
+                    raise UsageError("A current operator hold or changed foreman binding prevents worker transport. Preserve the pending intent and use the current owner to resume or reconcile it.", {})
+                who = current["binding"]["identity"]
+                if not os.environ.get("HERDR_ENV") or os.environ.get("HERDR_ENV") != who.get("herdr_env"):
+                    raise UsageError("Restore the actual connected native foreman environment before worker transport; saved records cannot supply it.", {})
+                return original(argv)
+        return HerdrClient(context=client.context, runner=guarded, trace=client._trace)
+
 
 def command_tasks(args, state_path, state):
     """Resolve task scope from current owner identities, including event batches."""

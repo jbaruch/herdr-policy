@@ -2,6 +2,7 @@
 
 ## 0.3.0 — 2026-10-18
 
+- Serialize live service transport authorization with supervision hold/rebind commits, while keeping enrollment transactions outside the short effect boundary. Preserve pending work when a new hold or binding wins the race.
 - Preserve UTF-8 characters across bounded evidence chunks and return compact task-bound excerpts. Recheck closed-dependency classifier gates atomically at dispatch, keep actionable bounded evidence refusals, and require explicit operator hold resumption even after its original event boundary changes. Refuse no-send intent cancellation when associated transport retries exist; document the initial adapter's installation and recovery limits.
 - Fence service-owned supervision judgments through the bound foreman, consume accepted closed-worker evidence without a live pane, and reconcile complete owner-proved no-send intents without advancing or clearing unknown effects. Keep malformed admitted configuration in structured failures and align the skill entrypoint with bounded retrieval.
 - Read both legacy and service-owned recovery schemas for measurement. Bind private provenance to the normalized observation window and derive retry/send timing from transport events without borrowing future outcomes or a later enrollment.

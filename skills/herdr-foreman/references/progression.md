@@ -48,6 +48,11 @@ Closed dependencies require clear classifier gates. The actual owner apply
 rechecks these gates under their existing lock and keeps that lock through
 dispatch. Evidence failures return a bounded refusal naming the failed stage
 and the required recovery action.
+The admitted CLI clones the native transport with a supervision-owner boundary.
+Each invocation checks the live binding and unresumed holds under the same lock
+used by hold/rebind writers and keeps that lock through transport. Enrollment
+transactions run outside that short boundary. A hold or rebind that wins the
+lock prevents transport; an in-progress invocation prevents their commit.
 
 The owner captures verified config/plan/work bytes for apply and checks the
 frozen brief bytes before worker effects. A mutable replacement cannot change

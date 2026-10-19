@@ -6,10 +6,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import copy
+from contextlib import contextmanager
 import hashlib
 import io
 import json
 import os
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -120,6 +122,80 @@ class ProgressionServiceTest(unittest.TestCase):
             self.assertFalse(final["data"]["authorizes_acceptance"])
             self.assertFalse(final["data"]["authorizes_release"])
             self.assertEqual(self.invocations, 2)
+
+    def change_supervision_authority(self, kind):
+        if kind == "hold":
+            supervision.hold(self.path, {"id": "boundary-hold", "kind": "waiting_for_user",
+                "resume_condition": "Fixture operator explicitly resumes", "evidence": [str(self.fx.common)], "dispositions": []}, AT)
+        else:
+            who = supervision.identity("replacement-foreman-session", str(Path.cwd()), "fixture-only", pane_id="replacement-foreman")
+            supervision.bind(self.path, who, AT, root=self.fx.tmp / "replacement-bindings")
+
+    def refuse_changed_authority_at_transport(self, kind):
+        original = supervision.effect_boundary
+        interrupted = False
+        @contextmanager
+        def arriving(state_path):
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                self.change_supervision_authority(kind)
+            with original(state_path) as current:
+                yield current
+        with self.session() as capability, patch("foreman.supervision.effect_boundary", arriving):
+            result = self.runner(capability).tick()
+        self.assertTrue(interrupted)
+        self.assertTrue(result["wake_agent"])
+        self.assertEqual(result["data"]["reason"], "dispatch_owner_refused")
+        self.assertIn("operator hold or changed foreman binding", result["data"]["refusal"]["message"])
+        self.assertEqual(self.fx.runner.writes(), [])
+        self.assertIsNotNone(self.state()["recovery"]["tasks"]["one"]["progression"]["pending"])
+        if kind == "hold":
+            self.assertIsNone(supervision.load(self.path)["holds"][0]["resumed_at"])
+        else:
+            self.assertEqual(supervision.load(self.path)["binding"]["identity"]["pane_id"], "replacement-foreman")
+
+    def test_hold_arriving_after_initial_authorization_refuses_transport(self):
+        self.refuse_changed_authority_at_transport("hold")
+
+    def test_rebind_arriving_after_initial_authorization_refuses_transport(self):
+        self.refuse_changed_authority_at_transport("bind")
+
+    def test_transport_invocation_serializes_concurrent_hold_and_rebind(self):
+        original = self.client._runner
+        denied = []
+        def transport(argv):
+            for kind in ("hold", "bind"):
+                def update(which=kind):
+                    try:
+                        self.change_supervision_authority(which)
+                    except ForemanError:
+                        denied.append(which)
+                thread = threading.Thread(target=update)
+                thread.start()
+                thread.join(5)
+                self.assertFalse(thread.is_alive(), "Supervision lock contention must refuse, not deadlock")
+            return original(argv)
+        self.client._runner = transport
+        before = supervision.store_path(self.path).read_bytes()
+        with self.session() as capability, capability.prepared_step("implement"), state_lock(self.path):
+            client = capability.authorized_client(self.client)
+            self.assertEqual(client.agent_get("grok")["pane_id"], "w4:p1")
+        self.assertEqual(denied, ["hold", "bind"])
+        self.assertEqual(supervision.store_path(self.path).read_bytes(), before)
+
+    def test_native_checkpoint_uses_the_selected_executable_in_both_interfaces(self):
+        def checkpoint(_path, _enrollment, *, run):
+            child = run([sys.executable, "-c", 'import json,os; print(json.dumps([os.environ.get("HERDR_BIN"),os.environ.get("FOREMAN_HERDR_BIN")]))'],
+                        capture_output=True, text=True, check=False)
+            return {"wait": child.stdout}, child.returncode
+        with self.session() as capability:
+            runner = self.runner(capability)
+            with patch("foreman.progression_service.members.check", side_effect=checkpoint), \
+                    patch.dict(os.environ, {"HERDR_BIN": "wrong-binary", "FOREMAN_HERDR_BIN": "wrong-binary"}):
+                result, code = runner._check_native("fixture-no-network")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(result["wait"]), [self.client.context.executable] * 2)
 
     def test_crash_after_applied_dispatch_replays_owner_receipt_without_resending(self):
         def crash(*args, **kwargs):

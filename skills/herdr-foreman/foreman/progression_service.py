@@ -161,7 +161,7 @@ class ProgressionService:
 
     def _check_native(self, enrollment):
         binary = self.client.context.executable
-        environment = {**os.environ, "FOREMAN_HERDR_BIN": binary}
+        environment = {**os.environ, "FOREMAN_HERDR_BIN": binary, "HERDR_BIN": binary}
         def run(argv, **kwargs):
             return subprocess.run(argv, env=environment, **kwargs)
         return members.check(self.capability.state_path, enrollment, run=run)

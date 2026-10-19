@@ -836,6 +836,11 @@ classifies an effect. Every service mutation verifies its live capability,
 task generation, policy, contract and supervision binding inside the owner
 transaction. The real bound foreman retains exception assessment; foreground
 dispatch of a service-owned task is refused. Operator holds stay effective.
+Service transport checks the current supervision binding and unresumed holds
+inside `supervision.effect_boundary`, sharing the hold/bind lock through the
+native invocation. This boundary writes no snapshot and introduces no record
+shape. The enclosing CLI still owns the primary transaction; enrollment uses
+its ordinary separate supervision transaction between native invocations.
 
 This is a gate store under `stateful-artifacts` Gate Store: a reader that cannot
 accept its version must refuse effects. Existing state-mutating owners refuse

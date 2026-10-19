@@ -14,6 +14,7 @@ Resolving enrollment ends observation only and grants no task completion.
 
 import hashlib
 import json
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -218,6 +219,18 @@ def transaction(state_path, mutate):
         result = mutate(data)
         save_state(path, data)
         return result
+
+
+@contextmanager
+def effect_boundary(state_path):
+    """Serialize a live authority check and transport invocation with hold/bind."""
+    with state_lock(store_path(state_path)):
+        data = load(state_path)
+        if data["binding"] is None:
+            raise StateError("Restore the current bound supervision owner before invoking worker transport.", {})
+        # No owner snapshot is written: enrollment transactions happen outside
+        # this boundary, and transport cannot overwrite a concurrent observation.
+        yield data
 
 
 def validate_member(record):

@@ -3440,6 +3440,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
                 if service_capability is not None and args.command == "apply":
                     args.service_inputs = service_capability.capture_inputs(args)
                     args.service_gate_reports = service_capability.gate_reports
+                    client = service_capability.authorized_client(client if client is not None else _client(args, trace=trace))
                 retro_lock = retrospective.lock(_state_path(args)) if not readonly and args.command in {"apply", "start-judge", "relaunch-worker", "retro-record"} else nullcontext()
                 with retro_lock:
                     payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)
