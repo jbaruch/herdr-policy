@@ -120,6 +120,17 @@ plus narrowly named delivery/review artifacts. It is not a history directory.
 Workers consume the specific inputs named in their brief, never a recursive
 `.hr` or owner-state dump. GitHub remains the change and review history.
 
+After verified acceptance, all selected publications and Git teardown, the
+executor retires this private directory through its existing cleanup intent.
+Plan/common inputs and dispatch-bound briefs, reports, delivery and review
+files serve only the active task. Each batch records at most 32 byte receipts;
+the inventory examines at most 256 files. Unknown entries, changed closed
+reports or briefs, links and unresolved enrollments refuse cleanup. Partial
+unlink resumes from the same started intent. Canonical owner receipts and the
+GitHub closure link remain; completed history uses those references rather than
+reloading retired local files. Existing completed tasks and legacy `.hr` trees
+are not swept by this path.
+
 `effects` is a unique list drawn from `write`, `push`, `open_pr`, `merge` and
 `publish`. All four source effects are required; publish matches the channels.
 `publication` contains `tessl` (null or `{workspace,plugin}`), `acr` (boolean)

@@ -1,4 +1,4 @@
-"""Verify a native release outcome and tear down only its admitted worktree.
+"""Verify a native release and retire its own worktree and current artifacts.
 
 The native release responsibility runs the existing complete release skill,
 including review reading, exact-head merge and each publication. This owner
@@ -15,6 +15,7 @@ import subprocess
 
 from . import policy_paths, progression_owner as authority, recovery, report_gates, supervision
 from . import workflow_contract as schema, workflow_dispatch, workflow_review
+from . import workflow_artifacts as artifacts
 from . import workflow_workspace as workspace
 from .errors import StateError, UsageError
 
@@ -304,6 +305,12 @@ class WorkflowReleaseAdapter:
             raise UsageError("Complete actual acceptance and every selected publication before task teardown.", {})
         step = delivery["cleanup_step"]
         if step == 5:
+            remaining = artifacts.inventory(service, state, progress)
+            if remaining is not None:
+                service._intent(progress, "cleanup", inputs=remaining[:artifacts.BATCH_FILES])
+                progress["pending"]["id"] += "-5-" + supervision.digest(progress["pending"]["inputs"])[:12]
+                service._save(state)
+                return service._view(progress, "prepared")
             recovery.close_task(state["recovery"], state["assignments"], {"task": task["task"], "outcome": "merged",
                 "evidence": "https://github.com/{}/pull/{}#{}".format(repo["github"], delivery["pull_request"], delivery["merge_commit"])}, service.clock())
             progress.update(phase="complete", at=service.clock())
@@ -348,6 +355,8 @@ class WorkflowReleaseAdapter:
         # is retried here. Changed/unknown refs keep the original intent.
         intent = progress["pending"]
         step = progress["delivery"]["cleanup_step"]
+        if step == 5:
+            return self._resume_artifacts(service, state, task, progress)
         if step >= 5 or intent["argv"] != self._cleanup_commands(service, progress)[step]:
             raise UsageError("The pending cleanup arguments differ from this task's exact current target; preserve the intent instead of executing a substituted command.", {})
         if self._cleanup_readback(service, progress):
@@ -368,4 +377,42 @@ class WorkflowReleaseAdapter:
                 service._before_effect(state)
                 self._run(intent["argv"], progress["delivery"]["base_checkout"])
         # Re-enter the same exact postcondition on the next tick.
+        return service._view(progress, "effect_recorded")
+
+    def _resume_artifacts(self, service, state, task, progress):
+        intent = progress["pending"]
+        if not progress["delivery"]["accepted"] or intent["argv"] or intent["dispatches"] or intent["job"] is not None:
+            raise UsageError("Retire task artifacts only through the accepted workflow's original local cleanup intent.", {})
+        remaining = artifacts.inventory(service, state, progress)
+        if remaining is None:
+            progress.update(pending=None, at=service.clock())
+            service._save(state)
+            return service._view(progress, "advanced")
+        available = {row["path"]: row for row in remaining}
+        expected = intent["inputs"]
+        missing = [row for row in expected if row["path"] not in available]
+        if missing and not intent["effects_started"]:
+            raise UsageError("A prepared artifact disappeared before cleanup started; preserve and reconcile the original intent.", {})
+        if expected and len(missing) == len(expected):
+            progress.update(pending=None, at=service.clock())
+            service._save(state)
+            return service._view(progress, "advanced")
+        if not expected and remaining:
+            raise UsageError("The empty artifact directory changed before cleanup; preserve its new contents.", {})
+        if any(row["path"] in available and available[row["path"]] != row for row in expected):
+            raise UsageError("A pending artifact changed; preserve the remaining files and reconcile their original byte receipts.", {})
+        with service.capability.workflow_operation(state, "cleanup", before_effect=lambda: service._before_effect(state)):
+            grant = authority.current_grant(state, task["task"])
+            assert grant is not None
+            with supervision.effect_boundary(service.path) as current:
+                if (authority._binding(current) != grant["binding"] or authority._unresumed_hold(current)
+                        or os.environ.get("HERDR_ENV") != current["binding"]["identity"].get("herdr_env")):
+                    raise UsageError("A current hold or changed native binding prevents artifact cleanup; preserve the intent.", {})
+                service.capability.lease.require_current()
+                self._cleanup_readback(service, progress)
+                artifacts.inventory(service, state, progress)
+                if not intent["effects_started"]:
+                    service._before_effect(state)
+                artifacts.remove_batch(service.document["artifact_directory"], expected,
+                                       allow_missing=intent["effects_started"])
         return service._view(progress, "effect_recorded")

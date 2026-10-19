@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 — 2026-10-19
+
+- Retire an accepted native task's private plan, brief, report and delivery/review files after confirmed publication and Git teardown. Use bounded batches in the existing cleanup intent; retain canonical owner receipts and the GitHub closure reference.
+- Preserve active enrollments, changed evidence, foreign entries and linked files. Resume interrupted unlink batches without redispatching work. Existing completed directories and legacy `.hr` trees require their separate inventory and migration.
+
 ## 0.6.0 — 2026-10-19
 
 - Add explicit config-schema-9 WIP/integration thresholds for admitted native task workflows, with repository limits and expiring task exceptions. Reuse current owner records and the initial-job transaction; reservations and uncertain work consume capacity without creating another ledger.

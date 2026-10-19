@@ -871,9 +871,17 @@ that authorization. It cannot resolve material decisions or unknown sends.
 `delivery` is null or a schema-1 object with `pull_request`, `merge_commit`,
 `publisher_run`, `tag`, `tessl_version`, `tessl_confirmed`, `acr_confirmed`,
 `accepted`, `base_checkout` and `cleanup_step`. Actual confirmations are retained
-separately; one channel never substitutes for another. Cleanup has five fixed
-steps, retains its original intent during uncertainty and closes the task only
-after actual acceptance. A `complete` label without its matching merged task
+separately; one channel never substitutes for another. Cleanup has five Git
+steps followed by private artifact retirement at `cleanup_step: 5`. The same
+schema-2 cleanup intent has empty `argv` for file retirement and at most 32
+`inputs` receipts. Started batches read back already absent files; changed
+remaining bytes and unresolved enrollments refuse. The owner removes only its
+admitted directory's known files, then closes the task after actual acceptance.
+This changes no stored field or schema. Canonical dispatch/closure receipts
+remain after local working files retire; history readers use the GitHub closure
+reference, while missing evidence for unresolved work still refuses. The
+bounded lifecycle is documented in `skills/herdr-foreman/references/progression.md`.
+A `complete` label without its matching merged task
 closure, accepted delivery, finished cleanup and no pending intent cannot
 release Stop obligations.
 
