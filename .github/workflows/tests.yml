@@ -22,7 +22,7 @@ jobs:
       - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2; Dependabot weekly
       # Compatibility source: review monthly with the baseline install, in a dedicated PR.
       - uses: jbaruch/coding-policy/.github/actions/setup-diagnostics@9101b94c189c265ea61c82c071cb34b0e1c9fc32
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6; Dependabot weekly
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6; Dependabot weekly
         with:
           # Match the pinned ACR module; review monthly with the ACR revision below.
           go-version: '1.27.0'
