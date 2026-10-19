@@ -9,11 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 import hashlib
 import io
 import json
+import os
 import unittest
 from argparse import Namespace
 from unittest.mock import Mock, patch
 
-from foreman import attention, context_output, memory, supervision as store
+from foreman import attention, context_output, foreman_reset, memory, supervision as store
 from foreman import supervision_runtime as runtime
 from foreman.cli import cmd_foreman_reset
 from foreman.errors import UsageError
@@ -135,6 +136,34 @@ class ContextViewsTest(CliCase):
             offset = view["history_pagination"]["next_offset"]
         self.assertEqual(seen, ["record:long-history"] + ["present-{}".format(index) for index in range(30)])
         self.assertEqual(attention.storage_path(self.state).read_bytes(), before)
+
+    def test_many_failed_resets_remain_independently_retrievable(self):
+        attention.write(self.state, "record", obligation("unseen-blocker", kind="blocker"), AT)
+        for index in range(12):
+            plan = {"pane_id": "reset-pane-{}".format(index), "stow": "stow-{}".format(index)}
+            foreman_reset.schedule(self.state, plan, AT, os.getpid,
+                                   native_session={"kind": "id", "value": "11111111-1111-4111-8111-111111111111"})
+            foreman_reset.claim(self.state, plan, runtime.process_identity(os.getpid()))
+            foreman_reset.finish(self.state, plan, "failed", {
+                "error": "herdr_error", "message": "Inspect the saved recovery obligation.", "details": {},
+                "resume_prompt": "Recover only the named pane. " + "x" * 5000})
+        owner = foreman_reset.record_path(self.state)
+        before = owner.read_bytes()
+        first, _ = self.output(["catch-up", "--compact", "--limit", "50", "--now", AT])
+        self.assertEqual(first["foreman_reset_page"]["total"], 12)
+        self.assertLess(first["foreman_reset_page"]["returned"], 12)
+        self.assertFalse(first["context_complete"])
+        offset, seen = 0, []
+        while offset is not None:
+            view, _ = self.output(["catch-up", "--compact", "--section", "resets", "--limit", "50",
+                                   "--offset", str(offset), "--now", AT])
+            seen.extend(row["stow"] for row in view["foreman_resets"])
+            self.assertEqual(view["attention"]["items"], [])
+            self.assertEqual(view["attention"]["omitted"], 1)
+            offset = view["foreman_reset_page"]["next_offset"]
+        self.assertEqual(seen, ["stow-{}".format(index) for index in range(12)])
+        self.assertEqual(owner.read_bytes(), before)
+        self.assertEqual([row["id"] for row in attention.dispatch_gate(self.state, "owner/repo#5", AT)], ["unseen-blocker"])
 
     def test_current_memory_does_not_replay_revision_history(self):
         previous = None
@@ -265,6 +294,43 @@ class ContextViewsTest(CliCase):
         view, _ = self.output(["supervision-status", "--compact", "--now", AT])
         self.assertEqual({row["id"] for row in view["unresumed_holds"]}, {"inspected", "arrived-later"})
         resumed, _ = self.output(["supervision-resume", "--compact", "--hold", "inspected", "--hold", "arrived-later", "--now", AT])
+        self.assertTrue(resumed["resumed"])
+        self.assertTrue(all(row["resumed_at"] is not None for row in store.load(self.state)["holds"]))
+
+    def test_many_holds_can_be_inspected_before_atomic_resume(self):
+        self.bind()
+        names = ["hold-{:02}".format(index) for index in range(40)]
+        for identifier in names:
+            store.hold(self.state, {"id": identifier, "kind": "waiting_for_user",
+                                   "resume_condition": "Inspect this specific operator decision. " + "x" * 1200,
+                                   "evidence": [str(self.source)], "dispositions": []}, AT)
+        self.events(3)
+        before = store.store_path(self.state).read_bytes()
+        first, _ = self.output(["supervision-status", "--compact", "--now", AT])
+        self.assertEqual(first["hold_page"]["total"], len(names))
+        self.assertLess(first["hold_page"]["returned"], len(names))
+        # A later event invalidates the hold checkpoint without clearing saved holds.
+        self.assertFalse(first["hold"])
+        self.assertFalse(first["context_complete"])
+        offset, seen = 0, []
+        while offset is not None:
+            view, _ = self.output(["supervision-status", "--compact", "--section", "holds", "--limit", "50",
+                                   "--offset", str(offset), "--now", AT])
+            seen.extend(row["id"] for row in view["unresumed_holds"])
+            self.assertEqual(view["events"], [])
+            self.assertEqual(view["event_page"]["omitted"], 3)
+            offset = view["hold_page"]["next_offset"]
+        self.assertEqual(seen, names)
+        self.assertEqual(store.store_path(self.state).read_bytes(), before)
+        self.out, self.err = io.StringIO(), io.StringIO()
+        code, out, err = self.run_cli(self.base() + ["supervision-resume", "--compact", "--hold", seen[0], "--now", AT])
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("holds_changed", err)
+        self.assertEqual(store.store_path(self.state).read_bytes(), before)
+        arguments = ["supervision-resume", "--compact", "--now", AT]
+        for identifier in seen:
+            arguments.extend(["--hold", identifier])
+        resumed, _ = self.output(arguments)
         self.assertTrue(resumed["resumed"])
         self.assertTrue(all(row["resumed_at"] is not None for row in store.load(self.state)["holds"]))
 

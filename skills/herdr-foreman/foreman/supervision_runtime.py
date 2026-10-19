@@ -119,9 +119,11 @@ def event_view(result, *, compact=False, limit=context_output.DEFAULT_LIMIT, aft
     return context_output.fit_pages(build, limit, 0)
 
 
-def status_view(result, *, compact=False, limit=context_output.DEFAULT_LIMIT, offset=0, after=0):
-    """Keep binding, holds and live watcher facts while paging current enrollments."""
+def status_view(result, *, compact=False, limit=context_output.DEFAULT_LIMIT, offset=0, after=0, section=None):
+    """Page enrollments, events and holds while retaining binding and watcher facts."""
     context_output.validate_page(limit, offset)
+    if section not in (None, "active", "events", "holds"):
+        raise UsageError("Select --section active, events or holds.", {})
     active = result["active"]
     holds = result["unresumed_holds"]
     if compact:
@@ -132,17 +134,22 @@ def status_view(result, *, compact=False, limit=context_output.DEFAULT_LIMIT, of
                   "disposition_count": len(row["dispositions"]), "dispositions_included": False} for row in holds]
 
     def build(effective):
-        selected = context_output.page(active, offset, effective)
-        events = context_output.sequence_page(result["events"], result["through"], after, effective,
+        selected = context_output.section_page(active, offset, effective, selected=section in (None, "active"))
+        hold_page = context_output.section_page(holds, offset, effective, selected=section in (None, "holds"))
+        selected["section"], hold_page["section"] = "active", "holds"
+        event_selected = section in (None, "events")
+        events = context_output.sequence_page(result["events"], result["through"], after, effective if event_selected else 0,
                                                lambda row: row["seq"])
+        events["selected"] = event_selected
+        events["section"] = "events"
         rows = events.pop("items")
         if compact:
             rows = [_event_reference(row) for row in rows]
-        return {**result, "active": selected.pop("items"), "active_page": selected,
-                "unresumed_holds": holds,
+        return {**result, "section": section, "active": selected.pop("items"), "active_page": selected,
+                "unresumed_holds": hold_page.pop("items"), "hold_page": hold_page,
                 "events": rows, "event_page": events, "observation_details_included": not compact,
                 "event_data_included": not compact,
-                "context_complete": selected["omitted"] == 0 and events["omitted"] == 0}
+                "context_complete": selected["omitted"] == 0 and events["omitted"] == 0 and hold_page["omitted"] == 0}
 
     return context_output.fit_pages(build, limit, offset)
 
@@ -343,7 +350,9 @@ def register_commands(sub, common):
             parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
             parser.add_argument("--after", type=int, default=0, help="Continue pending events after this sequence, within the through snapshot.")
         if name == "status":
-            parser.add_argument("--offset", type=int, default=0, help="Current-enrollment page offset; event continuation uses --after.")
+            parser.add_argument("--offset", type=int, default=0, help="Enrollment/hold page offset; event continuation uses --after.")
+            parser.add_argument("--section", choices=("active", "events", "holds"),
+                                help="Page one section independently while retaining other sections' unexamined counts.")
         if name == "watch":
             parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
             parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL)
@@ -384,7 +393,8 @@ def run_command(args, state_path, now, *, client=None, clock=None, sleeper=None,
     if action == "status":
         return status_view(status(state_path, at, process_probe), compact=getattr(args, "compact", False),
                            limit=getattr(args, "limit", context_output.DEFAULT_LIMIT),
-                           offset=getattr(args, "offset", 0), after=getattr(args, "after", 0))
+                           offset=getattr(args, "offset", 0), after=getattr(args, "after", 0),
+                           section=getattr(args, "section", None))
     if action == "watch":
         if clock is None or sleeper is None:
             raise UsageError("CLI must supply a clock and sleeper for bounded fleet watching.", {})

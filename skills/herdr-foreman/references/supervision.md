@@ -72,10 +72,17 @@ never satisfies those contracts. Record user-facing failures, questions, and
 promised follow-ups in the attention queue before continuing housekeeping.
 
 `supervision-status --compact` returns binding, a current-enrollment page, a
-pending-event page, every unresumed hold and watcher health. It omits cached
+pending-event page, an unresumed-hold page and watcher health. It omits cached
 observation bodies and event data; those remain in the owner and are unexamined
 by this view. Hold references retain their identity, condition, evidence and
 coverage digest/count instead of repeating every member's disposition proof.
+Use `--section active|events|holds` to inspect those collections independently.
+`active_page` and `hold_page` use `--offset`; `event_page` uses `--after`.
+Each page names its section and reports total, returned and unexamined counts.
+An unselected section has `selected: false`; switch to that section and its
+start cursor before claiming it was inspected. Collect every unresumed hold
+from `--section holds` before considering resume. Reinspect if the owner changes;
+the final atomic set check remains authoritative.
 `record_schema_version` identifies the retained source format; compact references
 are not complete persisted records. Health verifies the live process identity and
 heartbeat; a reused PID is not the recorded watcher. A live process with a stale
@@ -203,8 +210,9 @@ resumption and every unresumed hold's condition is satisfied, use
 complete inspected set. The owner checks that set under its transaction lock;
 a new or otherwise changed set refuses without clearing holds. Skip resume when
 no hold needs resuming. `hold: false` at a changed event boundary does not cancel
-an unresumed operator hold. Reconcile sources and pending events before
-continuing the watch loop. Retain the
+an unresumed operator hold. Reconcile sources, pending events and all relevant
+pages before the saved continuation or watch loop. An unsatisfied hold condition
+prevents continuation. Retain the
 supervision document and binding records during worktree cleanup. Corrupt,
 missing bound-owner, or unsupported state cannot prove that work is complete;
 preserve it and restore the owner-written record.

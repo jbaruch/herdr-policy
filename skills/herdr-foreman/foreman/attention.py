@@ -352,6 +352,8 @@ def register_commands(sub, common):
         parser.add_argument("--task")
         parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
         parser.add_argument("--offset", type=int, default=0)
+        parser.add_argument("--section", choices=("attention", "deferred", "progress", "closed", "resets"),
+                            help="Page one section independently; other sections retain their unexamined counts.")
         parser.add_argument("--since", help="Filter progress and closed history; never suppress open obligations.")
         parser.add_argument("--include-closed", action="store_true")
         parser.add_argument("--compact", action="store_true", help="Return current records once, without duplicated Markdown and source lists.")
@@ -377,4 +379,4 @@ def run_command(args, state_path, now):
     from .attention_view import catch_up
     return catch_up(state_path, getattr(args, "now", None) or now, task=args.task, limit=args.limit,
                     offset=args.offset, since=args.since, include_closed=args.include_closed,
-                    compact=getattr(args, "compact", False))
+                    compact=getattr(args, "compact", False), section=getattr(args, "section", None))

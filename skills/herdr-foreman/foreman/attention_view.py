@@ -36,7 +36,8 @@ def _useful_links(sources):
 def _pagination(page, label):
     if not page["omitted"]:
         return []
-    next_page = "Continue with --offset {}.".format(page["next_offset"]) if page["next_offset"] is not None else "Read earlier pages with --offset 0."
+    selector = "--section {} ".format(page["section"])
+    next_page = "Continue with {}--offset {}.".format(selector, page["next_offset"]) if page["next_offset"] is not None else "Read earlier pages with {}--offset 0.".format(selector)
     return ["", "**{} {} are outside this page.** {}".format(page["omitted"], label, next_page)]
 
 
@@ -45,8 +46,9 @@ def _render(result):
     for reset in result["foreman_resets"]:
         lines.extend(["## Foreman reset {} needs you".format(reset["status"]), "",
                       _short(reset["needed"]), "", "Record: {}".format(reset["record"]), ""])
+    lines.extend(_pagination(result["foreman_reset_page"], "foreman resets"))
     queue = result["attention"]
-    needs_you = bool(queue["total"] or result["foreman_resets"])
+    needs_you = bool(queue["total"] or result["foreman_reset_page"]["total"])
     if not needs_you:
         lines.append("Nothing currently needs your attention in the saved queue.")
     for row in queue["items"]:
@@ -95,8 +97,11 @@ def _render(result):
 
 
 def catch_up(path, at, *, task=None, limit=context_output.DEFAULT_LIMIT, offset=0, since=None,
-             include_closed=False, compact=False):
+             include_closed=False, compact=False, section=None):
     context_output.validate_page(limit, offset)
+    if section not in (None, "attention", "deferred", "progress", "closed", "resets"):
+        raise UsageError("Select --section attention, deferred, progress, closed or resets.", {})
+    include_closed = include_closed or section == "closed"
     now = timestamp(at, "Catch-up checkpoint")
     cutoff = timestamp(since, "Catch-up since") if since is not None else None
     document, entries, progress = attention.load(path)
@@ -121,25 +126,32 @@ def catch_up(path, at, *, task=None, limit=context_output.DEFAULT_LIMIT, offset=
     progress = [row for row in progress if (task is None or row["task"] == task)
                 and (cutoff is None or timestamp(row["at"], "Progress time") >= cutoff)]
     progress.sort(key=lambda row: (row["at"], row["id"]), reverse=True)
-    # Reset obligations are not dropped while shrinking optional page sizes.
+    # Reset obligations remain globally counted even in a task/section-specific view.
     resets = foreman_reset.outstanding(path)
 
     def build(effective):
+        def selected(rows, name):
+            page = context_output.section_page(rows, offset, effective, selected=section in (None, name))
+            page["section"] = name
+            return page
+
+        reset_page = selected(resets, "resets")
         result = {"schema_version": attention.SCHEMA_VERSION, "state_path": str(attention.canonical_state(path)),
                   "attention_path": str(attention.storage_path(path)), "checked_at": attention._utc(at),
-                  "task": task, "since": since, "attention": context_output.page(actionable, offset, effective),
-                  "deferred": context_output.page(deferred, offset, effective),
-                  "progress": context_output.page(progress, offset, effective),
-                  "closed": context_output.page(closed, offset, effective) if include_closed else None,
+                  "task": task, "since": since, "section": section, "attention": selected(actionable, "attention"),
+                  "deferred": selected(deferred, "deferred"),
+                  "progress": selected(progress, "progress"),
+                  "closed": selected(closed, "closed") if include_closed else None,
                   "retrospective_index": str(attention.canonical_state(path)) + ".retrospectives/index.json",
-                  "foreman_resets": resets, "presentation_included": not compact}
+                  "foreman_resets": reset_page.pop("items"), "foreman_reset_page": reset_page,
+                  "presentation_included": not compact}
         sections = [result[name] for name in ("attention", "deferred", "progress", "closed")
                     if result[name] is not None]
-        result["context_complete"] = all(section["omitted"] == 0 for section in sections)
+        result["context_complete"] = reset_page["omitted"] == 0 and all(page["omitted"] == 0 for page in sections)
         if not compact:
             sources = []
-            for section in sections:
-                for row in section["items"]:
+            for page in sections:
+                for row in page["items"]:
                     for source in row["sources"]:
                         if source not in sources:
                             sources.append(copy.deepcopy(source))

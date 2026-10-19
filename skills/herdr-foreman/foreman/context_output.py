@@ -28,6 +28,13 @@ def page(rows, offset, limit):
             "items": selected}
 
 
+def section_page(rows, offset, limit, *, selected):
+    """Retain counts and a start cursor for a section outside the selected view."""
+    result = page(rows, offset if selected else 0, limit if selected else 0)
+    result["selected"] = selected
+    return result
+
+
 def validate_sequence(through, after):
     if type(after) is not int or not 0 <= after <= through:
         raise UsageError("Use a nonnegative --after sequence within the selected through snapshot.", {})
@@ -41,7 +48,7 @@ def sequence_page(rows, through, after, limit, key):
     return {"through": through, "after": after, "limit": limit, "total": len(rows),
             "earlier_pending": len(rows) - len(later), "returned": len(selected),
             "omitted": len(rows) - len(selected),
-            "next_after": key(selected[-1]) if len(later) > len(selected) else None,
+            "next_after": (key(selected[-1]) if selected else after) if len(later) > len(selected) else None,
             "items": selected}
 
 
@@ -51,7 +58,7 @@ def bounded(result):
     result["budget"] = {"output_bytes": OUTPUT_BYTES}
     if len((json.dumps(result, indent=2) + "\n").encode("utf-8")) > OUTPUT_BYTES:
         raise UsageError(
-            "Current context exceeds its printed output budget. Keep unexamined obligations unresolved; select a narrower task or evidence question instead of dumping history.",
+            "Current context exceeds its printed output budget. Keep unexamined obligations unresolved; select a narrower task, --section where available, or evidence question instead of dumping history.",
             {"reason": "context_budget_exceeded", "budget_bytes": OUTPUT_BYTES, "context_complete": False})
     return result
 

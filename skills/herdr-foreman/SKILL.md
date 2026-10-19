@@ -422,12 +422,14 @@ obligations. A checkpoint is not a pause, completed goal or transfer of supervis
 After an explicitly requested restart or replacement, the next context retrieves
 the bounded stow and uses current owner queries for its evidence references,
 explicitly sets `/goal <saved objective>`
-and verifies the goal is active, then reconciles supervision,
+and verifies the goal is active, then reconciles supervision and its relevant
+pages, including every unresumed hold and outstanding reset,
 reads the queue, runs Steps 1 and 2, then takes the stow's continuation step in
 place of Step 5. The queue lists seats only; gating, release and closure resume
 at their saved step. Follow the selected view's continuations before claiming
 completeness. Preserve operator holds; a context reset supplies no permission
-to clear them. Finish here only with no authorized work remaining or a
+to clear them. An unsatisfied hold or incomplete supervision reconciliation
+prevents the saved continuation. Finish here only with no authorized work remaining or a
 genuine pause or verified continuation satisfying the Stop gate.
 
 Read before acting:

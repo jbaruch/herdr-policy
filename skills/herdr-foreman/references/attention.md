@@ -13,8 +13,8 @@ Run through the installed `skills/herdr-foreman/foreman.sh` with an explicit `ba
 | `attention-record --record entry.json [--now ISO]` | New obligation | Saved event and `replayed` |
 | `attention-update --record event.json [--now ISO]` | Explicit lifecycle transition | Saved event and `replayed` |
 | `attention-progress --record progress.json [--now ISO]` | Progress fact with ledger source; a statement about task content also cites its report as an `artifact` source | Saved event and `replayed` |
-| `attention-list [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Same structured view as `catch-up` |
-| `catch-up [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Byte-bounded actionable, deferred, progress and optional closed pages |
+| `attention-list [--task ID] [--section NAME] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Same structured view as `catch-up` |
+| `catch-up [--task ID] [--section NAME] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Byte-bounded obligation, progress and outstanding-reset pages |
 | `attention-show --id ID [--history] [--limit N] [--offset N] [--now ISO]` | Obligation ID | Current record; opt-in bounded lifecycle history |
 
 The owner file is `<Path(selected --state).expanduser().resolve()>.attention.json`. Its adjacent `.lock` is a live OS transaction lock. The owner uses `state_lock` and `save_state` for serialized atomic replacement. Preserve both the attention history and task ledgers outside task worktrees during cleanup. Canonical aliases of the selected state share one queue. Readers never create locks, initialize files, migrate data, update presentation markers, or contact workers.
@@ -105,6 +105,13 @@ Both forms obey the view schema and printed-byte bound in
 Follow the returned cursor, not the requested row count. An indivisible oversized
 record refuses with `context_complete: false`; it remains in the owner queue and
 still gates dispatch. A partial page never resolves an undisplayed obligation.
+Use `--section attention|deferred|progress|closed|resets` to page collections
+independently; selecting `closed` includes closed history. Other sections retain
+their total and unexamined counts with `selected: false` and a start cursor.
+Outstanding resets are globally counted even with `--task`: `foreman_resets`
+contains the current page and `foreman_reset_page` its counts and continuation.
+Use `--section resets --offset <next_offset>` to inspect every relevant recovery
+obligation before continuing. A section selection never clears another section.
 `attention-show` returns only the current record by default. Use `--history`
 for a specific lifecycle question and follow `history_pagination.next_offset`;
 prior presentations and resolutions are retained without being replayed on resume.
