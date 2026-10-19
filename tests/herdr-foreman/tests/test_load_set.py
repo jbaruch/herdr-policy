@@ -220,6 +220,15 @@ class DecisionTest(unittest.TestCase):
         self.assertEqual(result["core"]["attention"], [entries["q"]])
         self.assertEqual(result["core"]["task"]["scope"], "fix it")
 
+    def test_global_holds_and_unknown_verifier_delivery_survive_a_planning_view(self):
+        state, ids = two_rounds()
+        state["recovery"]["dispatches"][-1]["status"] = "sent_but_not_started"
+        hold = {"id": "operator-stop", "kind": "blocker", "title": "Preserve the global hold", "status": "open", "task": None}
+        result = build(state, reports(ids), {"hold": hold}, set(), "plan", task="t", exists=lambda path: True)
+        self.assertEqual(result["core"]["attention"], [hold])
+        self.assertEqual(result["core"]["unknown_dispatches"], [{"id": ids["test1"], "role": "tester", "status": "sent_but_not_started"}])
+        self.assertFalse(result["authorizes_progression"])
+
 
 class LoadSetCommandTest(CliCase):
     def test_wake_needs_an_enrollment_and_the_rest_need_a_task(self):

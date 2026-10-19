@@ -69,7 +69,10 @@ def _core(state, attention_entries, task):
     return {"task": store["tasks"].get(task),
             "status": task_statuses(store, state["assignments"]).get(task),
             "attention": [entry for entry in attention_entries.values()
-                          if entry.get("task") == task and entry["status"] in OPEN_ATTENTION]}
+                          if entry.get("task") in (None, task) and entry["status"] in OPEN_ATTENTION],
+            "unknown_dispatches": [{key: row.get(key) for key in ("id", "role", "status")}
+                                   for row in store["dispatches"]
+                                   if row.get("task") == task and row.get("status") in PENDING_STATUSES]}
 
 
 def _round_start(assignments, task):
