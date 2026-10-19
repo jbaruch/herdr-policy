@@ -33,13 +33,13 @@ a tested atomic adapter exists. Foreman task dispatch is separate from this
 optional standup path.
 
 ```sh
-tessl install jbaruch/coding-policy@0.4.0
-tessl install jbaruch/herdr-policy@0.2.0
+tessl install jbaruch/coding-policy@latest
+tessl install jbaruch/herdr-policy@latest
 ```
 
 ```sh
-acr install github:jbaruch/coding-policy@0.4.0
-acr install github:jbaruch/herdr-policy@0.2.0
+acr install github:jbaruch/coding-policy@latest
+acr install github:jbaruch/herdr-policy@latest
 acr realize
 ```
 

@@ -3,6 +3,7 @@
 ## 0.2.0 — 2026-10-18
 
 - Preserve directory-root trailing slashes for ACR rendering and execute every installed skill selector in conformance checks, requiring native ownership and bundled script targets on each claimed host.
+- Document moving `latest` consumer selections while retaining explicit split-pair compatibility and stopped-team migration requirements.
 - Pass an allowlisted environment to installed conformance artifacts, scope the CI fetch token to registry installs, and withhold provider/Herdr response bodies from shell and classifier diagnostics.
 - Preserve allowlisted Git operation names in trigger failures while withholding operands and response text. Select the extraction publisher with controlled network diagnostics and tested action input forwarding.
 - Withhold command operands and arbitrary server output from transport errors and traces; preserve static operation metadata, byte counts and recognized recovery codes.
