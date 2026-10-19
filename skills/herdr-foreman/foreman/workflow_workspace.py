@@ -19,7 +19,7 @@ from .errors import StateError, UsageError
 
 
 CURRENT_FILES = frozenset({"plan.json", "common.md", "developer.md", "reviewer.md", "tester.md", "release.md"})
-ARTIFACT_NAME = re.compile(r"(?:report|brief|delivery|reviews)-[0-9]+-(?:developer|reviewer|tester|release)\.(?:md|json)")
+ARTIFACT_NAME = re.compile(r"(?:report|brief|delivery|reviews)-(?:[0-9]+|workflow-[a-f0-9]{48})-(?:developer|reviewer|tester|release)\.(?:md|json)")
 INPUT_LIMIT = 2_097_152
 REPORT_LIMIT = 524_288
 

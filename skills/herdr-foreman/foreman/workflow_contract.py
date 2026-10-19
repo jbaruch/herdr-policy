@@ -302,6 +302,10 @@ def validate_progress(value):
             _text(path, "changed path", 4096)
             if Path(path).is_absolute() or ".." in Path(path).parts:
                 raise UsageError("Bind changed paths inside the authorized repository before verification.", {})
+    if value["phase"] not in ("implement", "exception") and head is None:
+        raise UsageError("Restore the actual implementation head before verification, release, publication or cleanup.", {})
+    if value["phase"] == "complete" and (value["delivery"]["cleanup_step"] != 5 or pending is not None):
+        raise UsageError("A complete workflow requires finished cleanup step 5 and no remaining effect intent.", {})
     if not isinstance(value["blockers"], list) or len(value["blockers"]) > len(ROLES):
         raise UsageError("Retain the current blocking reports without accumulating another local history.", {})
     for captured in value["blockers"]:

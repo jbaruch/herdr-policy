@@ -139,22 +139,26 @@ class WorkflowService:
             return ["release"]
         return []
 
-    def _brief(self, state, task, progress, role, report):
+    def _brief(self, state, task, progress, role, report, identifier):
         template = self.inputs[self.document["briefs"][role]["path"]].decode("utf-8")
         reports = []
         if role in ("reviewer", "tester", "release"):
             supervised = supervision.load(self.path)
-            for responsibility, identifier in progress["jobs"].items():
+            for responsibility, prior_identifier in progress["jobs"].items():
                 if responsibility not in (("developer", "reviewer", "tester") if role == "release" else ("developer",)):
                     continue
-                prior = dispatch.current_job(state, supervised, identifier)
-                member = next(row for row in supervised["members"] if row["id"] == identifier)
+                prior = dispatch.current_job(state, supervised, prior_identifier)
+                member = next(row for row in supervised["members"] if row["id"] == prior_identifier)
                 receipt, _ = workspace.capture(prior["report"], limit=workspace.REPORT_LIMIT)
                 if (prior["status"] != "closed" or member["resolution"] is None or not any(
                         item["path"] == receipt["path"] and item["sha256"] == receipt["sha256"]
                         for item in member["resolution"]["evidence"])):
                     raise UsageError("Restore the prior responsibility's closed, byte-bound report before dispatching its dependent work.", {})
                 reports.append({"responsibility": responsibility, "report": receipt})
+        dependencies = [*progress["blockers"], *(row["report"] for row in reports)]
+        for expected in dependencies:
+            if workspace.capture(expected["path"], limit=workspace.REPORT_LIMIT)[0] != expected:
+                raise UsageError("Restore the current blocker and prerequisite report bytes before constructing their dependent assignment.", {})
         context = {"schema_version": 1, "task": task["task"], "scope": task["scope"],
             "authorization": task["authorization"], "base_revision": task["base_revision"],
             "allowed_paths": task["allowed_paths"], "repository": self.document["repository"],
@@ -164,15 +168,16 @@ class WorkflowService:
             "acceptance": self.document["acceptance"], "blocking_reports": progress["blockers"],
             "current_reports": reports,
             "publication": self.document["publication"], "effects": self.document["effects"],
-            "review_evidence": str(Path(self.document["artifact_directory"]) / "reviews-{}-release.json".format(progress["round"])) if role == "release" else None,
+            "review_evidence": str(Path(self.document["artifact_directory"]) / "reviews-{}.json".format(identifier.replace(":", "-"))) if role == "release" else None,
             "report": report}
-        return (template.rstrip() + "\n\n## Admitted current task\n\n```json\n" +
+        body = (template.rstrip() + "\n\n## Admitted current task\n\n```json\n" +
                 json.dumps(context, indent=2, sort_keys=True) + "\n```\n\n" +
                 "Deliver exactly one operative WORKFLOW JSON claim under the installed workflow report contract. "
                 "Use the actual full current Git HEAD, the responsibilities above and this report path. "
                 "Review/test outcomes also require exactly one VERDICT line. "
                 "A blocked or uncertain result stays explicit; do not invent a passing check or change the admitted scope. "
                 "The final chat line must match this marker exactly:\nREPORT: " + report + "\n").encode("utf-8")
+        return body, dependencies
 
     def _make_job(self, state, task, progress, role, plan):
         root = workspace.prepare_directory(self.document["artifact_directory"])
@@ -189,13 +194,15 @@ class WorkflowService:
             b"Other roles read their current task inputs and role brief. No history-directory traversal or "
             b"legacy round paperwork is a normal-path prerequisite. Existing operator holds remain binding.\n")
         common, _ = workspace.write_current(root, "common.md", common_body)
-        report = str(root / "report-{}-{}.md".format(progress["round"], role))
+        base = "workflow-" + supervision.digest([task["task"], progress["generation"], progress["round"], progress["phase"], progress["plan"]["sha256"]])[:48]
+        identifier = base + ":" + role
+        artifact = identifier.replace(":", "-")
+        report = str(root / "report-{}.md".format(artifact))
         if Path(report).exists() or Path(report).is_symlink():
             raise UsageError("This unsent attempt already has report bytes; preserve them and reconcile rather than adopting or overwriting another result.", {})
-        brief, _ = workspace.write_current(root, "brief-{}-{}.md".format(progress["round"], role),
-                                             self._brief(state, task, progress, role, report), immutable=True)
-        base = "workflow-" + supervision.digest([task["task"], progress["generation"], progress["round"], progress["phase"], progress["plan"]["sha256"]])[:48]
-        job = {"schema_version": 1, "id": base + ":" + role, "role": role,
+        body, dependencies = self._brief(state, task, progress, role, report, identifier)
+        brief, _ = workspace.write_current(root, "brief-{}.md".format(artifact), body, immutable=True)
+        job = {"schema_version": 1, "id": identifier, "role": role,
             "agent": plan["assignments"][role], "worker_kind": plan["worker_kinds"][role],
             "tier": {key: value for key, value in plan["tiers"][role].items() if key not in cli.PLAN_ONLY_TIER_FIELDS},
             "status": "prepared", "pane_id": None, "native_session": None, "report": report,
@@ -203,7 +210,7 @@ class WorkflowService:
         schema.validate_job(job)
         dispatch.reserve(state, task["task"], progress["generation"], progress["round"], job,
                          self.by_kind[job["worker_kind"]], common["path"], self.clock())
-        self._intent(progress, "apply", job=job, inputs=[common, brief, progress["plan"]], dispatches=[job["id"]])
+        self._intent(progress, "apply", job=job, inputs=[common, brief, progress["plan"], *dependencies], dispatches=[job["id"]])
         self._save(state)
 
     def _resume(self, state, task, progress):
@@ -302,7 +309,7 @@ class WorkflowService:
             supervision.refine(self.path, job["id"], job["pane_id"], observed["native_session"], self.clock())
             job["native_session"] = observed["native_session"]
         root = workspace.prepare_directory(self.document["artifact_directory"])
-        delivery_name = "delivery-{}-{}.json".format(progress["round"], job["role"])
+        delivery_name = "delivery-{}.json".format(job["id"].replace(":", "-"))
         if (root / delivery_name).exists():
             delivery, prior = workspace.capture(root / delivery_name)
             try:
@@ -399,6 +406,11 @@ class WorkflowService:
                                 self.clock(), report_gates.ledger_view(self.path, None), evidence=job["report"])
                 report_gates.require_no_verdict_gate(self.path, task["task"], state["recovery"]["dispatches"])
                 progress.update(phase="release", plan=None, blockers=[], at=self.clock())
+            elif claims["release"]["outcome"] == "ready":
+                # Preparation is settled, but its immutable report cannot
+                # become delivery. Continue with a fresh release assignment.
+                progress["jobs"].pop("release")
+                progress.update(plan=None, at=self.clock())
             else:
                 progress.update(phase="merge", plan=None, at=self.clock(), delivery={
                     "schema_version": 1, "pull_request": claims["release"]["pull_request"],

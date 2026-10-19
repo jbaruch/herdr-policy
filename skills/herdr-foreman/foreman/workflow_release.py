@@ -96,7 +96,7 @@ class WorkflowReleaseAdapter:
             if workspace.inspect(service.document, task, built=True) != progress["head"]:
                 raise UsageError("The writer changed after verification; preserve its new work and reconcile the actual merged source before acceptance.", {})
             expected = claim["review_evidence"]
-            review_path = str(Path(service.document["artifact_directory"]) / "reviews-{}-release.json".format(progress["round"]))
+            review_path = str(Path(service.document["artifact_directory"]) / "reviews-{}.json".format(progress["jobs"]["release"].replace(":", "-")))
             captured, raw = workspace.capture(review_path)
             if captured != expected:
                 raise UsageError("Restore the release worker's unchanged complete pre-merge canonical review snapshot.", {})
@@ -104,11 +104,9 @@ class WorkflowReleaseAdapter:
                 snapshot = json.loads(raw)
             except ValueError:
                 raise UsageError("The release review artifact is not its canonical JSON snapshot; preserve it for owner recovery.", {}) from None
-            binding = workflow_review.identity(snapshot)
-            watch = snapshot.get("watch")
+            binding = workflow_review.premerge_evidence(snapshot)
             if (binding["pr_number"] != claim["pull_request"] or binding["head_sha"] != progress["head"]["commit"]
-                    or binding["sha256"] != claim["review_snapshot"]
-                    or not isinstance(watch, dict) or watch.get("result") != "ready"):
+                    or binding["sha256"] != claim["review_snapshot"]):
                 raise UsageError("The delivered release claim does not bind its full reading to a ready current-head canonical watcher result.", {})
             publication = claim["publication"]
             channels = service.document["publication"]

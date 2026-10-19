@@ -54,6 +54,7 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.pr = None
         self.before_cleanup = None
         self.landed = "0.4.0"
+        self.review_transform = None
 
     def git(self, root, *arguments):
         return subprocess.run(["git", "-c", self.redirect, "-C", str(root), *arguments],
@@ -100,6 +101,11 @@ class WorkflowReleaseTest(unittest.TestCase):
         # effect, independently checked by the controller after report delivery.
         claim = self.case.deliver(job)
         head = self.case.git("rev-parse", "HEAD").strip()
+        review_path = Path(claim["review_evidence"]["path"])
+        snapshot = json.loads(review_path.read_text())
+        if self.review_transform is not None:
+            snapshot = self.review_transform(snapshot)
+            review_path.write_text(json.dumps(snapshot))
         self.git(self.case.worktree, "push", "origin", "feature/task")
         self.git(self.case.repository, "merge", "--no-ff", "feature/task", "-m", "Private fixture merge")
         merge = self.git(self.case.repository, "rev-parse", "HEAD").strip()
@@ -109,12 +115,6 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.pr = {"merged": True, "merge_commit_sha": merge, "merged_at": "2026-10-19T00:10:00+00:00",
             "head": {"sha": head, "ref": "feature/task", "repo": {"full_name": "fixture/repository"}},
             "base": {"ref": "main", "repo": {"full_name": "fixture/repository"}}}
-        snapshot = {"pr_number": 123, "head_sha": head, "watch": {"result": "ready"},
-            "review_bodies": [{"id": 11, "body": "Private policy fixture: no blocking findings.", "author": "policy-fixture", "state": "APPROVED"},
-                              {"id": 12, "body": "Private advisory fixture.", "author": "copilot-fixture", "state": "COMMENTED"}],
-            "inline_comment_bodies": [{"id": 13, "body": "Private inline advice.", "author": "copilot-fixture"}]}
-        review_path = Path(self.case.document["artifact_directory"]) / "reviews-0-release.json"
-        review_path.write_text(json.dumps(snapshot))
         channels = self.case.document["publication"]
         published = channels["tessl"] is not None or channels["acr"]
         claim.update(outcome="delivered", review_snapshot=workflow_review.identity(snapshot)["sha256"],
@@ -469,7 +469,58 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertEqual(len([call for call in self.calls if "remove" in call]), removals)
 
 
+    def test_reduced_ready_object_cannot_authorize_release_acceptance(self):
+        self.review_transform = lambda snapshot: {field: snapshot[field] for field in
+            ("pr_number", "head_sha", "review_bodies", "inline_comment_bodies", "watch")}
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "merge", delivery=self.deliver)
+            result = runner.tick()
+            self.assertTrue(result["wake_agent"])
+            self.assertEqual(self.case.progress()["phase"], "exception")
+            self.assertFalse(self.case.progress()["delivery"]["accepted"])
+            self.assertTrue(self.case.worktree.exists())
+
+
 class ReviewIdentityTest(unittest.TestCase):
+    def test_premerge_receipt_needs_complete_consistent_canonical_fields(self):
+        snapshot = fixture.ready_snapshot("a" * 40)
+        self.assertEqual(workflow_review.premerge_evidence(snapshot), workflow_review.identity(snapshot))
+        snapshot["reviews"]["copilot"]["state"] = "CHANGES_REQUESTED"
+        snapshot["review_bodies"][1]["state"] = "CHANGES_REQUESTED"
+        self.assertEqual(workflow_review.premerge_evidence(snapshot), workflow_review.identity(snapshot))
+        cases = []
+        for field in ("ci", "reviews", "merge_state", "inline_comments"):
+            value = deepcopy(snapshot)
+            del value[field]
+            cases.append(value)
+        for field in ("attempts", "elapsed_seconds"):
+            value = deepcopy(snapshot)
+            del value["watch"][field]
+            cases.append(value)
+        for path, replacement in ((["ci", "status"], "pending"),
+                (["reviews", "codex", "state"], "CHANGES_REQUESTED"),
+                (["reviews", "codex", "state"], []),
+                (["reviews", "codex", "commit_id"], "b" * 40),
+                (["reviews", "codex", "stale"], True),
+                (["reviews", "copilot", "requested"], True),
+                (["merge_state", "mergeable"], "CONFLICTING"),
+                (["watch", "attempts"], 0), (["watch", "elapsed_seconds"], True)):
+            value = deepcopy(snapshot)
+            target = value
+            for field in path[:-1]:
+                target = target[field]
+            target[path[-1]] = replacement
+            cases.append(value)
+        for field in ("review_bodies", "inline_comment_bodies"):
+            value = deepcopy(snapshot)
+            del value[field][0]["html_url"]
+            cases.append(value)
+        for number, value in enumerate(cases):
+            with self.subTest(case=number), self.assertRaises(fixture.UsageError):
+                workflow_review.premerge_evidence(value)
+
     def test_all_authors_and_inlines_bind_reading_but_watcher_timing_does_not(self):
         snapshot = {"pr_number": 1, "head_sha": "a" * 40, "review_bodies": [
             {"id": 1, "body": "Policy body", "author": "policy", "state": "APPROVED"},

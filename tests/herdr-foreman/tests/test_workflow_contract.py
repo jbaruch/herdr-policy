@@ -44,6 +44,28 @@ def claim(role="reviewer", outcome="verified"):
         "pull_request": None, "review_snapshot": None, "review_evidence": None, "publication": None}
 
 
+def ready_snapshot(head, pr=123):
+    """Complete public watcher envelope, used only by isolated native fixtures."""
+    at = "2026-10-19T00:05:00Z"
+    bodies = [{"id": 11, "state": "APPROVED", "submitted_at": at, "commit_id": head,
+               "body": "Private policy fixture: no blocking findings.", "author": "policy-fixture",
+               "html_url": "https://github.com/fixture/repository/pull/123#pullrequestreview-11"},
+              {"id": 12, "state": "COMMENTED", "submitted_at": at, "commit_id": head,
+               "body": "Private advisory fixture.", "author": "copilot-fixture",
+               "html_url": "https://github.com/fixture/repository/pull/123#pullrequestreview-12"}]
+    return {"pr_number": pr, "head_sha": head,
+        "ci": {"status": "success", "checks": [{"bucket": "pass", "name": "private-fixture"}]},
+        "reviews": {bot: {"state": row["state"], "submitted_at": at, "body": row["body"],
+                           "commit_id": head, "stale": False, "requested": False}
+                    for bot, row in zip(("codex", "copilot"), bodies)},
+        "review_bodies": bodies, "inline_comments": {"codex": 0, "copilot": 1},
+        "inline_comment_bodies": [{"id": 13, "in_reply_to_id": None, "path": "src/example.py", "line": 1,
+            "body": "Private inline advice.", "author": "copilot-fixture",
+            "html_url": "https://github.com/fixture/repository/pull/123#discussion_r13"}],
+        "merge_state": {"status": "CLEAN", "mergeable": "MERGEABLE"},
+        "watch": {"result": "ready", "attempts": 1, "elapsed_seconds": 0}}
+
+
 class WorkflowContractTest(unittest.TestCase):
     def parse(self, value, role="reviewer", prefix=""):
         profile = workflow.contract(contract(), TASK)
@@ -130,6 +152,29 @@ class WorkflowContractTest(unittest.TestCase):
         value.update(outcome="ready", correction=None, findings=[])
         with self.assertRaisesRegex(UsageError, "PR number"):
             self.parse(value, role="release")
+
+    def test_later_phases_need_an_implementation_and_complete_needs_settled_cleanup(self):
+        progress = workflow.initial_progress(1, "2026-10-19T00:00:00Z")
+        progress.update(phase="complete", head={"commit": HEAD, "tree": "b" * 40, "paths": ["src/example.py"]},
+            delivery={"schema_version": 1, "pull_request": 123, "merge_commit": HEAD,
+                "publisher_run": None, "tag": None, "tessl_version": None,
+                "tessl_confirmed": False, "acr_confirmed": False, "accepted": True,
+                "base_checkout": "/private-fixture/repository", "cleanup_step": 5})
+        workflow.validate_current(progress, contract())
+        for phase in ("verify", "release", "merge", "publish", "cleanup", "complete"):
+            value = copy.deepcopy(progress)
+            value.update(phase=phase, head=None)
+            with self.subTest(phase=phase), self.assertRaisesRegex(UsageError, "implementation head"):
+                workflow.validate_progress(value)
+        value = copy.deepcopy(progress)
+        value["delivery"]["cleanup_step"] = 4
+        with self.assertRaisesRegex(UsageError, "cleanup step 5"):
+            workflow.validate_progress(value)
+        value = copy.deepcopy(progress)
+        value["pending"] = {"schema_version": 2, "id": "unfinished", "operation": "measure", "argv": [],
+                            "inputs": [], "effects_started": False, "dispatches": [], "job": None}
+        with self.assertRaisesRegex(UsageError, "no remaining effect intent"):
+            workflow.validate_progress(value)
 
     def test_scope_or_causal_uncertainty_remains_explicit_without_blocking_findings(self):
         context = {"schema_version": 1, **{field: field in {

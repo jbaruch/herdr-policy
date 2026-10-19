@@ -20,9 +20,9 @@ from unittest.mock import patch
 
 from tests.test_cli import FreshOwnerNative
 from tests import test_progression_owner as owner_fixture
-from tests.test_workflow_contract import contract as declaration
+from tests.test_workflow_contract import contract as declaration, ready_snapshot
 from foreman import config, policy_paths, progression_owner as authority, recovery, report_delivery, report_gates, supervision, tiers
-from foreman import workflow_dispatch, workflow_planning, workflow_service
+from foreman import workflow_dispatch, workflow_planning, workflow_review, workflow_service
 from foreman.errors import ForemanError, HerdrError
 from foreman.herdr import HerdrClient
 from foreman.workflow_workspace import inspect as inspect_workspace
@@ -205,7 +205,7 @@ class WorkflowServiceTest(unittest.TestCase):
             self.git("commit", "-m", "Private fixture implementation {}".format(self.change))
         head = self.git("rev-parse", "HEAD").strip()
         reviewing = role in ("reviewer", "tester")
-        selected = outcome or ("built" if role == "developer" else "ready" if role == "release" else "verified")
+        selected = outcome or ("built" if role == "developer" else "delivered" if role == "release" else "verified")
         correction = {field: field in {"scope_unchanged", "cause_settled"} for field in workflow_service.schema.REVIEW_CONTEXT}
         correction["cause_settled"] = cause_settled
         findings = ([{"schema_version": 1, "id": "fixture-defect", "severity": "blocking", "status": "open"}]
@@ -222,6 +222,13 @@ class WorkflowServiceTest(unittest.TestCase):
             "pull_request": 123 if role == "release" else None,
             "review_snapshot": "c" * 64 if role == "release" else None,
             "review_evidence": None, "publication": None}
+        if role == "release" and selected == "delivered":
+            snapshot = ready_snapshot(head)
+            review_path = Path(self.document["artifact_directory"]) / "reviews-{}.json".format(job["id"].replace(":", "-"))
+            review_path.write_text(json.dumps(snapshot))
+            claim.update(review_snapshot=workflow_review.identity(snapshot)["sha256"],
+                review_evidence=recovery.receipt(str(review_path))[0], publication={"schema_version": 1,
+                    "baseline": None, "baseline_at": None, "publisher_run": None, "tag": None, "tessl_version": None})
         verdict = "VERDICT: {}\n".format("approved" if selected == "verified" else "blocking") if reviewing else ""
         Path(job["report"]).write_text(verdict + "WORKFLOW: " + json.dumps(claim) + "\n")
         return claim
@@ -390,6 +397,66 @@ class WorkflowServiceTest(unittest.TestCase):
             self.assertEqual(self.active(), [])
             self.assertEqual(report_gates.open_verdict_gates(self.path, "one", state["recovery"]["dispatches"]), [])
             self.assertEqual(supervision.pending(supervision.load(self.path)), [])
+
+    def assert_changed_dependency_refuses_transport(self, runner, report):
+        expected = recovery.receipt(report)[0]
+        self.assertIn(expected, self.progress()["pending"]["inputs"])
+        original = Path(report).read_bytes()
+        Path(report).write_bytes(original + b"Private concurrent report edit.\n")
+        before = list(self.native.events)
+        result = runner.tick()
+        self.assertEqual(result["data"]["status"], "exception", result)
+        self.assertFalse(self.progress()["pending"]["effects_started"])
+        self.assertEqual(self.native.events, before)
+        self.assertEqual(Path(report).read_bytes(), original + b"Private concurrent report edit.\n")
+
+    def test_prerequisite_report_is_rechecked_before_dependent_transport(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: self.progress()["phase"] == "verify", delivery=self.deliver)
+            developer = workflow_dispatch.current_job(self.owner.state(), supervision.load(self.path), self.progress()["jobs"]["developer"])
+            self.advance(runner, lambda: self.progress()["pending"] is not None
+                and self.progress()["pending"]["operation"] == "apply")
+            self.assert_changed_dependency_refuses_transport(runner, developer["report"])
+
+    def test_blocking_report_is_rechecked_before_correction_transport(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: self.progress()["phase"] == "implement" and self.progress()["round"] == 1,
+                delivery=lambda job: self.deliver(job, outcome="blocking" if job["role"] == "reviewer" else None))
+            report = self.progress()["blockers"][0]["path"]
+            self.advance(runner, lambda: self.progress()["pending"] is not None
+                and self.progress()["pending"]["operation"] == "apply")
+            self.assert_changed_dependency_refuses_transport(runner, report)
+
+    def test_ready_release_continues_without_claiming_delivery_or_resetting_the_task(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: self.progress()["phase"] == "release", delivery=self.deliver)
+            self.advance(runner, lambda: bool(self.progress()["jobs"].get("release")))
+            prior = self.active()[0]
+            self.deliver(prior, outcome="ready")
+            self.advance(runner, lambda: self.progress()["pending"] is None and not self.active())
+            self.assertEqual(runner.tick()["data"]["status"], "advanced")
+            self.assertEqual(self.progress()["phase"], "release")
+            self.assertIsNone(self.progress()["delivery"])
+            self.assertEqual(self.progress()["round"], 0)
+            self.assertNotIn("release", self.progress()["jobs"])
+            self.advance(runner, lambda: bool(self.progress()["jobs"].get("release")))
+            current = self.active()[0]
+            self.assertNotEqual(current["id"], prior["id"])
+            self.assertNotEqual(current["agent"], prior["agent"])
+            self.assertNotEqual(current["report"], prior["report"])
+            self.assertNotEqual(current["brief"], prior["brief"])
+            self.assertTrue(Path(prior["report"]).is_file())
+            self.deliver(current)
+            self.advance(runner, lambda: self.progress()["phase"] == "merge")
+            self.assertFalse(self.progress()["delivery"]["accepted"])
+            self.assertEqual([row["role"] for row in self.owner.state()["assignments"]],
+                             ["developer", "reviewer", "release", "release"])
 
     def test_blocked_developer_at_clean_base_closes_and_wakes_without_an_implementation_head(self):
         self.admit()
