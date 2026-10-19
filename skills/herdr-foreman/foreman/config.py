@@ -15,9 +15,10 @@ from .errors import ConfigError, ForemanError
 from .herdr import SLASH_DELIVERIES, SLASH_DELIVERY_PASTE
 from .tiers import TOP_MODELS, parse_launch_args, parse_tiers
 from .tier_routing import parse as parse_tier_routing
+from .workflow_capacity import parse_policy as parse_backpressure
 
-CONFIG_SCHEMA_VERSION = 8
-READABLE_CONFIG_VERSIONS = frozenset({1, 2, 3, 4, 5, 6, 7, 8})
+CONFIG_SCHEMA_VERSION = 9
+READABLE_CONFIG_VERSIONS = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9})
 #: The first config version that may declare the top-level `foreman` block.
 FOREMAN_CONFIG_VERSION = 6
 CAPABILITY_ID = re.compile(r"[a-z][a-z0-9_-]*\Z")
@@ -225,6 +226,7 @@ def parse_config(payload, source="<memory>"):
             {"source": source, "found": version, "expected": CONFIG_SCHEMA_VERSION},
         )
 
+    parse_backpressure(payload)
     collection = "worker_kinds" if version >= 7 else "agents"
     retired = "agents" if version >= 7 else "worker_kinds"
     if retired in payload:

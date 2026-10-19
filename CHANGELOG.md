@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0 — 2026-10-19
+
+- Add explicit config-schema-9 WIP/integration thresholds for admitted native task workflows, with repository limits and expiring task exceptions. Reuse current owner records and the initial-job transaction; reservations and uncertain work consume capacity without creating another ledger.
+- Return bounded counts and named capacity exclusions. Let current work verify, correct, release and reconcile at saturation while retaining authority, holds, quota and provenance gates. Threshold calibration and real rollout remain pilot evidence.
+
 ## 0.5.0 — 2026-10-19
 
 - Bound queue, attention, memory and supervision read views by their printed JSON bytes. Return explicit pagination and stable event-sequence cursors; retain unshown obligations and reject an indivisible oversized record. CLI context views use schema 2 while persisted owner schemas remain unchanged.

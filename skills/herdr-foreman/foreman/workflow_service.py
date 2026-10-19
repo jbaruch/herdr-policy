@@ -8,6 +8,7 @@ transaction. An unknown effect never becomes a new dispatch on restart.
 
 import json
 import os
+import re
 from pathlib import Path
 import time
 from typing import Callable
@@ -15,7 +16,7 @@ from typing import Callable
 from . import cli, config, engagement, load_set, policy_paths, progression_owner as authority
 from . import progression_runtime, recovery, report_delivery, report_gates, supervision
 from . import workflow_contract as schema, workflow_dispatch as dispatch
-from . import workflow_planning, workflow_workspace as workspace
+from . import workflow_capacity, workflow_planning, workflow_workspace as workspace
 from .errors import ForemanError, UsageError
 from .progression_service import capture_contract
 from .state import TransactionBusy, latest_snapshot, save_state, state_lock
@@ -61,7 +62,9 @@ class WorkflowService:
         self.policy["WORKFLOW_REVIEW"] = str(Path(__file__).resolve().parents[1] / "workflow-review.py")
         if not all(Path(self.policy[name]).is_file() for name in ("TASK_WORKFLOW", "WORKFLOW_REVIEW")):
             raise UsageError("Restore the co-shipped admitted task-workflow contract before starting its executor.", {})
-        self.agents = config.parse_config(json.loads(self.inputs[self.document["config"]["path"]]))
+        configuration = json.loads(self.inputs[self.document["config"]["path"]])
+        self.agents = config.parse_config(configuration)
+        self.backpressure = workflow_capacity.parse_policy(configuration)
         self.by_kind = {agent.name: agent for agent in self.agents}
         if not self.agents or any(not agent.assignment_scoped or not agent.tiers for agent in self.agents):
             raise UsageError("Configure fresh assignment-scoped workers and their tier tables before starting unattended work.", {})
@@ -88,15 +91,32 @@ class WorkflowService:
         schema.validate_current(state["recovery"]["tasks"][self.capability.task]["progression"], self.document)
         save_state(self.path, state)
 
-    def _view(self, progress, status, reason=None):
-        return load_set._bounded({"schema_version": 2, "wake_agent": status == "exception", "data": {
+    def _view(self, progress, status, reason=None, *, capacity=None):
+        result = {"schema_version": 2, "wake_agent": status == "exception", "data": {
             "task": self.capability.task, "generation": self.capability.generation,
             "status": status, "phase": progress["phase"], "correction": progress["round"],
             "jobs": progress["jobs"], "pending_intent": progress["pending"]["id"] if progress["pending"] else None,
             "reason": reason, "exception": progress["exception"],
             "exception_digest": supervision.digest(progress["exception"]) if progress["exception"] is not None else None,
             "delivery": progress["delivery"],
-            "authorizes_acceptance": False, "authorizes_release": False}})
+            "authorizes_acceptance": False, "authorizes_release": False}}
+        if capacity is not None:
+            result["data"]["capacity"] = capacity
+        return load_set._bounded(result)
+
+    def _capacity_family(self, state, task):
+        grant = authority.current_grant(state, task)
+        if grant is not None and grant.get("contract_schema", 1) == 2:
+            try:
+                captured, document = capture_contract(grant["contract"]["path"])
+                if captured != grant["contract"]:
+                    return None
+                schema.contract(document, state["recovery"]["tasks"][task])
+                return document["repository"]["github"]
+            except ForemanError:
+                return None
+        canonical = re.fullmatch(r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#[^#\s]+", task)
+        return canonical.group(1) if canonical is not None else None
 
     def _exception(self, state, code, sources=(), actions=("inspect_current_evidence", "return_authority")):
         progress = state["recovery"]["tasks"][self.capability.task]["progression"]
@@ -480,6 +500,13 @@ class WorkflowService:
             roles = self._roles(progress)
             missing = [role for role in roles if role not in progress["jobs"]]
             if missing:
+                capacity = None
+                if self.backpressure is not None:
+                    capacity = workflow_capacity.evaluate(state, supervision.load(self.path), task["task"],
+                        self.document["repository"]["github"], self.backpressure, self.clock(),
+                        family=lambda name: self._capacity_family(state, name))
+                    if not capacity["allowed"]:
+                        return self._view(progress, "waiting", capacity["reason"], capacity=capacity)
                 if progress["plan"] is None:
                     snapshot = latest_snapshot(state)
                     age = None if snapshot is None else (supervision.timestamp(self.clock()) -
@@ -487,7 +514,7 @@ class WorkflowService:
                     if age is None or not 0 <= age <= MEASUREMENT_MAX_AGE:
                         self._intent(progress, "measure", inputs=[self.document["config"]])
                         self._save(state)
-                        return self._view(progress, "prepared")
+                        return self._view(progress, "prepared", capacity=capacity)
                     plan = self.planner(state, self.path, self.document, progress, roles, self.agents, self.clock())
                     progress["plan"], _ = workspace.write_current(self.document["artifact_directory"], "plan.json", encoded(plan))
                     self._save(state)
@@ -495,7 +522,7 @@ class WorkflowService:
                 if captured != progress["plan"]:
                     return self._exception(state, "current_plan_changed", [captured["path"]])
                 self._make_job(state, task, progress, missing[0], json.loads(body))
-                return self._view(progress, "prepared")
+                return self._view(progress, "prepared", capacity=capacity)
             supervised = supervision.load(self.path)
             jobs = [dispatch.current_job(state, supervised, identifier) for identifier in progress["jobs"].values()]
             for job in jobs:
