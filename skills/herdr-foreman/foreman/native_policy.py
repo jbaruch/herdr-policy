@@ -4,8 +4,8 @@ ACR renders skills/rules/hooks rather than a Tessl package root. Its read-only
 list/check contracts supply the locked package identity and owned targets.
 The full check can fetch locked dependencies; only verified in-process metadata
 is cached, so fresh native readers require that verification access.
-The checked target hashes are cached only in process memory by current lock
-bytes; actual target bytes must still match on every authority check. No native
+The checked target hashes are cached only in process memory by current lock and
+declaration bytes; actual targets must still match on every authority check. No native
 metadata, hook, user instruction or registry record is written or synthesized.
 """
 
@@ -35,7 +35,7 @@ def executing_policy_root():
 
 
 def _fail():
-    return StateError("Cannot verify the executing ACR Herdr installation; restore its current acr CLI, locked dependency and unchanged realized rules/skill/hooks before admitting or continuing task authority.", {})
+    return StateError("Cannot verify the executing ACR Herdr installation; restore its current acr CLI, agents.yaml declaration, locked dependency and unchanged realized rules/skill/hooks before admitting or continuing task authority.", {})
 
 
 def _read(path, limit=LIMIT):
@@ -69,8 +69,8 @@ def _cli(project, command, agent=None, *, run):
     return value["result"]
 
 
-def _selection(project, lock, agent, *, run):
-    key = (str(project), hashlib.sha256(lock).hexdigest(), agent)
+def _selection(project, lock, declaration, agent, *, run):
+    key = (str(project), hashlib.sha256(lock).hexdigest(), hashlib.sha256(declaration).hexdigest(), agent)
     if key in _checked:
         return _checked[key]
     listed = _cli(project, "list", run=run).get("dependencies")
@@ -108,7 +108,8 @@ def _selection(project, lock, agent, *, run):
                 or not isinstance(output_hash, str) or re.fullmatch(r"sha256:[a-f0-9]{64}", output_hash) is None):
             raise _fail()
         targets[relative] = output_hash
-    if not targets or _read(project / ".agents/registry.lock") != lock:
+    if (not targets or _read(project / ".agents/registry.lock") != lock
+            or _read(project / "agents.yaml") != declaration):
         raise _fail()
     value = {"version": version, "commit": commit, "content": content, "targets": dict(sorted(targets.items()))}
     if len(_checked) >= 8:
@@ -124,15 +125,20 @@ def loaded_policy(skill, *, run=subprocess.run):
         raise _fail()
     project = skill.parents[2]
     lock = _read(project / ".agents/registry.lock")
-    selected = _selection(project, lock, ADAPTERS[skill.parent.parent.name], run=run)
+    declaration = _read(project / "agents.yaml")
+    selected = _selection(project, lock, declaration, ADAPTERS[skill.parent.parent.name], run=run)
     prefix = str(skill.relative_to(project)) + "/"
     owned = {relative for relative in selected["targets"] if relative.startswith(prefix)}
     required = {prefix + name for name in ("SKILL.md", "foreman/remote_owner.py", "foreman/cli.py",
                                            "foreman/progression_service.py", "references/team-operation.md")}
     if not required.issubset(owned):
         raise _fail()
-    actual = {str(path.relative_to(project)) for path in skill.rglob("*") if path.is_file()
-              and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}}
+    actual = set()
+    for path in skill.rglob("*"):
+        if path.is_symlink():
+            raise _fail()
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}:
+            actual.add(str(path.relative_to(project)))
     if actual != owned:
         raise _fail()
     digest = hashlib.sha256()
@@ -151,6 +157,6 @@ def loaded_policy(skill, *, run=subprocess.run):
             raise _fail()
         digest.update(relative.encode("utf-8") + b"\0")
         digest.update(target_digest)
-    if _read(project / ".agents/registry.lock") != lock:
+    if _read(project / ".agents/registry.lock") != lock or _read(project / "agents.yaml") != declaration:
         raise _fail()
     return selected["version"], digest.hexdigest()

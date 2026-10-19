@@ -159,6 +159,29 @@ def exercise(project, agent, host, herdr_source, coding_source):
                                            cwd=project, check_behavior=True))
     if repeated_identity != identity:
         raise BehaviorFailure("{}: unchanged installed policy identity is not stable".format(agent))
+    # Reach the installed progression entrypoint's policy-selection boundary.
+    # The fixture reads the selected policy and exits before any grant/lease.
+    progression_probe = """
+import json, sys
+from pathlib import Path
+from types import SimpleNamespace
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from foreman import progression_owner, progression_service
+from foreman.remote_owner import loaded_policy
+def inspect_only(state_path, task, generation, service_id, plugin_root):
+    version, digest = loaded_policy(plugin_root)
+    print(json.dumps({"schema_version": 1, "version": version, "digest": digest, "authority_entered": False}))
+    raise SystemExit(0)
+progression_owner.service_session = inspect_only
+args = SimpleNamespace(interval=1, task="unadmitted-fixture", generation=1, service_id="fixture")
+progression_service.run_command(args, Path(sys.argv[2]), None, sleeper=lambda _: None)
+raise SystemExit("Installed progression did not reach its policy-selection boundary")
+"""
+    progression = json.loads(command("python3", "-c", progression_probe, str(skill), str(state / "unadmitted.json"),
+                                     env=environment, cwd=project, check_behavior=True))
+    if progression != {"schema_version": 1, "version": identity["version"], "digest": identity["digest"], "authority_entered": False}:
+        raise BehaviorFailure("{}: installed progression selects a different policy identity".format(agent))
     skill_commands = {"herdr-policy": verify_skill_commands(
         project, host, "herdr-policy", "HS", ("herdr-foreman", "herdr-standup"), environment)}
     if coding_source:

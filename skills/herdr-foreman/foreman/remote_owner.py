@@ -36,6 +36,8 @@ def loaded_policy(plugin_root):
     """Compute policy-byte identity; the trusted controller separately loads that policy."""
     root = Path(plugin_root).resolve()
     from . import native_policy
+    if root.name in native_policy.ADAPTERS:
+        root = root / "skills" / native_policy.SKILL
     if root.name == native_policy.SKILL:
         return native_policy.loaded_policy(root)
     try:

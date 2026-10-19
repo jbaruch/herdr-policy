@@ -7,9 +7,13 @@ It supplies no unattended Stop continuation, automatic acceptance, release
 adapter or risk-profile activation. Keep the real execution handle and existing
 fleet-supervision obligations. The prototype and rollout remain tracked in
 herdr-policy issues #8–#12 and #18; planning issues grant no runtime authority.
-This prototype currently requires a source or Tessl policy installation.
-Native ACR skill/hook conformance does not prove the new progression admission
-and startup path; its installation-aware policy identity adapter remains open.
+Policy identity supports source, Tessl and realized per-adapter ACR installations.
+Native verification checks the consumer declaration, public lock/realization
+metadata and unchanged owned bytes. A fresh public ACR check can fetch locked
+dependencies and requires registry access. CI exercises the installed progression
+entrypoint's policy selection before entering authority; live admission and
+rollout still require their own verified evidence. The shared `.agents/skills`
+layout is outside this identity adapter.
 
 ## Admit one task
 

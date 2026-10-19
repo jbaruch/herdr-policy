@@ -10,8 +10,9 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from foreman import native_policy
+from foreman import native_policy, remote_owner
 from foreman.errors import StateError
 
 
@@ -25,6 +26,8 @@ class NativePolicyTest(unittest.TestCase):
         (self.project / ".agents").mkdir()
         self.lock = self.project / ".agents/registry.lock"
         self.lock.write_text("Private lock bytes fixture; parsed by the fake public owner.\n")
+        self.declaration = self.project / "agents.yaml"
+        self.declaration.write_text("Private declaration bytes fixture; parsed by the fake public owner.\n")
         self.targets = []
         for relative in ("SKILL.md", "foreman/remote_owner.py", "foreman/cli.py",
                          "foreman/progression_service.py", "references/team-operation.md"):
@@ -104,6 +107,58 @@ class NativePolicyTest(unittest.TestCase):
         self.listing["dependencies"][0]["locked"]["packageVersion"] = "0.4.1"
         self.assertEqual(self.identity()[0], "0.4.1")
         self.assertEqual(len(self.calls), 4)
+
+    def test_progression_host_root_selects_the_realized_native_skill(self):
+        expected = self.identity()
+        reader = native_policy.loaded_policy
+        with patch.object(native_policy, "loaded_policy", side_effect=lambda root: reader(root, run=self.run_cli)) as selected:
+            self.assertEqual(remote_owner.loaded_policy(self.skill.parent.parent), expected)
+        selected.assert_called_once_with(self.skill)
+
+    def test_directory_link_added_after_verification_is_preserved_and_refused(self):
+        self.identity()
+        external = self.project / "external-package"
+        external.mkdir()
+        (external / "__init__.py").write_text("private_fixture = True\n")
+        (self.skill / "foreman/planner").symlink_to(external, target_is_directory=True)
+        with self.assertRaises(StateError):
+            self.identity()
+        self.assertEqual((external / "__init__.py").read_text(), "private_fixture = True\n")
+
+    def test_declaration_removal_cannot_reuse_a_cached_selection(self):
+        self.identity()
+        self.declaration.write_text("Private fixture removes the Herdr declaration.\n")
+        self.listing["dependencies"] = []
+        with self.assertRaises(StateError):
+            self.identity()
+        self.assertEqual([call[0][1] for call in self.calls], ["list", "check", "list"])
+
+    def test_missing_declaration_cannot_reuse_a_cached_selection(self):
+        self.identity()
+        self.declaration.unlink()
+        with self.assertRaises(StateError):
+            self.identity()
+        self.assertFalse(self.declaration.exists())
+
+    def test_declaration_change_during_public_check_is_refused(self):
+        def racing(argv, **options):
+            result = self.run_cli(argv, **options)
+            if argv[1] == "check":
+                self.declaration.write_text("Private concurrent declaration fixture.\n")
+            return result
+        with self.assertRaises(StateError):
+            native_policy.loaded_policy(self.skill, run=racing)
+
+    def test_declaration_change_during_cached_target_read_is_refused(self):
+        self.identity()
+        read = native_policy._read
+        def racing(path, *args, **options):
+            result = read(path, *args, **options)
+            if path == self.skill / "foreman/remote_owner.py":
+                self.declaration.write_text("Private concurrent cached declaration fixture.\n")
+            return result
+        with patch.object(native_policy, "_read", side_effect=racing), self.assertRaises(StateError):
+            self.identity()
 
     def test_missing_ambiguous_or_unknown_locked_identity_is_not_guessed(self):
         original = deepcopy(self.listing)
