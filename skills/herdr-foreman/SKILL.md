@@ -17,10 +17,16 @@ description: >
 
 Process steps in order. Do not skip ahead.
 
-For a supported explicitly admitted schema-2 task workflow, read
-`skills/herdr-foreman/references/task-workflow.md` and its command reference
-`skills/herdr-foreman/references/progression.md`. That scoped contract owns its
-ordinary progression, report handling, context floor and continuation.
+For a supported explicitly admitted schema-2 task workflow, read its contract
+and command reference:
+
+```text
+skills/herdr-foreman/references/task-workflow.md
+skills/herdr-foreman/references/progression.md
+```
+
+That scoped contract owns ordinary progression, report handling, context floor
+and continuation.
 Legacy rounds follow the steps below in order without skipping ahead.
 
 Before any finish with enrolled work, reconcile the whole fleet under

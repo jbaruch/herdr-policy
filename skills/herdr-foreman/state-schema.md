@@ -148,7 +148,7 @@ Mode is `minimum_adequate` or `pinned`; absence preserves legacy configured-row
 selection. Evidence maps configured rows to `{model, effort, launch, access}`.
 Launch is `{status, ref, checked_at}`; access adds `window_group`. Status enums,
 pair/account binding, timezone and freshness checks are owned by
-`foreman/tier_routing.py`; their meaning is in `references/model-tiers.md`
+`skills/herdr-foreman/foreman/tier_routing.py`; their meaning is in `skills/herdr-foreman/references/model-tiers.md`
 Minimum Adequate Routing. The operator remains the only writer. Schemas 1–7
 remain readable without rewriting; they may not carry the new field.
 
@@ -172,7 +172,7 @@ the pinned kind may independently supply another fresh seat.
 
 Plan schema 5 also carries `tiers` keyed by role and `rounds` with the foreman's
 round type and context inputs. Legacy non-tiered assignments have no tier
-metadata. The operator's tier table, supported flags, and billing evidence are documented in `references/model-tiers.md`.
+metadata. The operator's tier table, supported flags, and billing evidence are documented in `skills/herdr-foreman/references/model-tiers.md`.
 `task_context` is null for an unlabelled plan, otherwise an object containing
 `task`, cumulative `fix_round`, correction `plan` identity or null, and `work`
 bounds or null. Apply refuses different task context. Earlier plan shapes and
@@ -199,7 +199,7 @@ and stable `engagement`. The input envelope to `plan --requirements` is
 The plan stores normalized requirement objects directly, without that envelope.
 Absent requirements preserve legacy planning. New consultation responsibilities
 require explicit requirements; the parser and selection contract live in
-`references/specialists.md`. Apply rechecks current eligibility before an unsent
+`skills/herdr-foreman/references/specialists.md`. Apply rechecks current eligibility before an unsent
 dispatch. A completed exact retry returns its original receipt.
 
 Plan schema 11 adds `partition_proof` to a partitioned plan, copied unchanged
@@ -841,7 +841,7 @@ prepared assignment chain ended; it proves no acceptance, release or outcome.
 Schema-2 admission creates one current `progression` object with
 `schema_version`, `generation`, `phase`, `round`, `pending`, `jobs`, `head`,
 `blockers`, `exception`, `at`, `publication_baseline`, `plan` and `delivery`.
-`foreman/workflow_contract.py` owns its exact fields, cross-field validation and
+`skills/herdr-foreman/foreman/workflow_contract.py` owns its exact fields, cross-field validation and
 budgets. Phases are `implement`, `verify`, `release`, `merge`, `publish`,
 `cleanup`, `complete` and `exception`. `jobs` maps responsibilities to existing
 canonical dispatch IDs, never another assignment log. `head` binds the actual
@@ -854,7 +854,7 @@ launch/close intents carry a transient full native `job`; canonical readback
 removes it. Operations are `measure`, `apply`, `record`, `close`, `merge` and
 `cleanup`; unsupported effects refuse. Worker delivery/claim shapes and limits
 are `JOB_FIELDS` and `CLAIM_FIELDS` in the same owner module, with their human
-contract in `references/task-workflow.md`. Claims never replace actual native
+contract in `skills/herdr-foreman/references/task-workflow.md`. Claims never replace actual native
 delivery, independent identities, Git scope or existing gate evidence.
 
 `exception` is null or `{id, code, phase, sources, actions}`. `id` binds this
@@ -1214,7 +1214,7 @@ store requires recovery of its history before rebinding or writing.
 - Schema-2 task `watchers` add `task`, `generation`, `service_id`, `lease_path`,
   `policy`, `binding` and `lease_proof` to those fields. Only the actual live
   service capability writes the current task row through
-  `foreman/progression_runtime.py`; schema-2 grants additionally require an
+  `skills/herdr-foreman/foreman/progression_runtime.py`; schema-2 grants additionally require an
   initialized task executor. Pulses replace one row without events/history.
   `lease_proof` is schema 1 with `lease` and `owner` inode pairs `[device,inode]`.
   Health joins the exact kernel owner PID and both current physical paths to

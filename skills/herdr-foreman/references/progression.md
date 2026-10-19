@@ -11,12 +11,14 @@ tracked by herdr-policy epic #1; source fixtures prove no ROI improvement.
 
 Source, Tessl and realized ACR native installations can identify their actual
 policy bytes. Native ACR startup verifies the public lock/realization ledger
-and rehashes the installed owned files. `policy-paths.py identity`, invoked
+and requires the installed owned bytes to match the checked target hashes.
+`skills/herdr-foreman/policy-paths.py identity`, invoked
 with explicit Python 3 from the selected skill, is read-only and grants no
 dispatch authority. A missing, changed or ambiguous installation refuses
 startup. Remote/attested task execution is not enabled by these adapters.
-The native reader currently supports per-adapter owned skill targets;
-coordinator-owned shared-skill layouts are not enabled by this adapter.
+The native reader supports per-adapter owned skill targets in ledger schemas
+1 and 2. Coordinator-owned targets may coexist in the ledger; execution from
+the shared `.agents/skills` layout is not enabled by this adapter.
 ACR's full public realization check can fetch locked dependencies into temporary
 storage. Its metadata cache is process-local, so fresh native Stop readers also
 need verification access; a failed check refuses continuation. Source/Tessl
@@ -78,11 +80,13 @@ roles; use the existing verified release owner for that boundary.
 
 The immutable object contains exactly `schema_version: 2`, `task`, `risk`,
 `repository`, `config`, `common`, `briefs`, `artifact_directory`, `effects`,
-`publication` and `acceptance`. `foreman/workflow_contract.py` owns validation
+`publication` and `acceptance`.
+`skills/herdr-foreman/foreman/workflow_contract.py` owns validation
 and bounds; unsupported or missing facts fail before worker launch.
 
-`risk` supplies every schema-1 fact accepted by `workflow_profiles.py`, without
-defaults. Bounded work combines independent review and testing; complex work
+`risk` supplies every schema-1 fact accepted by
+`skills/herdr-foreman/foreman/workflow_profiles.py`, without defaults.
+Bounded work combines independent review and testing; complex work
 uses separate identities. Sensitive work and required specialist coverage
 currently create an explicit pre-implementation exception. Do not misclassify
 the work to avoid that boundary.
@@ -94,9 +98,17 @@ implementation is not adopted as a new task.
 
 `config`, `common` and each `briefs` entry are `{path,sha256}` receipts of
 nonempty UTF-8 files. The config supplies assignment-scoped worker kinds with
-tier tables. Use the co-shipped `templates/workflow-common.md` and the selected
-`workflow-developer.md`, `workflow-reviewer.md`, `workflow-tester.md` and
-`workflow-release.md` as the role inputs. A bounded task omits the tester role.
+tier tables. Use the co-shipped common and selected role inputs:
+
+```text
+skills/herdr-foreman/templates/workflow-common.md
+skills/herdr-foreman/templates/workflow-developer.md
+skills/herdr-foreman/templates/workflow-reviewer.md
+skills/herdr-foreman/templates/workflow-tester.md
+skills/herdr-foreman/templates/workflow-release.md
+```
+
+A bounded task omits the tester role.
 The executor appends actual scope, policy paths, native report paths and current
 evidence; templates cannot substitute for those owner-derived facts.
 
@@ -184,7 +196,7 @@ An already applied dispatch or closed enrollment is read back; an uncertain
 native effect refuses resume. Cleanup uses its fixed, idempotent readback.
 Disputes, changed scope, exhausted corrections, specialist work and missing
 acceptance are decisions, not generic retries. The exact retryable packet codes
-are owned by `foreman/workflow_recovery.py`.
+are owned by `skills/herdr-foreman/foreman/workflow_recovery.py`.
 
 A healthy schema-2 executor can cover only its exact current task/member
 obligations at Stop. Its current supervision row must match the live process,

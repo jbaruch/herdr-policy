@@ -76,7 +76,7 @@ Every report contains exactly one operative `WORKFLOW: <JSON object>` line,
 outside examples, quotations, indentation and code fences. A reviewer/tester
 also carries exactly one operative `VERDICT: approved|blocking` line. The
 claim must match that verdict. The complete schema is validated by
-`foreman/workflow_contract.py`; unsupported, missing, duplicate or conflicting
+`skills/herdr-foreman/foreman/workflow_contract.py`; unsupported, missing, duplicate or conflicting
 claims do not advance the task.
 
 The schema-1 claim fields are `schema_version`, `task`, `head_revision`,
@@ -152,8 +152,8 @@ after release; the release worker preserves the writer checkout.
 Before merge, save the canonical ready watcher output unchanged at the
 brief's `review_evidence` path and read every review and inline body in full,
 all authors and review states included. Use the co-shipped
-`workflow-review.py` to bind that reading; its digest is an identity, not
-reading credit or approval. Report the artifact receipt and digest in the
+`skills/herdr-foreman/workflow-review.py` to bind that reading; its digest is
+an identity, not reading credit or approval. Report the artifact receipt and digest in the
 delivered native claim. Later comments never retroactively manufacture a
 pre-merge read, and advisory-only feedback creates no repair round.
 Every review/inline row needs its positive unique ID, complete body and author;
@@ -202,7 +202,7 @@ close is preserved for the original owner, never replaced by a new dispatch.
 No worker, consumer, stopped team or operator hold is migrated by installing
 this package. Existing teams need their verified handoff before resumption.
 
-Recovery uses the current owner commands in `references/progression.md`.
+Recovery uses the current owner commands in `skills/herdr-foreman/references/progression.md`.
 `progression-reconcile` retires only an owner-proved unsent launch, with no
 active enrollment or report. It preserves the task and cumulative counter;
 later planning chooses a fresh identity. `progression-resume` takes the exact

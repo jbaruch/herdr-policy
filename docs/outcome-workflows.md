@@ -1,6 +1,7 @@
 # Outcome ownership and verification profiles
 
-The pure profile decisions live in `foreman/workflow_profiles.py`. The
+The pure profile decisions live in
+`skills/herdr-foreman/foreman/workflow_profiles.py`. The
 schema-2 task executor applies supported decisions through the existing native
 owners after explicit admission. Existing rounds retain the current team
 contract until their verified owner acts. Installation alone starts no service,
@@ -58,7 +59,8 @@ are in `tests/herdr-foreman/tests/test_workflow_*.py`. They exercise progression
 fault recovery, release readback, cleanup and Stop without claiming live native
 deployment or comparative ROI. The real preregistered pilot remains required.
 
-The service's `foreman/process_lease.py` holds a kernel lock for an
+The service's `skills/herdr-foreman/foreman/process_lease.py` holds a kernel lock
+for an
 explicit process lifetime. Real-process tests cover competing holders, exit,
 fork inheritance, replaced paths and released capabilities. This lock is a
 liveness primitive; it grants no task generation, handoff or dispatch authority.
