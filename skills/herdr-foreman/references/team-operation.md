@@ -610,9 +610,10 @@ workstation's thin anchor.
   5. Before clearing, the operator confirms the pane is not already running a foreman resumed from that reset
   6. A pane already running that resumed foreman is reconciled as delivered, never cleared
 - Every other explicitly requested reset runs through `foreman foreman-reset --explicit-reset`
-- A reset foreman resumes from the stow, the supervision resume sequence, and the foreman queue
+- A reset foreman follows the bounded Resume Route in `skills/herdr-foreman/references/round-completion.md`, preserving operator holds before the queue and saved continuation
 - Save conversation-only knowledge and open work before a planned foreman reset, compaction, or replacement
-- Give the next foreman an ordered list of durable files to read
+- Give the next foreman an ordered set of bounded owner queries and selected evidence references for its pending decision, under `skills/herdr-foreman/references/working-memory.md`
+- Preserve required-file receipts for provenance and revalidation; they do not require replaying whole owner files or earlier reports. Read selected evidence through the bounded decision/evidence flow, and retain unavailable evidence as an explicit gap
 - Require the next foreman to explicitly set `/goal <saved objective>` and verify it is active under `skills/herdr-foreman/references/working-memory.md` Successor Goal before dispatch or retirement of the outgoing foreman
 - Record uncaptured or unavailable context as an explicit handoff gap
 - A handoff gap names what is missing, the task it affects, and how to recover it

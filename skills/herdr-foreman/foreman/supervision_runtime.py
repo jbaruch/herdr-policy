@@ -128,7 +128,8 @@ def status_view(result, *, compact=False, limit=context_output.DEFAULT_LIMIT, of
     holds = result["unresumed_holds"]
     if compact:
         active = [{"record_schema_version": row["schema_version"],
-                   **{key: row[key] for key in ("id", "at", "assignment", "active")}} for row in active]
+                   **{key: row[key] for key in ("id", "at", "active")},
+                   "assignment": store.expected_assignment(row)} for row in active]
         holds = [{"record_schema_version": row["schema_version"],
                   **{key: value for key, value in row.items() if key not in ("schema_version", "dispositions")},
                   "disposition_count": len(row["dispositions"]), "dispositions_included": False} for row in holds]

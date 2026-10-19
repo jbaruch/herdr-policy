@@ -101,7 +101,7 @@ def catch_up(path, at, *, task=None, limit=context_output.DEFAULT_LIMIT, offset=
     context_output.validate_page(limit, offset)
     if section not in (None, "attention", "deferred", "progress", "closed", "resets"):
         raise UsageError("Select --section attention, deferred, progress, closed or resets.", {})
-    include_closed = include_closed or section == "closed"
+    include_closed = include_closed or section is not None
     now = timestamp(at, "Catch-up checkpoint")
     cutoff = timestamp(since, "Catch-up since") if since is not None else None
     document, entries, progress = attention.load(path)

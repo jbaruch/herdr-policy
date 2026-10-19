@@ -108,6 +108,8 @@ still gates dispatch. A partial page never resolves an undisplayed obligation.
 Use `--section attention|deferred|progress|closed|resets` to page collections
 independently; selecting `closed` includes closed history. Other sections retain
 their total and unexamined counts with `selected: false` and a start cursor.
+Section-specific views expose closed-history counts even without
+`--include-closed`; the ordinary default view continues to omit closed history.
 Outstanding resets are globally counted even with `--task`: `foreman_resets`
 contains the current page and `foreman_reset_page` its counts and continuation.
 Use `--section resets --offset <next_offset>` to inspect every relevant recovery

@@ -13,7 +13,17 @@ HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS
 bash "$HS/foreman.sh" foreman-queue
 ```
 
-It prints `{"schema_version": 1, "queue": [...]}`. Each entry names `task`,
+It returns a byte-bounded CLI view with `schema_version: 2`, `queue`,
+`pagination`, `context_complete`, `authorizes_progression: false` and the output
+budget. The page metadata contains `total`, `offset`, `limit`, `returned`,
+`omitted` and `next_offset`. Continue with `--offset <next_offset>` and the same
+owner flags when the selected question needs another page; `--limit N` requests
+a row bound that may shrink to fit the printed-byte budget. Follow returned
+offsets until `next_offset` is null before claiming to have inspected the full
+queue. A partial page never proves that no authorized work remains. Select only
+from inspected entries and verify that task's current owner gates before acting;
+unexamined entries remain pending, rather than becoming a mandatory global
+context reload for an individual task decision. Each entry names `task`,
 `waiting_for` (a list of `developer`, `reviewer` or `tester`),
 `dispatched_seats`, `since`, `developer` and `fix_round`. A non-zero exit names
 an unusable state file on stderr; restore it before planning. Tasks with an

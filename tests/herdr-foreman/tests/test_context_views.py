@@ -137,6 +137,30 @@ class ContextViewsTest(CliCase):
         self.assertEqual(seen, ["record:long-history"] + ["present-{}".format(index) for index in range(30)])
         self.assertEqual(attention.storage_path(self.state).read_bytes(), before)
 
+    def test_unselected_closed_history_remains_counted(self):
+        attention.write(self.state, "record", obligation("resolved-question"), AT)
+        attention.write(self.state, "update", {
+            "event_id": "answer", "id": "resolved-question", "expected_revision": 1,
+            "action": "resolve", "reason": "The linked answer satisfies this question.",
+            "evidence": {"schema_version": 1, "kind": "user_answer", "ref": "conversation/message",
+                         "summary": "The operator selected the local migration."}}, AT)
+        before = attention.storage_path(self.state).read_bytes()
+        ordinary, _ = self.output(["catch-up", "--compact", "--now", AT])
+        self.assertIsNone(ordinary["closed"])
+        for section in ("attention", "deferred", "progress", "resets"):
+            with self.subTest(section=section):
+                view, _ = self.output(["catch-up", "--compact", "--section", section, "--now", AT])
+                self.assertIsNotNone(view["closed"])
+                self.assertEqual(view["closed"]["total"], 1)
+                self.assertEqual(view["closed"]["omitted"], 1)
+                self.assertEqual(view["closed"]["items"], [])
+                self.assertFalse(view["closed"]["selected"])
+                self.assertEqual(view["closed"]["next_offset"], 0)
+                self.assertFalse(view["context_complete"])
+        closed, _ = self.output(["catch-up", "--compact", "--section", "closed", "--now", AT])
+        self.assertEqual([row["id"] for row in closed["closed"]["items"]], ["resolved-question"])
+        self.assertEqual(attention.storage_path(self.state).read_bytes(), before)
+
     def test_many_failed_resets_remain_independently_retrievable(self):
         attention.write(self.state, "record", obligation("unseen-blocker", kind="blocker"), AT)
         for index in range(12):
@@ -381,6 +405,25 @@ class ContextViewsTest(CliCase):
         self.assertFalse(view["unresumed_holds"][0]["dispositions_included"])
         self.assertNotIn("dispositions", view["unresumed_holds"][0])
         self.assertNotIn("never replay this body", out)
+        self.assertEqual(store.store_path(self.state).read_bytes(), before)
+
+    def test_compact_status_uses_confirmed_assignment_identity(self):
+        self.bind()
+        store.enroll(self.state, {"id": "refined-member", "agent": "worker", "task": "owner/repo#5",
+                                  "report": str(self.source), "pane_id": None, "native_session": None}, AT)
+        native = {"source": "herdr:codex", "agent": "codex", "kind": "id",
+                  "value": "11111111-1111-4111-8111-111111111111"}
+        store.refine(self.state, "refined-member", "confirmed-pane", native, AT)
+        before = store.store_path(self.state).read_bytes()
+        original = store.load(self.state)["members"][0]
+        self.assertIsNone(original["assignment"]["native_session"])
+        view, _ = self.output(["supervision-status", "--compact", "--section", "active", "--now", AT])
+        current = view["active"][0]
+        self.assertEqual(current["assignment"], store.expected_assignment(original))
+        self.assertEqual(current["assignment"]["pane_id"], "confirmed-pane")
+        self.assertEqual(current["assignment"]["native_session"], native)
+        self.assertNotIn("refinements", current)
+        self.assertNotIn("observed", current)
         self.assertEqual(store.store_path(self.state).read_bytes(), before)
 
 

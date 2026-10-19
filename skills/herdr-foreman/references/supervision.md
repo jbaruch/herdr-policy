@@ -76,6 +76,8 @@ pending-event page, an unresumed-hold page and watcher health. It omits cached
 observation bodies and event data; those remain in the owner and are unexamined
 by this view. Hold references retain their identity, condition, evidence and
 coverage digest/count instead of repeating every member's disposition proof.
+Compact assignments use the owner's current expected identity, including
+confirmed refinements, without replaying the original assignment's refinements.
 Use `--section active|events|holds` to inspect those collections independently.
 `active_page` and `hold_page` use `--offset`; `event_page` uses `--after`.
 Each page names its section and reports total, returned and unexamined counts.

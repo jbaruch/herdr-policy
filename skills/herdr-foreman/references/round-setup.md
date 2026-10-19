@@ -67,8 +67,9 @@ does not authorize release or convert an inspection task into implementation.
 Apply `skills/herdr-foreman/references/assignment-reasoning.md` to the task's
 accepted behavior. Bind the foreman's live session under
 `skills/herdr-foreman/references/supervision.md` before dispatch. On a resumed
-round, read the latest foreman handoff and its required files under
-`skills/herdr-foreman/references/working-memory.md`. Reconcile the attention
+round, retrieve the bounded current handoff and follow its ordered owner queries
+and selected evidence references under `skills/herdr-foreman/references/working-memory.md`;
+required-file receipts do not require raw owner/history replay. Reconcile the attention
 queue under `skills/herdr-foreman/references/attention.md`; an unanswered item
 survives both a new session and a change of task.
 
