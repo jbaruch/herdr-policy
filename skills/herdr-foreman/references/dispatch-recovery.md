@@ -740,27 +740,41 @@ header and `confirmed_provider_refusal`. Missing terminal evidence keeps the ord
 wait. The read-only `foreman probe-unavailable` command takes `--agent`, `--pane`,
 absolute `--report`, positive `--lines` and the observed visible text on stdin.
 It needs no config/state home. It emits `{confirmed: false, reason}` for unknown
-evidence, or `{confirmed: true, unavailability}` with schema-1 native proof;
+evidence, or `{confirmed: true, unavailability}` with versioned native proof;
 usage/tool/source faults exit non-zero, never a pending verdict. The wait's
 validated `FOREMAN_REFUSAL_CONFIRM_SEC` supplies its confirmation interval.
 
 The source adapter in `skills/herdr-foreman/foreman/model_unavailability.py` owns supported native
-formats (`SUPPORTED_VERSIONS`, `source_error`) and the read-only confirmation
+formats (`SUPPORTED_VERSIONS`, `CODEX_REFUSAL_VERSIONS`, `source_error`) and the read-only confirmation
 contract (`probe`). An unconfirmed result grants no recovery authority. Grok
 retains the legacy refusal path.
 
-For native account failures exit 5 adds `unavailability`. `record-refusal` binds
+For native account failures and supported content refusals exit 5 adds
+`unavailability`. Schema 1 retains the availability contract. Schema 2 proves
+Codex 0.162.0's terminal `cyber_policy` event and adds its `turn_id`; prior tool
+work does not invalidate a terminal refusal or establish that no work occurred.
+Only the latest completed turn's structured error supplies authority. Quoted
+notices, a later turn, an occupied composer and unknown formats stay unconfirmed.
+The pinned [Codex protocol](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/protocol/src/protocol.rs)
+and sanitized source fixtures document this supported format.
+
+`record-refusal` binds
 that proof to the original dispatch under the adapter's `verify_refusal`
 contract; invalid evidence refuses without changing the dispatch.
 An identical recorded receipt replays without new input; different evidence
 refuses. The record owns no delivered report, capability change or judge ruling.
-For a developer's latest native-unavailable attempt, the unchanged bounded move
+For a developer's latest native-refused attempt, the unchanged bounded move
 keeps its cumulative fix number (initial development keeps null). Both applied
 transport rows remain in history; the move resets no counter or allowance.
 It still requires the normal fresh-context route, unchanged brief, alternate
 provider and fresh report. A moved attempt without its own recorded refusal
 permits no further move. The existing refusal decision gate remains in force;
 an authorization buys only the dispatch it names.
+
+Content refusal creates no model/account negative, capability change or access
+claim. Other tasks may still select that model; this refused brief remains
+subject to the existing unchanged-brief, alternate-provider and one-move limits.
+Provider notices grant no Daybreak access or permission to rewrite the request.
 
 New dispatches freeze the configured launch scope before input. A fresh native
 model negative excludes only that model in that provider's recorded account

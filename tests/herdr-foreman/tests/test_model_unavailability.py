@@ -57,6 +57,35 @@ def codex_rows():
     ]
 
 
+def codex_refusal_rows(prompt=PROMPT):
+    """Sanitized 0.162.0 shapes from #767; no operator source or tool output."""
+    rows = codex_rows()
+    rows[0]["payload"]["cli_version"] = "0.162.0"
+    rows[3]["payload"]["content"][0]["text"] = prompt
+    metadata = {"turn_id": "turn-724"}
+    work = [
+        {"type": "world_state", "payload": {"full": True, "state": {}}},
+        {"type": "response_item", "payload": {"type": "reasoning", "summary": [],
+            "internal_chat_message_metadata_passthrough": metadata}},
+        {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+            "internal_chat_message_metadata_passthrough": metadata,
+            "content": [{"type": "output_text", "text": "Checking the authorized local fixture."}]}},
+        {"type": "response_item", "payload": {"type": "custom_tool_call", "name": "local_fixture",
+            "call_id": "fixture-call", "input": "read-only fixture",
+            "internal_chat_message_metadata_passthrough": metadata}},
+        {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "fixture-call",
+            "output": [{"type": "input_text", "text": "fixture result"}],
+            "internal_chat_message_metadata_passthrough": metadata}},
+        {"type": "event_msg", "payload": {"type": "item_completed", "thread_id": SESSION,
+            "turn_id": "turn-724", "item": {"type": "CommandExecution"}}},
+        {"type": "event_msg", "payload": {"type": "token_count", "info": {}, "rate_limits": {}}},
+    ]
+    usage = {"type": "token_usage_record", "payload": {
+        "thread_id": SESSION, "session_id": SESSION, "turn_id": "turn-724", "usage": {}}}
+    rows[-1]["payload"]["error"] = {"message": "Native cybersecurity refusal (fixture).", "codex_error_info": "cyber_policy"}
+    return rows[:-1] + work + [usage, rows[-1], copy.deepcopy(usage)]
+
+
 def claude_rows():
     return [
         {"type": "user", "sessionId": SESSION, "version": "2.1.295", "uuid": "user-724",
@@ -180,6 +209,83 @@ class SourceErrorTests(unittest.TestCase):
             self.assertIsNone(unavailable.source_error(body, "codex", SESSION))
         self.assertIsNone(self.result(codex_rows(), "grok"))
 
+    def test_codex_native_content_refusal_allows_prior_work_and_token_accounting(self):
+        result = self.result(codex_refusal_rows())
+        assert result is not None
+        self.assertEqual((result["code"], result["account_scope"], result["turn_id"]),
+                         ("cyber_policy", "unknown", "turn-724"))
+        self.assertEqual(result["prompt_sha256"], hashlib.sha256(PROMPT.encode()).hexdigest())
+        self.assertNotIn("message", result)
+
+    def test_content_refusal_runtime_context_is_not_the_original_prompt(self):
+        rows = codex_refusal_rows()
+        additions = []
+        for kinds in (
+            ["host_skills.instructions", "permissions.instructions", "collaboration_mode.instructions",
+             "apps.instructions", "plugins.usage_instructions"],
+            ["multi_agent.mode_instructions"], ["multi_agent.usage_hint"], ["hooks.additional_context"],
+        ):
+            additions.append({"type": "response_item", "payload": {"type": "message", "role": "developer",
+                "internal_chat_message_metadata_passthrough": {"turn_id": "turn-724", "content_item_kinds": kinds},
+                "content": [{"type": "input_text", "text": "Native runtime instructions."}]}})
+        context = copy.deepcopy(rows[3])
+        context["payload"]["internal_chat_message_metadata_passthrough"]["content_item_kinds"] = [
+            "agents_md.instructions", "environments.environment_context"]
+        context["payload"]["content"][0]["text"] = "Runtime environment."
+        rows[3:3] = additions + [context]
+        result = self.result(rows)
+        assert result is not None
+        self.assertEqual(result["prompt_sha256"], hashlib.sha256(PROMPT.encode()).hexdigest())
+
+    def test_content_refusal_malformed_records_stay_unknown(self):
+        for index, key in ((0, "cli_version"), (2, "model"), (5, "type"), (9, "item"), (-2, "error")):
+            for value in (None, [], {}, 7):
+                rows = codex_refusal_rows()
+                rows[index]["payload"][key] = value
+                with self.subTest(index=index, key=key, value=value):
+                    self.assertIsNone(self.result(rows))
+
+    def test_content_refusal_requires_latest_native_error_not_rendered_prose(self):
+        cases = []
+        for key, value in (("error", None), ("error", {"codex_error_info": "other", "message": "cyber_policy"}),
+                           ("turn_id", "different-turn"), ("last_agent_message", "cyber_policy")):
+            rows = codex_refusal_rows()
+            rows[-2]["payload"][key] = value
+            cases.append(rows)
+        for key, value in (("cli_version", "0.162.1"), ("originator", "unverified"), ("id", "another-session")):
+            rows = codex_refusal_rows()
+            rows[0]["payload"][key] = value
+            cases.append(rows)
+        for row in (
+            {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "later-turn"}},
+            {"type": "event_msg", "payload": {"type": "turn_aborted"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+                "content": [{"type": "output_text", "text": "This content can't be shown: cyber_policy"}]}},
+            {"type": "unknown", "payload": {}},
+        ):
+            cases.append(codex_refusal_rows() + [row])
+        cases.append(codex_refusal_rows() + [copy.deepcopy(codex_refusal_rows()[-2])])
+        for index, key in ((-1, "turn_id"), (-1, "thread_id"), (-1, "session_id"), (9, "thread_id")):
+            rows = codex_refusal_rows()
+            rows[index]["payload"][key] = "another-identity"
+            cases.append(rows)
+        rows = codex_refusal_rows()
+        rows[6]["payload"]["internal_chat_message_metadata_passthrough"] = {"turn_id": "another-turn"}
+        cases.append(rows)
+        rows = codex_refusal_rows()
+        rows[3]["payload"]["internal_chat_message_metadata_passthrough"]["content_item_kinds"] = ["unknown"]
+        cases.append(rows)
+        rows = codex_refusal_rows()
+        rows.insert(4, copy.deepcopy(rows[3]))
+        cases.append(rows)
+        for index in (2, 3, -2):
+            rows = codex_refusal_rows()
+            del rows[index]
+            cases.append(rows)
+        for rows in cases:
+            with self.subTest(rows=rows):
+                self.assertIsNone(self.result(rows))
+
 
 class LiveErrorProofTests(unittest.TestCase):
     def setUp(self):
@@ -236,6 +342,17 @@ class LiveErrorProofTests(unittest.TestCase):
 
     def test_public_probe_is_read_only_and_needs_no_foreman_home(self):
         self.assertTrue(self.run_probe(public=True)["confirmed"])
+
+    def test_content_refusal_proof_is_versioned_and_turn_bound(self):
+        self.rows = codex_refusal_rows()
+        result = self.run_probe(public=True)
+        self.assertTrue(result["confirmed"])
+        proof = result["unavailability"]
+        self.assertEqual((proof["schema_version"], proof["turn_id"]), (2, "turn-724"))
+        unavailable.validate_proof(proof)
+        for change in ({"schema_version": 1}, {"turn_id": ""}, {"turn_id": []}, {"cli_version": "future"}):
+            with self.subTest(change=change), self.assertRaises(UsageError):
+                unavailable.validate_proof({**proof, **change})
 
     def test_claude_native_error_uses_the_same_live_identity_contract(self):
         self.rows = claude_rows()
@@ -322,6 +439,25 @@ class RefusalSourceBindingTests(LiveErrorProofTests):
     def test_legacy_dispatch_does_not_acquire_todays_account_scope(self):
         self.dispatch.pop("launch_scope")
         self.assertIsNone(self.record()["launch_scope"])
+
+    def test_content_refusal_records_without_creating_a_model_negative(self):
+        self.rows = codex_refusal_rows(self.rows[3]["payload"]["content"][0]["text"])
+        result = self.record()
+        self.assertEqual(result["unavailability"]["schema_version"], 2)
+        self.assertEqual(self.record(), result)
+        agent = Agent("codex-template", "codex", "/status", "Weekly limit", "visible", "/new",
+                      window_group="fixture-chatgpt-account")
+        self.assertIsNone(unavailable.exclusion(self.store, agent, MODEL, "2026-10-08T00:00:01Z"))
+        self.assertNotIn("report", self.dispatch)
+
+    def test_content_refusal_cannot_retarget_the_turn_or_ignore_a_now_present_report(self):
+        self.rows = codex_refusal_rows(self.rows[3]["payload"]["content"][0]["text"])
+        with self.assertRaises(UsageError):
+            self.record(lambda payload: payload["unavailability"].update(turn_id="different-turn"))
+        self.assertNotIn("refusal", self.dispatch)
+        with self.assertRaisesRegex(UsageError, "report now exists"):
+            self.record(lambda _: self.report.write_text("later report"))
+        self.assertNotIn("refusal", self.dispatch)
 
     def test_refusal_is_model_and_configured_account_scoped_not_provider_banned(self):
         self.record()
@@ -432,6 +568,16 @@ class PublicWaitErrorTests(unittest.TestCase):
             self.assertEqual(receipt["reason"], "checkpoint_pending")
             self.assertNotIn("unavailability", receipt)
 
+    def test_cyber_refusal_returns_exit_five_with_complete_source_turn_proof(self):
+        result, source = self.wait("codex", codex_refusal_rows())
+        self.assertEqual(result.returncode, 5, result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt["reason"], "terminal_provider_refusal")
+        self.assertFalse(receipt["found"])
+        proof = receipt["unavailability"]
+        self.assertEqual((proof["schema_version"], proof["code"], proof["turn_id"]), (2, "cyber_policy", "turn-724"))
+        self.assertEqual(proof["source"]["sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
+
     def test_native_probe_tool_fault_is_exit_two_not_pending_or_refusal(self):
         result, _ = self.wait("codex", codex_rows(), error_on="agent read")
         self.assertEqual(result.returncode, 2)
@@ -452,6 +598,12 @@ class PublicWaitErrorTests(unittest.TestCase):
 
 class PublicOwnerModelErrorTests(CliCase):
     def test_native_failure_records_and_moves_unchanged_brief_once(self):
+        self.exercise_native_failure(codex_rows, model_negative=True)
+
+    def test_content_refusal_moves_once_without_excluding_unrelated_model_use(self):
+        self.exercise_native_failure(codex_refusal_rows, model_negative=False)
+
+    def exercise_native_failure(self, rows_factory, *, model_negative):
         at, task = "2026-10-08T00:00:00Z", "model-error-724"
         config = json.loads((ROOT / "config.example.json").read_text())
         codex = next(worker for worker in config["worker_kinds"] if worker["name"] == "codex")
@@ -495,8 +647,12 @@ class PublicOwnerModelErrorTests(CliCase):
         worker = native.agents[dispatched["agent"]]
         worker["agent_status"] = "done"
         source = self.tmp / "native.jsonl"
-        rows = codex_rows()
+        rows = rows_factory()
         rows[0]["payload"]["id"] = worker["agent_session"]["value"]
+        for row in rows:
+            for key in ("thread_id", "session_id"):
+                if row["payload"].get(key) == SESSION:
+                    row["payload"][key] = worker["agent_session"]["value"]
         rows[3]["payload"]["content"][0]["text"] = original_prompt
         source.write_text("\n".join(json.dumps(row) for row in rows))
         viewport = "native error\n" + native.EMPTY
@@ -519,8 +675,14 @@ class PublicOwnerModelErrorTests(CliCase):
         self.assertFalse(any(event[0] in {"prompt", "create", "start", "close", "send_keys", "send_text"}
                              for event in native.events[len(before):]))
         code, _, error = plan("claude,grok", "other-task")
-        self.assertEqual(code, 1)
-        self.assertIn("unavailable", error)
+        self.assertEqual(code, 1 if model_negative else 0, error)
+        if model_negative:
+            self.assertIn("unavailable", error)
+        saved = json.loads(self.state.read_text())
+        original_dispatch = saved["recovery"]["dispatches"][0]
+        with self.assertRaisesRegex(UsageError, "provider.*refused|already refused"):
+            recovery.refusal_move(saved["recovery"], task, "developer", None, "codex",
+                                 original_dispatch["brief_identity"], str(self.tmp / "forbidden-same-provider.md"))
         with patch("foreman.lifecycle.identity", return_value="developer-claude-724"):
             code, moved, error = plan("codex,grok")
         self.assertEqual(code, 0, error)

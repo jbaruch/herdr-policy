@@ -1,6 +1,7 @@
-"""Native terminal model/account failures, separate from model capability.
+"""Native terminal failures and refusals, separate from model capability.
 
 Source contracts verified on Codex 0.160.1 and Claude Code 2.1.295 (#724).
+Codex 0.162.0's terminal cyber_policy contract is verified separately (coding-policy#767).
 Renew the supported versions and source fixtures quarterly and when a runtime
 changes this format. Unknown runtime formats and providers stay unconfirmed;
 the legacy provider-refusal path remains independent. No rendered sentence or
@@ -21,6 +22,7 @@ from .capabilities import INTERVAL
 
 
 SUPPORTED_VERSIONS = {"codex": frozenset({"0.160.1"}), "claude": frozenset({"2.1.295"})}
+CODEX_REFUSAL_VERSIONS = frozenset({"0.162.0"})
 CONFIRM_SECONDS = 5
 SOURCE_MAX_BYTES = 32 * 1024 * 1024
 MODEL_ID = r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}"
@@ -40,6 +42,11 @@ CODEX_DEVELOPER_KINDS = (
 )
 PROOF_FIELDS = frozenset({"schema_version", "kind", "model", "code", "account_scope", "cli_version",
     "prompt_sha256", "native_session", "pane_id", "terminal_id", "revision", "source"})
+CODEX_REFUSAL_DEVELOPER_KINDS = CODEX_DEVELOPER_KINDS + (
+    ["host_skills.instructions", "permissions.instructions", "collaboration_mode.instructions",
+     "apps.instructions", "plugins.usage_instructions"],
+    ["multi_agent.mode_instructions"], ["multi_agent.usage_hint"],
+)
 
 
 def launch_scope(agent, worker_kind=None):
@@ -58,13 +65,28 @@ def validate_scope(scope):
 
 
 def validate_proof(proof):
-    if (not isinstance(proof, dict) or set(proof) != PROOF_FIELDS
-            or type(proof["schema_version"]) is not int or proof["schema_version"] != 1
-            or not isinstance(proof["kind"], str) or proof["kind"] not in SUPPORTED_VERSIONS
-            or not isinstance(proof["cli_version"], str) or proof["cli_version"] not in SUPPORTED_VERSIONS[proof["kind"]]
+    """Keep schema-1 availability facts; schema 2 binds a content refusal turn."""
+    contract = False
+    fields = PROOF_FIELDS
+    if isinstance(proof, dict) and type(proof.get("schema_version")) is int:
+        if proof["schema_version"] == 1 and isinstance(proof.get("kind"), str):
+            kind = proof["kind"]
+            contract = (kind in SUPPORTED_VERSIONS
+                and isinstance(proof.get("cli_version"), str)
+                and proof["cli_version"] in SUPPORTED_VERSIONS[kind]
+                and (proof.get("code"), proof.get("account_scope")) == {
+                    "codex": ("model_account_unsupported", "chatgpt"),
+                    "claude": ("model_not_found", "unknown")}[kind])
+        elif proof["schema_version"] == 2:
+            fields |= {"turn_id"}
+            contract = (proof.get("kind") == "codex" and proof.get("code") == "cyber_policy"
+                and proof.get("account_scope") == "unknown"
+                and isinstance(proof.get("cli_version"), str)
+                and proof["cli_version"] in CODEX_REFUSAL_VERSIONS
+                and isinstance(proof.get("turn_id"), str) and 0 < len(proof["turn_id"]) <= 256)
+    if (not isinstance(proof, dict) or set(proof) != fields
+            or not contract
             or not isinstance(proof["model"], str) or re.fullmatch(MODEL_ID, proof["model"]) is None
-            or (proof["code"], proof["account_scope"]) != {
-                "codex": ("model_account_unsupported", "chatgpt"), "claude": ("model_not_found", "unknown")}[proof["kind"]]
             or not isinstance(proof["prompt_sha256"], str) or re.fullmatch(r"[0-9a-f]{64}", proof["prompt_sha256"]) is None
             or not isinstance(proof["native_session"], dict)
             or report_delivery.native_identity({"agent_session": proof["native_session"]}) is None
@@ -72,7 +94,7 @@ def validate_proof(proof):
             or proof["native_session"]["agent"] != proof["kind"]
             or any(not isinstance(proof[key], str) or not proof[key].strip() for key in ("pane_id", "terminal_id"))
             or type(proof["revision"]) is not int or proof["revision"] < 0):
-        raise UsageError("Native unavailability needs the complete supported source/session/viewport proof; preserve the original wait receipt.", {})
+        raise UsageError("Native refusal needs the complete supported source/session/viewport proof; preserve the original wait receipt.", {})
     source = proof["source"]
     if (not isinstance(source, dict) or set(source) != {"schema_version", "path", "sha256", "size"}
             or type(source["schema_version"]) is not int or source["schema_version"] != 1
@@ -87,13 +109,15 @@ def verify_refusal(proof, dispatch, binding, provider, report):
     from .assign import assignment_text, tiered_prompt
     from .recovery import receipt
     validate_proof(proof)
+    if Path(report).exists():
+        raise UsageError("The refused dispatch's report now exists; check its delivery instead of recording a refusal.", {})
     tier = (dispatch.get("result") or {}).get("tier")
     expected_native = binding.get("native_session") if isinstance(binding, dict) else None
     expected_native = report_delivery.native_identity({"agent_session": expected_native}) if expected_native is not None else None
     if (not isinstance(binding, dict) or binding.get("pane_id") != proof["pane_id"]
             or binding.get("native_session") is not None and expected_native != proof["native_session"]
             or provider != proof["kind"] or not isinstance(tier, dict) or tier.get("model") != proof["model"]):
-        raise UsageError("Native model refusal differs from this dispatch's original model, provider, pane or enrolled session; preserve both attempts.", {})
+        raise UsageError("Native refusal differs from this dispatch's original model, provider, pane or enrolled session; preserve both attempts.", {})
     _brief_receipt, brief = receipt(dispatch.get("brief"))
     _common_receipt, common = receipt(dispatch.get("common"))
     if "REPORT: " + report not in brief.splitlines():
@@ -111,11 +135,14 @@ def verify_refusal(proof, dispatch, binding, provider, report):
     if path is None or str(path) != proof["source"]["path"]:
         raise UsageError("Refusal source is not this session's unique official native log; preserve the receipt and restore its source.", {})
     source = _source(path)
+    fact_keys = ("kind", "model", "code", "account_scope", "cli_version", "prompt_sha256")
+    if proof["schema_version"] == 2:
+        fact_keys += ("turn_id",)
     if (source is None or len(source[0]) != proof["source"]["size"]
             or hashlib.sha256(source[0]).hexdigest() != proof["source"]["sha256"]
             or source_error(source[1], proof["kind"], proof["native_session"]["value"]) != {
-                key: proof[key] for key in ("kind", "model", "code", "account_scope", "cli_version", "prompt_sha256")}):
-        raise UsageError("Native refusal source changed or does not prove this model error; save a fresh real wait receipt before recording.", {})
+                key: proof[key] for key in fact_keys}):
+        raise UsageError("Native refusal source changed or does not prove this terminal error; save a fresh real wait receipt before recording.", {})
 
 
 def exclusion(store, agent, model, at, worker_kind=None):
@@ -131,6 +158,9 @@ def exclusion(store, agent, model, at, worker_kind=None):
         if not isinstance(refusal, dict) or refusal.get("schema_version") != 2:
             continue
         scope, proof = refusal["launch_scope"], refusal["unavailability"]
+        if proof["code"] not in {"model_account_unsupported", "model_not_found"}:
+            # A content refusal belongs to this attempt, not the model/account.
+            continue
         if scope is None or proof["model"] != model or scope["kind"] != current["kind"]:
             continue
         if scope["window_group"]:
@@ -184,6 +214,19 @@ def _codex_error(error, model):
     return match is not None and match[1] == model
 
 
+def _codex_version(rows, session, supported):
+    metas = [row.get("payload") for row in rows if row.get("type") == "session_meta"]
+    if (not metas or any(not isinstance(meta, dict) or meta.get("id") != session
+                        or meta.get("originator") != "codex-tui" or meta.get("model_provider") != "openai"
+                        or not isinstance(meta.get("cli_version"), str)
+                        or meta["cli_version"] not in supported for meta in metas)):
+        return None
+    versions = {meta["cli_version"] for meta in metas}
+    if len(versions) != 1:
+        return None
+    return versions.pop()
+
+
 def codex_error(rows, session):
     """The latest started turn completed with the exact native account error.
 
@@ -191,16 +234,9 @@ def codex_error(rows, session):
     environment records are not user input. A later turn, tool, assistant
     message, abort or contradictory identity invalidates the error evidence.
     """
-    metas = [row.get("payload") for row in rows if row.get("type") == "session_meta"]
-    if (not metas or any(not isinstance(meta, dict) or meta.get("id") != session
-                        or meta.get("originator") != "codex-tui" or meta.get("model_provider") != "openai"
-                        or not isinstance(meta.get("cli_version"), str)
-                        or meta["cli_version"] not in SUPPORTED_VERSIONS["codex"] for meta in metas)):
+    version = _codex_version(rows, session, SUPPORTED_VERSIONS["codex"])
+    if version is None:
         return None
-    versions = {meta["cli_version"] for meta in metas}
-    if len(versions) != 1:
-        return None
-    version = versions.pop()
     turn, model, prompt, complete, usable, completed_turn = None, None, None, False, False, False
     for row in rows:
         payload = row.get("payload")
@@ -272,6 +308,95 @@ def codex_error(rows, session):
     return _facts("codex", model, "model_account_unsupported", "chatgpt", version, prompt) if complete and usable else None
 
 
+def codex_content_refusal(rows, session):
+    """The latest turn ended in native cyber_policy, possibly after tool work.
+
+    Work and rendered prose supply no refusal authority. Only the terminal
+    event does; original user.text, thread and turn identities must agree.
+    No later work is permitted, except native token accounting.
+    """
+    version = _codex_version(rows, session, CODEX_REFUSAL_VERSIONS)
+    starts = [index for index, row in enumerate(rows) if row.get("type") == "event_msg"
+              and isinstance(row.get("payload"), dict) and row["payload"].get("type") == "task_started"]
+    if version is None or not starts:
+        return None
+    latest = rows[starts[-1]:]
+    turn = latest[0]["payload"].get("turn_id")
+    if not isinstance(turn, str) or not 0 < len(turn) <= 256:
+        return None
+    model, prompt, complete = None, None, False
+    for row in latest[1:]:
+        kind, payload = row.get("type"), row.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        if any(key in payload and payload[key] != expected
+               for key, expected in (("turn_id", turn), ("thread_id", session))):
+            return None
+        if kind == "token_usage_record":
+            if (payload.get("turn_id") != turn or payload.get("thread_id") != session
+                    or payload.get("session_id") != session):
+                return None
+            continue
+        if kind == "event_msg" and payload.get("type") == "token_count":
+            continue
+        if complete:
+            return None
+        if kind == "world_state":
+            if set(payload) != {"full", "state"}:
+                return None
+        elif kind == "turn_context":
+            selected = payload.get("model")
+            if (payload.get("turn_id") != turn or not isinstance(selected, str)
+                    or re.fullmatch(MODEL_ID, selected) is None or model is not None and model != selected):
+                return None
+            model = selected
+        elif kind == "response_item":
+            metadata = payload.get("internal_chat_message_metadata_passthrough")
+            if not isinstance(metadata, dict) or metadata.get("turn_id") != turn:
+                return None
+            if payload.get("type") in ("reasoning", "custom_tool_call", "custom_tool_call_output"):
+                continue
+            if payload.get("type") != "message":
+                return None
+            role, kinds = payload.get("role"), metadata.get("content_item_kinds")
+            if role == "assistant":
+                continue
+            if role == "developer" and kinds in CODEX_REFUSAL_DEVELOPER_KINDS:
+                continue
+            if role != "user":
+                return None
+            if kinds in CODEX_CONTEXT_KINDS:
+                continue
+            if kinds != ["user.text"] or prompt is not None:
+                return None
+            prompt = _text_blocks(payload.get("content"), "input_text")
+            if not prompt:
+                return None
+        elif kind == "event_msg":
+            event = payload.get("type")
+            if event == "item_completed":
+                item = payload.get("item")
+                if (payload.get("thread_id") != session or payload.get("turn_id") != turn
+                        or not isinstance(item, dict) or item.get("type") not in (
+                            "UserMessage", "AgentMessage", "Reasoning", "CommandExecution", "FileChange")):
+                    return None
+            elif event == "task_complete":
+                error = payload.get("error")
+                if (payload.get("turn_id") != turn or "last_agent_message" not in payload
+                        or payload["last_agent_message"] is not None or not isinstance(error, dict)
+                        or error.get("codex_error_info") != "cyber_policy"
+                        or not isinstance(error.get("message"), str) or not error["message"]):
+                    return None
+                complete = True
+            else:
+                return None
+        else:
+            return None
+    if not complete or model is None or prompt is None:
+        return None
+    return {**_facts("codex", model, "cyber_policy", "unknown", version, prompt), "turn_id": turn}
+
+
 def claude_error(rows, session):
     """The latest main-chain assistant row is Claude's synthetic API error."""
     chain = claude_native.main_chain(rows, session)
@@ -308,7 +433,10 @@ def source_error(body, kind, session):
     if not rows or not all(isinstance(row, dict) for row in rows):
         return None
     parser = {"codex": codex_error, "claude": claude_error}.get(kind) if isinstance(kind, str) else None
-    return parser(rows, session) if parser else None
+    result = parser(rows, session) if parser else None
+    if result is None and kind == "codex":
+        return codex_content_refusal(rows, session)
+    return result
 
 
 def _empty_composer(text, kind):
@@ -342,7 +470,7 @@ def probe(client, agent, pane_id, report, visible, lines, *, sleep=time.sleep, c
     """Read-only, same-session/live-bottom proof; never terminal input.
 
     Unknown evidence returns {confirmed: false, reason}. Success adds an
-    `unavailability` record (schema 1): source-error facts, native_session,
+    `unavailability` record (schema 1 for availability, 2 for cyber_policy): source-error facts, native_session,
     pane_id, terminal_id, revision and a digest-bound source receipt. It is
     not delivery, capability evidence or authority to replace a model pin.
     Every source, viewport and identity observation survives a separate read.
@@ -386,7 +514,7 @@ def probe(client, agent, pane_id, report, visible, lines, *, sleep=time.sleep, c
     verified = _source(path)
     if verified is None or verified[0] != raw:
         return unknown
-    return {"confirmed": True, "unavailability": {"schema_version": 1, **facts,
+    return {"confirmed": True, "unavailability": {"schema_version": 2 if facts["code"] == "cyber_policy" else 1, **facts,
         "native_session": identity, "pane_id": pane_id, "terminal_id": before["terminal_id"],
         "revision": before["revision"], "source": {"schema_version": 1, "path": str(path),
             "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}}}

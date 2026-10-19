@@ -55,7 +55,7 @@ RECOVERY_SCHEMA_VERSION = 1
 #: also carries `assignment_scoped: true`. Older stores carrying either field
 #: are unowned newer data and are refused.
 #: Version 16 owns dispatch v5's frozen configured launch/account scope and
-#: refusal v2's verified native model error. Historical scopes stay absent.
+#: refusal v2's verified native terminal error. Historical scopes stay absent.
 #: Version 17 adds durable seat-local transient launch failures. An older
 #: store cannot silently ignore these retry gates.
 #: Version 18 owns closed no-work recovery receipts and their retry bindings.
@@ -1644,7 +1644,7 @@ def record_refusal(store, data, at, provider, report, aliases=(), *, binding=Non
     if "unavailability" in payload:
         from .model_unavailability import verify_refusal
         if store["schema_version"] != RECOVERY_STORE_VERSION:
-            raise UsageError("Native model refusal needs the owner-migrated recovery store; load it before recording.", {})
+            raise UsageError("Native refusal needs the owner-migrated recovery store; load it before recording.", {})
         timestamp(at, "Native refusal")
         verify_refusal(payload["unavailability"], record, binding, provider, report)
         result.update(schema_version=2, unavailability=deepcopy(payload["unavailability"]),

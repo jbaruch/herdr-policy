@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — 2026-10-19
+
+- Recognize Codex 0.162.0's terminal `cyber_policy` refusal through native source, original prompt, turn and live-pane proof, including attempts that performed tool work ([coding-policy#767](https://github.com/jbaruch/coding-policy/issues/767)). Keep the existing unchanged-brief alternate-provider limit and preserve model eligibility for unrelated tasks. Refuse recording when a report has since appeared.
+
 ## 0.3.0 — 2026-10-18
 
 - Serialize live service transport authorization with supervision hold/rebind commits, while keeping enrollment transactions outside the short effect boundary. Preserve pending work when a new hold or binding wins the race.
