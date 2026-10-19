@@ -30,7 +30,7 @@ def block_calls(file, block):
     if not lines or not lines[0].lstrip().startswith("HS="):
         raise AssertionError("covered invocation lacks the HS bootstrap in " + str(file))
     bootstrap = lines[0].strip()
-    target = re.match(r"HS=\.tessl/plugins/jbaruch/herdr-policy/skills/([a-z-]+);", bootstrap)
+    target = re.match(r"HS=\.tessl/plugins/jbaruch/herdr-policy/skills/([a-z-]+)/;", bootstrap)
     if target is None:
         raise AssertionError("unsupported bootstrap in " + str(file))
     result = []
@@ -108,7 +108,8 @@ class SkillBootstrapTest(unittest.TestCase):
         item = self.representative("herdr-foreman")
         file, _kind, bootstrap, interpreter, relative = item
         invocation = interpreter + ' "$HS/' + relative + '"'
-        malformed = [invocation, "CP=.tessl/plugins/jbaruch/herdr-policy\n" + invocation,
+        malformed = [invocation, bootstrap.replace("herdr-foreman/;", "herdr-foreman;") + "\n" + invocation,
+                     "CP=.tessl/plugins/jbaruch/herdr-policy\n" + invocation,
                      bootstrap + "\n" + interpreter + ' "$CP/skills/herdr-foreman/' + relative + '"',
                      bootstrap + "\n$HS/" + relative,
                      bootstrap + "\n" + interpreter + " $HS/" + relative,

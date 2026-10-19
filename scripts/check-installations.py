@@ -80,6 +80,44 @@ def verify_runtime_payload(skill):
             ", ".join(misplaced)))
 
 
+def verify_skill_commands(project, host, package, variable, names, environment):
+    """Run installed selectors alone; never execute their release/team operations."""
+    roots = {(project / host / "skills" / ("acr__jbaruch__" + package + "__" + name)).resolve(): name for name in names}
+    counts = dict.fromkeys(names, 0)
+    for skill in roots:
+        count = 0
+        for file in sorted(skill.rglob("*.md")):
+            for block in re.findall(r"```bash\n(.*?)```", file.read_text(), re.S):
+                if "$" + variable + "/" not in block:
+                    continue
+                lines = block.strip().splitlines()
+                if not lines or not lines[0].startswith(variable + "="):
+                    raise BehaviorFailure("{}: installed skill command lacks its selector; repair the Markdown bootstrap".format(package))
+                code = 'set -euo pipefail\n' + lines[0] + '\nprintf "%s" "$' + variable + '"'
+                selected = Path(command("bash", "-c", code, env=environment, cwd=project, check_behavior=True))
+                if not selected.is_absolute():
+                    selected = project / selected
+                selected = selected.resolve()
+                if selected not in roots:
+                    raise BehaviorFailure("{}: selector chose another installation; repair owned native references".format(package))
+                calls = re.findall(r'\b(bash|python3) "\$' + variable + r'/([^"\n]+)"', block)
+                if not calls:
+                    raise BehaviorFailure("{}: selector has no quoted script target; repair the installed command".format(package))
+                for interpreter, relative in calls:
+                    target = (selected / relative).resolve()
+                    if not target.is_relative_to(selected) or not target.is_file():
+                        raise BehaviorFailure("{}: installed command target is absent or outside its skill; repair the payload".format(package))
+                    if target.suffix != {"bash": ".sh", "python3": ".py"}[interpreter]:
+                        raise BehaviorFailure("{}: installed command has the wrong interpreter; repair the Markdown invocation".format(package))
+                count += 1
+                counts[roots[selected]] += 1
+        if not count:
+            raise BehaviorFailure("{}: installed skill has no exercised command selectors; restore conformance coverage".format(package))
+    if not all(counts.values()):
+        raise BehaviorFailure("{}: a required skill root was never selected; restore command coverage".format(package))
+    return counts
+
+
 def exercise(project, agent, host, herdr_source, coding_source):
     project.mkdir()
     (project / "AGENTS.md").write_text(SENTINEL)
@@ -107,6 +145,11 @@ def exercise(project, agent, host, herdr_source, coding_source):
                    "PYTHONDONTWRITEBYTECODE": "1", "WORKTREE_ROOT": str(project / "private-worktrees")}
     for key in ("HERDR_ENV", "HERDR_PANE_ID", "PYTHONPATH"):
         environment.pop(key, None)
+    skill_commands = {"herdr-policy": verify_skill_commands(
+        project, host, "herdr-policy", "HS", ("herdr-foreman", "herdr-standup"), environment)}
+    if coding_source:
+        skill_commands["coding-policy"] = verify_skill_commands(
+            project, host, "coding-policy", "KS", ("release", "adopt-fork-pr", "onboard-repo", "migrate-to-plugin"), environment)
     foreign = project / "foreign"
     foreign.mkdir()
     for path in paths:
@@ -162,6 +205,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
         raise ValueError("{}: lifecycle modified user-owned content".format(agent))
     return {"agent": agent, "bootstrap_listed": before.get("ok") is True, "upgrade": "pass",
             "idempotence": "pass", "runtime": "pass", "envelope_decoders": "pass", "standalone_hooks": "pass",
+            "skill_commands": skill_commands,
             "removal": "pass", "user_content": "preserved"}
 
 
