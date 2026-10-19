@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 from tests import test_workflow_service as fixture
 from foreman import recovery, supervision, workflow_contract, workflow_recovery, workflow_release, workflow_review
-from foreman import workflow_artifacts
+from foreman import workflow_artifacts, workflow_rename
 from foreman import progression_owner as authority
 from foreman.errors import StateError
 from foreman.state import load_state_checked, save_state, state_lock
@@ -219,6 +219,27 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertEqual(runner.tick()["data"]["status"], "exception")
             self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
 
+    def test_changed_release_review_snapshot_preserves_all_artifacts(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            snapshot = next(root.glob("reviews-*.json"))
+            snapshot.write_bytes(b'{"foreign": "Changed after release."}\n')
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+
+    def test_missing_closed_release_report_preserves_review_snapshot(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            next(root.glob("report-*-release.md")).unlink()
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+
     def test_an_unresolved_enrollment_protects_its_directory_without_a_report_file(self):
         self.case.admit()
         with self.case.owner.session() as capability:
@@ -368,7 +389,7 @@ class WorkflowReleaseTest(unittest.TestCase):
             before = {p.name: p.read_bytes() for p in root.iterdir()}
             runner.tick()
             moved = root.with_name("retained-task-artifacts")
-            original = os.rename
+            original = workflow_rename.exclusive
             replaced = []
             def replace_before_move(source, target, *args, **options):
                 if source == root and options.get("dst_dir_fd") is not None and not replaced:
@@ -377,7 +398,7 @@ class WorkflowReleaseTest(unittest.TestCase):
                     root.mkdir(mode=0o700)
                     (root / "operator-notes.md").write_text("A different owner.\n")
                 return original(source, target, *args, **options)
-            with patch.object(workflow_artifacts.os, "rename", side_effect=replace_before_move):
+            with patch.object(workflow_rename, "exclusive", side_effect=replace_before_move):
                 self.assertEqual(runner.tick()["data"]["status"], "exception")
             self.assertEqual({p.name: p.read_bytes() for p in moved.iterdir()}, before)
             quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
@@ -391,23 +412,92 @@ class WorkflowReleaseTest(unittest.TestCase):
             runner.tick()
             target = Path(self.case.progress()["pending"]["inputs"][0]["path"]).name
             expected = (root / target).read_bytes()
-            original = os.rename
+            original = workflow_rename.exclusive
             replaced = []
             foreign = b"Unrelated bytes arriving after preflight.\n"
             def swap_before_move(source, destination, *args, **options):
                 if source == target and options.get("src_dir_fd") is not None and not replaced:
                     replaced.append(True)
                     descriptor = options["src_dir_fd"]
-                    original(source, "retained-original.md", src_dir_fd=descriptor, dst_dir_fd=descriptor)
+                    os.rename(source, "retained-original.md", src_dir_fd=descriptor, dst_dir_fd=descriptor)
                     file = os.open(source, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=descriptor)
                     with os.fdopen(file, "wb") as stream:
                         stream.write(foreign)
                 return original(source, destination, *args, **options)
-            with patch.object(workflow_artifacts.os, "rename", side_effect=swap_before_move):
+            with patch.object(workflow_rename, "exclusive", side_effect=swap_before_move):
                 self.assertEqual(runner.tick()["data"]["status"], "exception")
             quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
             self.assertEqual((quarantine / "task/retained-original.md").read_bytes(), expected)
             self.assertIn(foreign, [p.read_bytes() for p in quarantine.iterdir() if p.is_file()])
+
+    def test_concurrent_task_destination_preserves_source_and_foreign_directory(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            runner.tick()
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            original = workflow_rename.exclusive
+            foreign_inode = []
+            def collide(source, target, **options):
+                if source == root:
+                    (quarantine / "task").mkdir(mode=0o700)
+                    foreign_inode.append((quarantine / "task").stat().st_ino)
+                return original(source, target, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=collide):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertEqual([(quarantine / "task").stat().st_ino], foreign_inode)
+
+    def test_concurrent_file_destination_preserves_both_files(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            runner.tick()
+            target = Path(self.case.progress()["pending"]["inputs"][0]["path"]).name
+            expected = (root / target).read_bytes()
+            original = workflow_rename.exclusive
+            foreign = b"A different owner's destination.\n"
+            destination = []
+            def collide(source, slot, **options):
+                if source == target and options.get("src_dir_fd") is not None:
+                    descriptor = os.open(slot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600,
+                                         dir_fd=options["dst_dir_fd"])
+                    with os.fdopen(descriptor, "wb") as stream:
+                        stream.write(foreign)
+                    destination.append(slot)
+                return original(source, slot, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=collide):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            self.assertEqual((quarantine / "task" / target).read_bytes(), expected)
+            self.assertEqual((quarantine / destination[0]).read_bytes(), foreign)
+
+    def test_concurrent_final_destination_preserves_both_empty_directories(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.at_artifact_cleanup(runner)
+            self.case.advance(runner, lambda: self.case.progress()["delivery"]["artifacts"]["phase"] == "retiring"
+                and not self.case.progress()["delivery"]["artifacts"]["remaining"]
+                and self.case.progress()["pending"] is None)
+            quarantine = Path(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+            final = Path(str(quarantine) + ".retired")
+            runner.tick()
+            original = workflow_rename.exclusive
+            foreign_inode = []
+            def collide(source, destination, **options):
+                if source == quarantine:
+                    final.mkdir(mode=0o700)
+                    foreign_inode.append(final.stat().st_ino)
+                return original(source, destination, **options)
+            with patch.object(workflow_rename, "exclusive", side_effect=collide):
+                self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertTrue(quarantine.is_dir())
+            self.assertEqual([final.stat().st_ino], foreign_inode)
+            self.assertEqual(list(final.iterdir()), [])
 
     def test_a_new_owner_at_the_original_path_survives_retirement(self):
         self.case.admit()

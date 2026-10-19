@@ -13,7 +13,7 @@ import re
 import secrets
 import stat
 
-from . import recovery, supervision, workflow_workspace as workspace
+from . import recovery, report_contract, supervision, workflow_rename, workflow_workspace as workspace
 from .errors import StateError, UsageError
 
 
@@ -165,7 +165,7 @@ def inventory(service, state, progress):
     task = service.capability.task
     members = supervision.load(service.path)["members"]
     unsent = {row["id"] for row in state["recovery"]["dispatches"] if _proved_unsent(state, row)}
-    known, reports, briefs = {"common.md", "plan.json"}, {}, []
+    known, reports, briefs, reviews = {"common.md", "plan.json"}, {}, [], {}
     for member in members:
         assigned = supervision.expected_assignment(member)
         if Path(assigned["report"]).parent == root and (
@@ -202,7 +202,9 @@ def inventory(service, state, progress):
         briefs.append((row, str(report)))
         known.update({Path(row["brief"]).name, report.name, "delivery-{}.json".format(identifier)})
         if row["role"] == "release":
-            known.add("reviews-{}.json".format(identifier))
+            review = "reviews-{}.json".format(identifier)
+            known.add(review)
+            reviews[review] = report.name
     with _directory(root) as descriptor:
         if descriptor is None:
             return None
@@ -212,10 +214,23 @@ def inventory(service, state, progress):
         captured = {}
         for name in names:
             receipt, body, info = _capture(descriptor, name, root)
-            captured[name] = (receipt, body if name == "common.md" or name.startswith("brief-") else b"", info)
+            captured[name] = (receipt, body if name == "common.md" or name.startswith("brief-") or name in reports else b"", info)
         for name, expected in reports.items():
             if name in captured and captured[name][0] != {key: expected[key] for key in ("path", "sha256")}:
                 raise UsageError("A closed native report changed; preserve its bytes and original closure evidence.", {})
+        for name, report in reviews.items():
+            if name not in captured:
+                continue
+            if report not in captured:
+                raise UsageError("Retain this review snapshot until its unchanged closed release report supplies its original byte receipt.", {})
+            try:
+                claim = report_contract.workflow_claim(captured[report][1].decode("utf-8"))
+            except UnicodeError:
+                raise UsageError("Preserve the unreadable release report and its review snapshot for owner reconciliation.", {}) from None
+            expected = claim.get("review_evidence")
+            recovery.validate_receipt(expected)
+            if captured[name][0] != expected:
+                raise UsageError("The release review snapshot differs from its closed report's byte receipt; preserve both artifacts.", {})
         contents = {item[0]["path"]: item[1] for item in captured.values()}
         for row, report in briefs:
             if row["brief"] not in contents:
@@ -367,7 +382,7 @@ def _resume(service, state, progress, *, checkpoint, before_effect):
         _check_directory(stage, lifecycle["stage"])
         if lifecycle["phase"] == "staging":
             if "task" not in _names(stage):
-                os.rename(root, "task", dst_dir_fd=stage)
+                workflow_rename.exclusive(root, "task", dst_dir_fd=stage)
             with _directory(quarantine / "task") as directory:
                 _check_directory(directory, lifecycle["root"])
             lifecycle["phase"] = "retiring"
@@ -383,7 +398,7 @@ def _resume(service, state, progress, *, checkpoint, before_effect):
                         continue
                     slot = _slot(name)
                     if slot not in _names(stage) and name in _names(directory):
-                        os.rename(name, slot, src_dir_fd=directory, dst_dir_fd=stage)
+                        workflow_rename.exclusive(name, slot, src_dir_fd=directory, dst_dir_fd=stage)
                     if slot in _names(stage):
                         _check_file(stage, slot, row, root)
                         os.unlink(slot, dir_fd=stage)
@@ -399,7 +414,7 @@ def _resume(service, state, progress, *, checkpoint, before_effect):
             os.rmdir("task", dir_fd=stage)
     final = _final_path(lifecycle)
     if not (final.exists() or final.is_symlink()):
-        os.rename(quarantine, final)
+        workflow_rename.exclusive(quarantine, final)
     with _directory(final) as stage:
         _check_directory(stage, lifecycle["stage"])
         if _names(stage):
