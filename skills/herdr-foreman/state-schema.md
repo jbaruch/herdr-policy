@@ -884,6 +884,13 @@ to the recorded path plus `.retired` before final removal. Mismatches preserve
 the moved bytes. The manifest clears when retirement completes.
 
 The primary owner migrates delivery 1 to 2 on read and rewrites it before use.
+Before committing that whole-file format change, `foreman/workflow_upgrade.py`
+checks every unfinished service against the executing policy identity. A
+mismatch refuses with a state error and leaves the original file unchanged,
+including on read-only previews. Restore the exact admitted policy to drain or
+explicitly return its service through its original owner before upgrading;
+editing grants never supplies a handoff. A completed workflow has no remaining
+executor obligation. The check reads no native history and transfers no authority.
 Completed records become `legacy_preserved` without filesystem changes;
 active records gain pending cleanup. Read-only previews require that owner
 migration first. Older readers reject delivery 2; retain a compatible owner

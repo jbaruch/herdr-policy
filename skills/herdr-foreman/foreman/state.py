@@ -731,6 +731,8 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
         )
         return empty_state(), False
 
+    from . import workflow_upgrade
+    delivery_upgrade = workflow_upgrade.delivery_migration_pending(payload)
     try:
         state, migrated = _validate(payload, path)
     except _NoUsableState as exc:
@@ -740,6 +742,8 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
         )
         return empty_state(), False
 
+    if delivery_upgrade:
+        workflow_upgrade.require_compatible_services(state, path)
     if migrated and not persist_migration:
         raise StateError("This read-only preview needs an owner migration. Run `{}` with the same --state path, then retry the preview; the original file is unchanged.".format(
             runnable.command("state")), {"path": str(path)})

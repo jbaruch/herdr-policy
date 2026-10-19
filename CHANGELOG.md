@@ -7,6 +7,8 @@
 
 ## 0.6.1 — 2026-10-19
 
+- Refuse a delivery-format migration when any unfinished service in the owner file still requires a different admitted policy. Preserve the original bytes and identify the blocked task and policy, including in read-only previews, so an upgrade cannot strand another task on an older reader.
+
 - Retire an accepted native task's private plan, brief, report and delivery/review files after confirmed publication and Git teardown. Use bounded batches in the existing cleanup intent; retain canonical owner receipts and the GitHub closure reference.
 - Add delivery schema 2 with owner migration and an explicit bounded artifact lifecycle. Atomically quarantine targets before verifying identity and deleting; preserve changed evidence, foreign entries, links and active enrollments. Resume interrupted batches without redispatching. Existing completed directories become preserved history; legacy `.hr` cleanup remains separate.
 
