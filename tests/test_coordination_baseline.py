@@ -80,6 +80,10 @@ class BaselineTest(unittest.TestCase):
             self.assertEqual([row["assignment_id"] for row in queue["oldest"]], ["a", "c"])
             self.assertEqual(queue["wait_task_seconds"], 3900)
             self.assertEqual(queue["covered_tasks"], 2)
+        for name in ("completion_to_assessment", "completion_to_resolution"):
+            self.assertEqual(result["latency_seconds"][name]["n"], 0)
+            self.assertEqual(result["latency_seconds"][name]["excluded"],
+                {"future_endpoint": 1, "unknown_native": 1, "missing_endpoint": 1})
         self.assertEqual(result["coverage"]["task_states"]["blocked"], 1)
 
     def test_unmeasured_and_inconsistent_waits_are_named_and_excluded(self):
@@ -87,13 +91,17 @@ class BaselineTest(unittest.TestCase):
         data["assignments"][0]["resolved_at"] = "2026-10-10T00:04:00Z"
         data["assignments"].extend([
             {"id": "c", "task_id": "one", "native_match": "matched", "dispatched_at": "2026-10-10T00:10:00Z",
+             "native_started_at": "2026-10-10T00:10:00Z",
              "native_completed_at": "2026-10-10T01:10:00Z"},
             {"id": "d", "task_id": "two", "native_match": "matched", "dispatched_at": "2026-10-10T00:20:00Z"}])
-        queue = summarize(data)["waiting"]["resolution"]
+        result = summarize(data)
+        queue = result["waiting"]["resolution"]
         self.assertEqual(queue["excluded"], {"reversed_clock": 1, "unknown_native": 1,
             "future_completion": 1, "missing_completion": 1})
         self.assertEqual(queue["pending_age_seconds"]["n"], 0)
         self.assertEqual(queue["wait_task_seconds"], 0)
+        self.assertEqual(result["latency_seconds"]["native_work"]["excluded"],
+            {"unknown_native": 1, "future_endpoint": 1, "missing_endpoint": 1})
 
     def test_oldest_pending_rows_are_bounded_without_dropping_the_count(self):
         data = fixture()

@@ -53,7 +53,7 @@ def identified(records):
     return result
 
 
-def paired(assignments, first, second):
+def paired(assignments, first, second, observed_end):
     values = []
     excluded = Counter()
     for item in assignments:
@@ -62,8 +62,11 @@ def paired(assignments, first, second):
         elif not item.get(first) or not item.get(second):
             excluded["missing_endpoint"] += 1
         else:
-            duration = (instant(item[second]) - instant(item[first])).total_seconds()
-            if duration < 0:
+            opened, closed = instant(item[first]), instant(item[second])
+            duration = (closed - opened).total_seconds()
+            if opened > observed_end or closed > observed_end:
+                excluded["future_endpoint"] += 1
+            elif duration < 0:
                 excluded["reversed_clock"] += 1
             else:
                 values.append(duration)
@@ -175,9 +178,9 @@ def summarize(snapshot):
                      "task_states": dict(Counter(task["state"] for task in tasks.values())),
                      "class_risk_mix": dict(Counter(task["class"] + "/" + task["risk"] for task in tasks.values()))},
         "outcomes": outcomes,
-        "latency_seconds": {"native_work": paired(assignments, "native_started_at", "native_completed_at"),
-                            "completion_to_assessment": paired(assignments, "native_completed_at", "assessed_at"),
-                            "completion_to_resolution": paired(assignments, "native_completed_at", "resolved_at")},
+        "latency_seconds": {"native_work": paired(assignments, "native_started_at", "native_completed_at", end),
+                            "completion_to_assessment": paired(assignments, "native_completed_at", "assessed_at", end),
+                            "completion_to_resolution": paired(assignments, "native_completed_at", "resolved_at", end)},
         "waiting": {"assessment": waiting(assignments, start, end, "assessed_at"),
                     "resolution": waiting(assignments, start, end, "resolved_at")},
         "effort": {"foreman": effort, "report_bytes": totals([item.get("report_bytes") for item in assignments]),

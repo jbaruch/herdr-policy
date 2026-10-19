@@ -186,7 +186,9 @@ Latency records pair each assignment's timestamps. Native work is start to
 native completion; assessment delay is native completion to contract assessment;
 resolution delay is native completion to owner resolution. Report each sample's
 own denominator, median and nearest-rank p90. Unknown identity, missing endpoints
-and reversed clocks have separate exclusion counts. Never add assessment and
+and reversed clocks have separate exclusion counts. An endpoint after the
+observation boundary is excluded as `future_endpoint` from paired latency;
+it cannot settle a pending queue at that boundary. Never add assessment and
 resolution delays: they overlap. No queue delay is automatically classified as
 avoidable orchestration.
 
