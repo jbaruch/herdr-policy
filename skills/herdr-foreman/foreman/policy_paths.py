@@ -26,6 +26,33 @@ RELEASE_FILES = (
 )
 
 
+def refuse_combined_policy(skill_dir, shared, global_tessl):
+    """An unregistered source helper is distinct from installed legacy hooks."""
+    roots = {shared / ".tessl/plugins/jbaruch/coding-policy",
+             global_tessl / "plugins/jbaruch/coding-policy"}
+    package = skill_dir.parent.parent
+    if (package.name == "herdr-policy" and package.parent.name == "jbaruch"
+            and package.parent.parent.name == "plugins" and package.parent.parent.parent.name == ".tessl"):
+        roots.add(package.parent / "coding-policy")
+    conflicts = []
+    for root in sorted(roots):
+        for name in ("herdr-foreman", "herdr-standup"):
+            try:
+                (root / "skills" / name).lstat()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                raise UsageError("Cannot verify installed policy ownership — restore access to local/global plugin trees before Herdr work") from None
+            conflicts.append(str(root))
+            break
+    if conflicts:
+        raise UsageError(
+            "A combined coding-policy team runtime is still installed — keep teams stopped, reconcile active work, "
+            "then upgrade to reduced coding-policy before using herdr-policy; preserve owner records and unknown deliveries",
+            {"legacy_packages": conflicts},
+        )
+
+
 def coding_release(skill_dir, shared, global_tessl, explicit_root=None):
     """Return one complete release skill, preferring the executing installation.
 
@@ -37,6 +64,7 @@ def coding_release(skill_dir, shared, global_tessl, explicit_root=None):
     skill_dir = Path(skill_dir).resolve()
     shared = Path(shared).resolve()
     global_tessl = Path(global_tessl).resolve()
+    refuse_combined_policy(skill_dir, shared, global_tessl)
     if explicit_root is not None:
         candidates = [Path(explicit_root).resolve() / "skills/release"]
     else:

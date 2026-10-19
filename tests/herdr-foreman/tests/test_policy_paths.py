@@ -65,6 +65,33 @@ class PolicyPathsTest(unittest.TestCase):
         expected = self.bundle(self.root / "coding-source/skills/release")
         self.assertEqual(self.resolve(self.root / "coding-source"), expected)
 
+    def test_combined_legacy_plugins_refuse_even_when_new_helpers_are_available(self):
+        self.bundle(self.shared / ".tessl/plugins/jbaruch/coding-policy/skills/release")
+        explicit = self.root / "coding-source"
+        self.bundle(explicit / "skills/release")
+        for package in (self.shared / ".tessl/plugins/jbaruch/coding-policy",
+                        self.global_tessl / "plugins/jbaruch/coding-policy"):
+            legacy = package / "skills/herdr-foreman"
+            legacy.mkdir(parents=True)
+            with self.subTest(package=package), self.assertRaisesRegex(UsageError, "combined"):
+                self.resolve(explicit)
+            legacy.rmdir()
+
+    def test_executing_tessl_package_peer_cannot_hide_a_legacy_registration(self):
+        self.skill = self.root / "other/.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman"
+        self.skill.mkdir(parents=True)
+        legacy = self.skill.parents[2] / "coding-policy/skills/herdr-foreman"
+        legacy.mkdir(parents=True)
+        self.bundle(self.shared / ".tessl/plugins/jbaruch/coding-policy/skills/release")
+        with self.assertRaisesRegex(UsageError, "combined"):
+            self.resolve()
+
+    def test_unregistered_source_helpers_do_not_count_as_installed_team_hooks(self):
+        source = self.root / "coding-source"
+        expected = self.bundle(source / "skills/release")
+        (source / "skills/herdr-foreman").mkdir()
+        self.assertEqual(self.resolve(source), expected)
+
     def test_an_incomplete_bundle_never_borrows_a_missing_file_from_global(self):
         local = self.bundle(self.shared / ".tessl/plugins/jbaruch/coding-policy/skills/release")
         (local / "lib/prune_result.py").unlink()

@@ -24,7 +24,7 @@ General coding and release policy belongs to [jbaruch/coding-policy](https://git
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.2.0** with the reduced coding-policy **0.4.0**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.2.1** with the reduced coding-policy **0.4.0**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
@@ -55,6 +55,8 @@ Remote controllers retain their policy-digest, lease and owner-receipt contract 
 
 ## Development
 
+See [docs/coordination-baseline.md](docs/coordination-baseline.md) and [docs/decisions/0001-background-progression.md](docs/decisions/0001-background-progression.md) for source measurements and the selected progression architecture.
+
 Use Python 3.11+, Bash, Git, jq, Shellcheck 0.11.0 and Pyright 1.1.414. Check out the compatible coding-policy source for shared-helper integration tests; it is a development dependency, never vendored into this plugin.
 
 ```sh
@@ -64,7 +66,9 @@ tessl plugin lint .
 acr validate . --json
 ```
 
-The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI installs the published relocation baseline outside the checkout and pins the ACR validator. It gates actual native installation and canonical Tessl skill review at 85%. Source package manifests share one explicit version.
+The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI installs the published general-policy baseline outside the checkout and pins the ACR validator. It gates actual native installation and canonical Tessl skill review at 85%. Source package manifests share one explicit version.
+
+PR events dispatch central policy review through `.github/workflows/review-trigger.yml`; the opt-in marker enables the scheduled backstop. The Codex subscription credential stays in coding-policy. Configure `FLEET_DISPATCH_TOKEN` as documented in `.env.example`.
 
 CI uses a non-publishing `member` key for baseline access and an isolated skill-review job. The publisher key exists only in the `publish` [environment](https://github.com/jbaruch/herdr-policy/settings/environments), restricted to `main`; PR test code cannot obtain it. Creation, storage and renewal are documented in `.env.example`. [Tessl workspace roles](https://docs.tessl.io/administrators/roles) define these permissions.
 

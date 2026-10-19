@@ -44,7 +44,7 @@ jobs:
         working-directory: ${{ runner.temp }}/herdr-test-policy
         env:
           TESSL_TOKEN: ${{ secrets.TESSL_REVIEW_TOKEN }}
-        run: tessl install jbaruch/coding-policy@0.3.406 --agent codex --yes --strict --accept-warnings
+        run: tessl install jbaruch/coding-policy@0.4.0 --agent codex --yes --strict --accept-warnings
       - name: Language diagnostics
         run: python3 scripts/run-diagnostics.py
       - name: Validate Tessl package
@@ -56,12 +56,11 @@ jobs:
           HERDR_CODING_POLICY_ROOT: ${{ runner.temp }}/herdr-test-policy/.tessl/plugins/jbaruch/coding-policy
         run: python3 scripts/run-tests.py
       - name: Check actual ACR upgrade, native execution and removal
-        # This candidate-pair pin becomes the confirmed 0.4 release commit at cutover;
-        # review monthly thereafter, alongside the compatible manifest versions.
+        # Confirmed 0.4.0 release source; review monthly alongside compatible manifests.
         env:
           HERDR_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           GH_TOKEN: ${{ github.token }}
-        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" python3 scripts/check-installations.py --herdr-source "github:jbaruch/herdr-policy@$HERDR_REVISION" --coding-source github:jbaruch/coding-policy@9eaa60ad829f2e9e3b0380028d542b46c3af96ad
+        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" python3 scripts/check-installations.py --herdr-source "github:jbaruch/herdr-policy@$HERDR_REVISION" --coding-source github:jbaruch/coding-policy@0432df11ab26d2afb55414a1099a65f7e03de68b
   skill-review:
     runs-on: ubuntu-latest
     steps:

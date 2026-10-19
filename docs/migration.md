@@ -2,7 +2,12 @@
 
 ## Compatible Versions
 
-The target pair is coding-policy 0.4.0 and herdr-policy 0.2.0. Coding-policy 0.3.406 is the last monolithic reference used for extraction. Never activate both versions' team hooks together. Confirm each channel independently before changing a consumer's declared dependencies.
+The target pair is coding-policy 0.4.0 and herdr-policy 0.2.x. Coding-policy 0.3.407 is the last published combined version. Never activate both versions' team hooks together. Confirm each channel independently before changing a consumer's declared dependencies.
+
+Herdr policy lookup refuses legacy combined team trees in the project, global
+Tessl installation or executing package's Tessl peer. An explicit helper root
+does not bypass that check. Keep teams stopped and reconcile their existing
+work before upgrading those installations.
 
 One safety correction changes standup asking: the extracted entrypoint never
 sends an unguarded prompt. Herdr 0.9.2's protocol-22 prompt request has no atomic
@@ -30,4 +35,4 @@ Read back one coordinator identity and its owner records before any resume. Reco
 
 Exercise fresh install, repeated realization, update and removal in disposable consumers first. Preserve a user-owned instruction sentinel and native setting through every operation. Verify standalone code has no Herdr imports and that the team hook owners retain their native failure contracts.
 
-If the pair cannot be verified, keep the coordinator stopped. Restore the recorded previous package versions and channel-owned outputs together, preserving user files and all state/evidence. The source baseline is coding-policy 0.3.406; verify its actual availability before rollback. Never move a published tag, erase a receipt, or start a second coordinator to recover. Record each channel's installed version and outcome in the migration issue.
+If the pair cannot be verified, keep the coordinator stopped. Restore the recorded previous package versions and channel-owned outputs together, preserving user files and all state/evidence. Coding-policy 0.3.407 remains installable through Tessl; use each consumer's recorded rollback version and verify its availability. The first extracted ACR pair has no earlier compatible ACR release. Never invent a rollback tag, move a published tag, erase a receipt, or start a second coordinator to recover. Record each channel's installed version and outcome in the migration issue.
