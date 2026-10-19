@@ -66,6 +66,8 @@ def parse_policy(payload) -> dict[str, Any] | None:
         if not isinstance(row, dict) or set(row) != {"task", "until", "reason"}:
             raise ConfigError("A capacity exception names its task, until checkpoint and reason.", {})
         _text(row["task"], "exception task", 1024)
+        if row["task"] != row["task"].strip():
+            raise ConfigError("Name the admitted task exactly, without surrounding whitespace, for its capacity exception.", {})
         _text(row["reason"], "exception reason", 512)
         _text(row["until"], "exception expiry", 128)
         try:

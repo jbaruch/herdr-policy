@@ -694,7 +694,7 @@ class WorkflowServiceTest(unittest.TestCase):
             self.assertIsNone(self.progress()["pending"])
 
     def test_capacity_exception_cannot_bypass_exhausted_harnesses(self):
-        self.select_backpressure(exceptions=[{"task": "one", "until": "2026-11-01T00:00:00Z",
+        self.select_backpressure(exceptions=[{"task": "one", "until": (self.origin + timedelta(days=1)).isoformat(),
                                              "reason": "An explicit fixture capacity exception."}])
         self.admit()
         self.foreign_enrollment()

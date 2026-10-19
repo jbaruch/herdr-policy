@@ -8,13 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 import copy
 import json
 import unittest
+from datetime import datetime, timedelta
 
 from foreman import recovery, workflow_capacity as capacity
 from foreman.errors import ConfigError
 from foreman.state import empty_state
 
 AT = "2026-10-19T12:00:00Z"
-LATER = "2026-10-19T12:01:00Z"
+LATER = (datetime.fromisoformat(AT.replace("Z", "+00:00")) + timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
 
 
 def declaration():
@@ -66,9 +67,17 @@ class CapacityTest(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 capacity.parse_policy(self.configuration)
 
+    def test_padded_exception_task_refuses_before_a_native_decision(self):
+        for task in (" new", "new "):
+            with self.subTest(task=task):
+                self.configuration["backpressure"]["exceptions"] = [
+                    {"task": task, "until": LATER, "reason": "An exact task identity is required."}]
+                with self.assertRaisesRegex(ConfigError, "without surrounding whitespace"):
+                    capacity.parse_policy(self.configuration)
+
     def test_indivisible_oversized_expiry_refuses_before_a_native_decision(self):
         self.configuration["backpressure"]["exceptions"] = [{"task": "new",
-            "until": "2099-01-01T00:00:00." + "1" * 30000 + "Z", "reason": "Fixture exception."}]
+            "until": "2020-01-01T00:00:00." + "1" * 30000 + "Z", "reason": "Fixture exception."}]
         with self.assertRaises(ConfigError):
             capacity.parse_policy(self.configuration)
 
@@ -77,7 +86,7 @@ class CapacityTest(unittest.TestCase):
                                                          "integration": capacity.MAX_THRESHOLD}
         self.configuration["backpressure"]["repositories"]["fixture/repository"] = {"in_flight": 1, "integration": 1}
         self.configuration["backpressure"]["exceptions"] = [{"task": "new",
-            "until": "2099-01-01T00:00:00." + "1" * 100 + "Z", "reason": "雪" * 170}]
+            "until": LATER.removesuffix("Z") + "." + "1" * 100 + "Z", "reason": "雪" * 170}]
         families = {}
         for index in range(3):
             task = str(index) + "x" * 1000

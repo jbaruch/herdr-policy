@@ -58,4 +58,3 @@ A capacity wait has `wake_agent: false` and creates no native intent. Unexamined
 references remain counted. The result grants no progression or release authority.
 The parser, task accounting and reference bounds are owned by
 `skills/herdr-foreman/foreman/workflow_capacity.py`.
-

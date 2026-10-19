@@ -27,7 +27,12 @@ skills/herdr-foreman/references/progression.md
 
 That scoped contract owns ordinary progression, report handling, context floor
 and continuation. When selecting config-schema-9 native capacity limits, read
-`skills/herdr-foreman/references/workflow-capacity.md` before admission.
+this reference before admission:
+
+```text
+skills/herdr-foreman/references/workflow-capacity.md
+```
+
 Legacy rounds follow the steps below in order without skipping ahead.
 
 Before any finish with enrolled work, reconcile the whole fleet under
