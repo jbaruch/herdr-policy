@@ -26,7 +26,13 @@ skills/herdr-foreman/references/progression.md
 ```
 
 That scoped contract owns ordinary progression, report handling, context floor
-and continuation.
+and continuation. When selecting config-schema-9 native capacity limits, read
+this reference before admission:
+
+```text
+skills/herdr-foreman/references/workflow-capacity.md
+```
+
 Legacy rounds follow the steps below in order without skipping ahead.
 
 Before any finish with enrolled work, reconcile the whole fleet under
@@ -69,27 +75,27 @@ Read the lookup rule before running these command blocks:
 rules/herdr-bootstrap.md
 ```
 
-Before each listed owner decision, retrieve its bounded current records:
+Use this invocation for each owner query, replacing `<command-and-arguments>`
+with one table row and its actual task or enrollment identity. Repeat the
+lookup for each call; it is the scoped exception in `rules/herdr-bootstrap.md`.
+The co-shipped launcher is `skills/herdr-foreman/foreman.sh`; its JSON reader
+contracts are in `skills/herdr-foreman/state-schema.md`.
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/foreman.sh" load-set --decision <plan|brief|gate|diagnose> --task <task>
+bash "$HS/foreman.sh" <command-and-arguments>
 ```
 
-```bash
-HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/foreman.sh" load-set --decision wake --enrollment <enrollment-id>
-```
+| Command and arguments | When |
+| --- | --- |
+| `load-set --decision plan --task <task>` | Step 5 |
+| `load-set --decision brief --task <task>` | Step 8 |
+| `load-set --decision wake --enrollment <enrollment-id>` | Step 11, per wake event |
+| `load-set --decision gate --task <task>` | Step 12 |
+| `load-set --decision diagnose --task <task>` | Step 13, diagnosis mode |
+| `cost-report --task <task>` | Offline cost lookup in Step 1 |
 
-| Decision | Step | Target |
-| --- | --- | --- |
-| `plan` | Step 5 | `--task` |
-| `brief` | Step 8 | `--task` |
-| `wake` | Step 11, per `wake` event | `--enrollment` |
-| `gate` | Step 12 | `--task` |
-| `diagnose` | Step 13, diagnosis mode | `--task` |
-
-It prints schema-2 JSON with a question-specific retrieval menu in `files`.
+`load-set` prints schema-2 JSON with a question-specific retrieval menu in `files`.
 Retrieve only the evidence needed for the pending question, within the command's
 budgets. Read every report fully when Team Operation requires it for gating.
 A file with `present: false` remains an unresolved gap. A non-zero exit names a
@@ -139,14 +145,8 @@ authority.
   `skills/herdr-foreman/references/working-memory.md`.
 - **A saved retrospective** — `skills/herdr-foreman/references/retrospectives.md`. Report the note's
   date, coverage, conclusions, and path.
-- **A task's cost or resource use** — run the read-only report, omitting
-  `--task` for every task:
-
-  ```bash
-  HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-  bash "$HS/foreman.sh" cost-report --task <task>
-
-```
+- **A task's cost or resource use** — invoke the table's `cost-report` entry,
+  omitting `--task` for every task.
 
   It prints JSON with a `tasks` list and an `unrecorded` list. Relay each
   quantity separately, and every `unknown` value as `unknown`. Never total the
