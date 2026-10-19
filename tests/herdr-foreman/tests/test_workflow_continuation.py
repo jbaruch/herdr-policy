@@ -89,7 +89,7 @@ class WorkflowContinuationTest(unittest.TestCase):
             progress["pending"]["job"]["status"] = "starting"
             save_state(self.case.path, state)
             self.assertIsNotNone(self.check())
-            progress.update(phase="exception", exception={"code": "fixture_unknown", "phase": "implement", "sources": [],
+            progress.update(phase="exception", exception={"id": "a" * 64, "code": "fixture_unknown", "phase": "implement", "sources": [],
                                                          "actions": ["reconcile_original_effect"]})
             save_state(self.case.path, state)
             self.assertIsNotNone(self.check())

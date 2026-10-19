@@ -18,7 +18,7 @@ from . import workflow_contract as schema, workflow_dispatch as dispatch
 from . import workflow_planning, workflow_workspace as workspace
 from .errors import ForemanError, UsageError
 from .progression_service import capture_contract
-from .state import latest_snapshot, save_state, state_lock
+from .state import TransactionBusy, latest_snapshot, save_state, state_lock
 from .workflow_native import NativeWorkflowAdapter
 
 
@@ -98,8 +98,11 @@ class WorkflowService:
     def _exception(self, state, code, sources=(), actions=("inspect_current_evidence", "return_authority")):
         progress = state["recovery"]["tasks"][self.capability.task]["progression"]
         phase = progress["exception"]["phase"] if progress["phase"] == "exception" else progress["phase"]
-        progress.update(phase="exception", at=self.clock(), exception={
-            "code": code, "phase": phase, "sources": list(dict.fromkeys(
+        at = self.clock()
+        occurrence = supervision.digest([self.capability.task, self.capability.generation, phase, at,
+                                         len(state["recovery"]["events"])])
+        progress.update(phase="exception", at=at, exception={
+            "id": occurrence, "code": code, "phase": phase, "sources": list(dict.fromkeys(
                 "".join(char if ord(char) >= 32 else " " for char in str(item)).encode("utf-8")[:4096].decode("utf-8", errors="ignore")
                 for item in sources))[:8], "actions": list(actions)})
         self._save(state)
@@ -390,6 +393,11 @@ class WorkflowService:
     def tick(self):
         try:
             return self._tick()
+        except TransactionBusy:
+            return load_set._bounded({"schema_version": 2, "wake_agent": False, "data": {
+                "task": self.capability.task, "generation": self.capability.generation,
+                "status": "waiting", "reason": "owner_transaction_busy",
+                "authorizes_acceptance": False, "authorizes_release": False}})
         except ForemanError as exc:
             with state_lock(self.path):
                 state, _task, _progress = self._current()

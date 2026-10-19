@@ -25,6 +25,8 @@ brief templates, an owner-controlled artifact directory outside the writer,
 compatible general policy, and a verified authority handoff. Existing work is
 finished or migrated through its actual owner; history is never reset to make
 it look new. Native remote/attested execution is not enabled by this adapter.
+Admission exclusively creates its fresh private artifact directory; an
+existing directory cannot be reused by this or another task.
 
 The compiled common brief names the actual general policy entrypoint, this
 contract and the complete selected release skill. Workers read the general
@@ -170,6 +172,9 @@ coding-policy bundle. It retains the baseline, resolved run and each actual
 confirmation separately. Tessl registry advance and moderation prove only
 Tessl; exact immutable GitHub tag/assets prove only that channel. A green run
 or successful report alone completes neither.
+ACR confirmation also resolves and peels the actual release tag to the recorded
+merge source. Existing report gates and verdict obligations are rechecked under
+their owner lock through the acceptance save.
 
 Merge acceptance requires the admitted criteria's independent evidence and
 the actual merged/published outcome. Deployment or operator acceptance needs

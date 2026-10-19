@@ -25,9 +25,11 @@ class WorkflowRecoveryTest(unittest.TestCase):
         self.addCleanup(self.case.doCleanups)
         self.case.admit()
 
-    def exception(self, code="workflow_owner_refused"):
+    def exception(self, code="workflow_owner_refused", *, at=None):
         with self.case.owner.session() as capability:
             engine = self.case.runner(capability)
+            if at is not None:
+                engine.clock = lambda: at
             with state_lock(self.case.path):
                 result = engine._exception(self.case.owner.state(), code, [str(self.case.path)])
         return {"task": "one", "expected_generation": 1, "exception": result["data"]["exception_digest"],
@@ -63,6 +65,37 @@ class WorkflowRecoveryTest(unittest.TestCase):
         with self.assertRaisesRegex(UsageError, "operator hold"):
             self.resume(data)
         self.assertEqual(self.case.path.read_bytes(), before)
+
+    def test_consumed_authorization_never_resumes_a_later_identical_failure(self):
+        at = "2026-10-19T00:00:00+00:00"
+        original = self.exception(at=at)
+        self.resume(original)
+        current = self.exception(at=at)
+        self.assertNotEqual(current["exception"], original["exception"])
+        saved = self.case.path.read_bytes()
+        self.assertTrue(self.resume(original)["replayed"])
+        self.assertEqual(self.case.path.read_bytes(), saved)
+        self.assertEqual(self.case.progress()["phase"], "exception")
+        self.assertFalse(self.resume(current)["replayed"])
+
+    def test_admission_exclusively_reserves_the_artifact_directory(self):
+        writer = self.case.root / "other-writer"
+        self.case.git("worktree", "add", "-b", "feature/other", str(writer))
+        document = json.loads(json.dumps(self.case.document))
+        document["task"] = "two"
+        document["repository"].update(worktree=str(writer), branch="feature/other")
+        contract = self.case.root / "other-workflow.json"
+        contract.write_text(json.dumps(document))
+        state = self.case.owner.state()
+        state["recovery"]["tasks"]["two"]["base_revision"] = self.case.base
+        save_state(self.case.path, state)
+        before = self.case.path.read_bytes()
+        data = {**self.case.owner.data, "task": "two", "service_id": "fixture-two",
+                "lease_path": str(self.case.root / "other.lease"), "contract": str(contract)}
+        with state_lock(self.case.path), self.assertRaisesRegex(UsageError, "fresh private artifact directory"):
+            authority.handoff(self.case.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+        self.assertEqual(self.case.path.read_bytes(), before)
+        self.assertEqual(list(Path(document["artifact_directory"]).iterdir()), [])
 
     def test_decisions_and_unknown_native_send_are_not_retryable(self):
         data = self.exception("verification_decision_required")

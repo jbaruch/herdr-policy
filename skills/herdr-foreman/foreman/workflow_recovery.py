@@ -86,9 +86,9 @@ def resume(path, data, at, client, plugin_root):
         raise UsageError("Restore the admitted contract before resuming its task.", {})
     progress = recovery.task_record(state["recovery"], data["task"])["progression"]
     schema.validate_current(progress, document)
+    if _replayed(state, data, "progression_exception_resumed"):
+        return {"task": data["task"], "replayed": True, "authorizes_dispatch": False}
     if progress["phase"] != "exception":
-        if _replayed(state, data, "progression_exception_resumed"):
-            return {"task": data["task"], "replayed": True, "authorizes_dispatch": False}
         raise UsageError("No matching current task exception exists to resume.", {})
     packet = progress["exception"]
     if data["exception"] != supervision.digest(packet) or packet["code"] not in RETRYABLE:

@@ -127,10 +127,13 @@ def inputs(contract):
 
 def prepare_directory(path, *, fresh=False):
     root = Path(path)
+    if root.resolve() != root:
+        raise UsageError("Use the actual private artifact path without aliases; preserve the existing target.", {})
     try:
         root.mkdir(mode=0o700)
     except FileExistsError:
-        pass
+        if fresh:
+            raise UsageError("Reserve a fresh private artifact directory for this admission; an existing directory may belong to another task and is preserved.", {}) from None
     except OSError:
         raise StateError("Cannot create the admitted private current-artifact directory; restore its parent and ownership before progression.", {}) from None
     try:

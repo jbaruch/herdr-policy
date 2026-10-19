@@ -217,6 +217,32 @@ class WorkflowServiceTest(unittest.TestCase):
         Path(job["report"]).write_text(verdict + "WORKFLOW: " + json.dumps(claim) + "\n")
         return claim
 
+    def test_foreground_contention_waits_without_mutating_or_repeating_a_dispatch(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            runner.tick()
+            before = self.path.read_bytes()
+            with state_lock(self.path):
+                result = runner.tick()
+            self.assertFalse(result["wake_agent"])
+            self.assertEqual(result["data"]["reason"], "owner_transaction_busy")
+            self.assertEqual(self.path.read_bytes(), before)
+            runner.tick()
+            runner.tick()
+        self.assertEqual(len(self.owner.state()["assignments"]), 1)
+
+    def test_admission_preserves_existing_artifact_directory_contents(self):
+        root = Path(self.document["artifact_directory"])
+        root.mkdir(mode=0o700)
+        prior = root / "plan.json"
+        prior.write_text('existing owner content\n')
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "fresh private artifact directory"):
+            self.admit()
+        self.assertEqual(prior.read_text(), 'existing owner content\n')
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_close_preserves_a_replacement_native_session(self):
         self.admit()
         with self.owner.session() as capability:

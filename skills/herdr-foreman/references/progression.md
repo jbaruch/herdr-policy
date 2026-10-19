@@ -15,6 +15,8 @@ and rehashes the installed owned files. `policy-paths.py identity`, invoked
 with explicit Python 3 from the selected skill, is read-only and grants no
 dispatch authority. A missing, changed or ambiguous installation refuses
 startup. Remote/attested task execution is not enabled by these adapters.
+The native reader currently supports per-adapter owned skill targets;
+coordinator-owned shared-skill layouts are not enabled by this adapter.
 
 ## Admit one task
 
@@ -30,6 +32,10 @@ and absolute `contract`. Authorization carries `source` and `quote`. Read the
 actual generation from the task owner; an unadmitted legacy task starts at
 zero. Use a dedicated lease distinct from state files and transaction locks.
 The result names the new generation; admission alone authorizes no dispatch.
+The state owner's ordinary read upgrades older grant records without changing
+their generation or authority. An old service grant remains a prepared chain;
+its saved document cannot promote it to schema-2 task execution. Read-only
+previews leave old records untouched and name the required owner migration.
 
 ## Prepare a schema-1 chain
 
@@ -90,8 +96,10 @@ tier tables. Use the co-shipped `templates/workflow-common.md` and the selected
 The executor appends actual scope, policy paths, native report paths and current
 evidence; templates cannot substitute for those owner-derived facts.
 
-`artifact_directory` is a private, owner-controlled absolute directory outside
-the writer. It holds current plan/common inputs, role briefs and native reports
+`artifact_directory` is a fresh, owner-controlled absolute directory outside
+the writer, with an existing parent. Admission reserves it by exclusive creation;
+an existing directory, including an empty one, is preserved and refused. Keep
+frozen templates outside this new directory. It holds current plan/common inputs, role briefs and native reports
 plus narrowly named delivery/review artifacts. It is not a history directory.
 Workers consume the specific inputs named in their brief, never a recursive
 `.hr` or owner-state dump. GitHub remains the change and review history.
@@ -126,6 +134,8 @@ the caller's completion/exception delivery rather than relying on a PID file.
 Heartbeat transaction contention retries within the existing liveness grace;
 authority failures still stop immediately. Persistent contention loses health
 instead of authorizing takeover or repeating an effect.
+Foreground transaction contention returns an observational waiting result;
+the next tick reads the original intent and canonical readback before effects.
 
 ## Recover and return
 

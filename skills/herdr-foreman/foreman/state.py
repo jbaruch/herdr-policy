@@ -530,6 +530,7 @@ def _validate(payload, path):
     """
     from .composition import normalize_requirement
     from .engagement import migrate_assessments, validate_assessments
+    from .progression_owner import migrate_grants
 
     if not isinstance(payload, dict):
         raise _NoUsableState("the document is not a JSON object")
@@ -663,6 +664,7 @@ def _validate(payload, path):
         store = payload.setdefault("recovery", empty_recovery())
         migrated = migrate_store(store) or migrated
         validate_store(store, rows)
+        migrated = migrate_grants(store) or migrated
         migrated = migrate_assessments(payload) or migrated
         validate_assessments(payload)
     except UsageError as exc:
@@ -742,16 +744,8 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
         raise StateError("This read-only preview needs an owner migration. Run `{}` with the same --state path, then retry the preview; the original file is unchanged.".format(
             runnable.command("state")), {"path": str(path)})
     if migrated:
-        try:
-            save_state(path, state)
-        except StateError as exc:
-            # The upgrade holds in memory even when the rewrite cannot land.
-            warn(
-                "state file {} migrated to schema_version {} in memory, but the "
-                "rewrite failed ({}) - the next run migrates it again.".format(
-                    path, STATE_SCHEMA_VERSION, exc
-                )
-            )
+        # Gate-bearing owner migrations must land before their result is usable.
+        save_state(path, state)
     return state, True
 
 

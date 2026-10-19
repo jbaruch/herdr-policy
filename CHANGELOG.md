@@ -2,6 +2,8 @@
 
 ## 0.4.0 — 2026-10-19
 
+- Migrate and persist accepted schema-1 grants through the existing state owner. Preserve their original prepared-chain authority, generations and pending obligations without reopening historical contracts; read-only previews refuse until the owner migration completes.
+- Wait observationally on foreground transaction contention, reserve fresh artifact directories exclusively, and bind resume authorization to each exception occurrence. Verify the actual peeled ACR tag source and hold report gates through acceptance. Retain the per-adapter native ownership boundary for installation identity.
 - Require a successful publisher conclusion, matching observed native/helper Tessl versions and artifact-bound moderation; reject unselected publication claims. Preserve foreign push targets, replacement native sessions and out-of-scope rename sources. Retry transient heartbeat contention within its existing grace and retain Stop obligations when the primary task owner is missing. Exercise the shipped review-reader CLI's bounded success/failure contracts.
 - Add explicitly admitted schema-2 task execution through native implementation, independent review/testing, same-task corrections, full native release ownership, independent publication readback and narrow local cleanup. Preserve canonical dispatch, assessment, report-gate and supervision owners instead of generating round ledgers or loading historical `.hr` content.
 - Allow foreman Stop only for exact current obligations covered by a healthy implemented executor. Bind its current supervision row to the admitted generation, policy, contract, native foreman and actual kernel lock-owner PID/inodes. Prepared chains and unknown effects provide no continuation.

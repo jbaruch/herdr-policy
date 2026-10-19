@@ -40,6 +40,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.moderation_version = None
         self.report_version = None
         self.report_tag = None
+        self.tag_commit = None
+        self.annotated_tag = False
         self.bundle = self.root / "release-skill-fixture"
         self.bundle.mkdir()
         for name in ("check-closing-issues.py", "resolve-publish-run.sh", "confirm-tessl-landed.sh",
@@ -63,7 +65,14 @@ class WorkflowReleaseTest(unittest.TestCase):
             actual = ["git", "-c", self.redirect, *argv[1:]] if set(argv) & {"fetch", "push", "ls-remote"} else argv
             return subprocess.run(actual, **options)
         if argv[:2] == ["gh", "api"]:
-            payload = self.pr
+            if "/git/" in argv[2]:
+                assert self.pr is not None
+                target = self.tag_commit or self.pr["merge_commit_sha"]
+                annotated = self.annotated_tag and "/git/ref/" in argv[2]
+                payload = {"object": {"type": "tag" if annotated else "commit",
+                                      "sha": "e" * 40 if annotated else target}}
+            else:
+                payload = self.pr
         elif argv[:3] == ["gh", "run", "watch"]:
             if self.failed_run and "--exit-status" in argv:
                 return subprocess.CompletedProcess(argv, 1, None, "Private failed publisher fixture.")
@@ -176,6 +185,43 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertTrue(result["wake_agent"])
         delivery = self.case.progress()["delivery"]
         self.assertFalse(delivery["accepted"] or delivery["tessl_confirmed"] or delivery["acr_confirmed"])
+        self.assertTrue(self.case.worktree.is_dir())
+
+    def test_release_tag_must_resolve_to_this_merge_source(self):
+        self.publication()
+        self.tag_commit = "f" * 40
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            self.case.advance(runner, lambda: self.case.progress()["delivery"]["tessl_confirmed"])
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertFalse(self.case.progress()["delivery"]["acr_confirmed"])
+        self.assertFalse(self.case.progress()["delivery"]["accepted"])
+        self.assertTrue(self.case.worktree.is_dir())
+
+    def test_annotated_tag_is_peeled_before_confirming_its_actual_source(self):
+        self.publication()
+        self.annotated_tag = True
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete", delivery=self.deliver)
+        self.assertTrue(self.case.progress()["delivery"]["acr_confirmed"])
+        self.assertTrue(any("/git/tags/" in part for call in self.calls for part in call))
+
+    def test_a_gate_recorded_after_release_closure_still_holds_acceptance(self):
+        from tests import test_report_gates as gate_fixture
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            report = next(row["assignment"]["report"] for row in supervision.load(self.path)["members"]
+                          if row["assignment"]["agent"].startswith("reviewer-"))
+            fixture.report_gates.record(self.path, {"schema_version": 2, "agent": "default", "labels": [
+                gate_fixture.label(Path(report), gate_fixture.HIGH)], "unannotated": []}, self.case.now())
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertFalse(self.case.progress()["delivery"]["accepted"])
         self.assertTrue(self.case.worktree.is_dir())
 
     def test_moderation_must_name_the_observed_landed_version(self):

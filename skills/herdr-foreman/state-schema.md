@@ -817,9 +817,15 @@ and timestamp. Returned grants keep the generation and clear service fields.
 No second task database or local handoff history is written.
 
 New grants use schema 2 and also record `contract_schema`: 1 for a prepared
-chain, 2 for the admitted task executor, null on return. Schema-1 grants keep
-their exact older fields and remain readable without rewrite; they never gain
-task-executor Stop authority. Admission and each capability check verify the
+chain, 2 for the admitted task executor, null on return. The state owner's
+existing on-read migration upgrades and rewrites accepted schema-1 grants.
+Their original admission protocol supported prepared chains only: a service
+grant gains `contract_schema: 1`, and a returned grant gains null. Every prior
+field, generation, policy, binding and pending obligation is preserved. This
+derivation reads no historical contract and never admits a task executor from
+an old document's claimed type. Read-only previews refuse with the existing
+owner-migration instruction and leave the original file untouched. Admission
+and each capability check verify the
 captured contract type. This explicit discriminator lets Stop ignore legacy
 historical contracts instead of opening them to infer an execution mode.
 
@@ -851,7 +857,11 @@ are `JOB_FIELDS` and `CLAIM_FIELDS` in the same owner module, with their human
 contract in `references/task-workflow.md`. Claims never replace actual native
 delivery, independent identities, Git scope or existing gate evidence.
 
-`exception` is null or `{code, phase, sources, actions}`. `phase` preserves the
+`exception` is null or `{id, code, phase, sources, actions}`. `id` binds this
+occurrence to its task generation, phase, capture time and existing canonical
+event boundary. A recorded resume advances that boundary even under a frozen
+clock; replaying its authorization cannot clear a later identical failure.
+`phase` preserves the
 original stage; source pointers and permitted actions are bounded, with no
 copied report/history. Resume takes the exact packet digest and explicit
 authorization, verifies the current foreman and a free lease, then restores

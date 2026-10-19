@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from foreman import cli, progression_owner as owner, recovery, supervision
 from foreman.command_context import HerdrCommandContext
-from foreman.errors import ForemanError, UsageError
+from foreman.errors import ForemanError, StateError, UsageError
 from foreman.state import empty_state, load_state_checked, save_state, state_lock
 
 
@@ -210,6 +210,71 @@ class ProgressionOwnerTest(unittest.TestCase):
         before = self.path.read_bytes()
         with self.assertRaisesRegex(UsageError, "active enrollments"):
             self.admit()
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def old_grant(self, *, returning=False):
+        self.admit()
+        if returning:
+            with state_lock(self.path):
+                owner.handoff(self.path, {"task": "one", "expected_generation": 1, "authorization": AUTH},
+                              AT, self.client, ROOT, returning=True)
+        state = self.state()
+        grant = state["recovery"]["tasks"]["one"]["authority"]
+        grant.pop("contract_schema")
+        grant["schema_version"] = 1
+        save_state(self.path, state)
+        return copy.deepcopy(grant)
+
+    def test_owner_migrates_old_grants_once_without_reopening_contracts(self):
+        original = self.old_grant()
+        state = json.loads(self.path.read_text())
+        pending = {"schema_version": 1, "generation": 1, "cursor": 0,
+                   "pending": {"schema_version": 1, "step": "fixture-step", "intent": "fixture-intent"}}
+        state["recovery"]["tasks"]["one"]["progression"] = pending
+        save_state(self.path, state)
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(StateError, "owner migration"):
+            load_state_checked(self.path, persist_migration=False)
+        self.assertEqual(self.path.read_bytes(), before)
+        with state_lock(self.path), patch("foreman.progression_service.capture_contract", side_effect=AssertionError("Migration must not open historical inputs")):
+            migrated, usable = load_state_checked(self.path)
+        self.assertTrue(usable)
+        grant = migrated["recovery"]["tasks"]["one"]["authority"]
+        self.assertEqual(grant, {**original, "schema_version": 2, "contract_schema": 1})
+        self.assertEqual(migrated["recovery"]["tasks"]["one"]["progression"], pending)
+        self.assertEqual(migrated["recovery"]["tasks"]["two"], state["recovery"]["tasks"]["two"])
+        saved = self.path.read_bytes()
+        load_state_checked(self.path)
+        self.assertEqual(self.path.read_bytes(), saved)
+
+    def test_returned_legacy_grant_migrates_without_restoring_service_authority(self):
+        original = self.old_grant(returning=True)
+        migrated, usable = load_state_checked(self.path)
+        self.assertTrue(usable)
+        grant = migrated["recovery"]["tasks"]["one"]["authority"]
+        self.assertEqual(grant, {**original, "schema_version": 2, "contract_schema": None})
+        self.assertEqual(grant["mode"], "legacy")
+        self.assertEqual(grant["generation"], 2)
+
+    def test_old_document_label_cannot_promote_a_prepared_grant_to_task_executor(self):
+        self.old_grant()
+        self.contract.write_text('{"schema_version": 2, "task": "one"}\n')
+        state = json.loads(self.path.read_text())
+        state["recovery"]["tasks"]["one"]["authority"]["contract"] = recovery.receipt(str(self.contract))[0]
+        save_state(self.path, state)
+        migrated, usable = load_state_checked(self.path)
+        self.assertTrue(usable)
+        self.assertEqual(migrated["recovery"]["tasks"]["one"]["authority"]["contract_schema"], 1)
+        with self.assertRaises(UsageError):
+            with self.session():
+                self.fail("An old prepared grant acquired task-executor authority")
+        self.assertEqual(supervision.load(self.path)["members"], [])
+
+    def test_an_unpersisted_migration_is_not_usable_owner_state(self):
+        self.old_grant()
+        before = self.path.read_bytes()
+        with patch("foreman.state.save_state", side_effect=StateError("Fixture migration write refused", {})), self.assertRaisesRegex(StateError, "write refused"):
+            load_state_checked(self.path)
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_unbounded_grant_is_refused_before_state_changes(self):

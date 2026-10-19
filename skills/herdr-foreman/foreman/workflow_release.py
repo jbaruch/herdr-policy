@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from . import policy_paths, progression_owner as authority, recovery, supervision
+from . import policy_paths, progression_owner as authority, recovery, report_gates, supervision
 from . import workflow_contract as schema, workflow_dispatch, workflow_review
 from . import workflow_workspace as workspace
 from .errors import StateError, UsageError
@@ -171,10 +171,38 @@ class WorkflowReleaseAdapter:
             confirmed = self._helper(bundle, "verify-github-release.sh", [owner, repository, tag, run], cwd)
             if confirmed.get("ok") is not True or confirmed.get("tag") != tag:
                 raise UsageError("The canonical ACR channel helper did not confirm its exact published tag/assets.", {})
+            reference = self._json(["gh", "api", "repos/{}/git/ref/tags/{}".format(repo["github"], tag)], cwd)
+            seen = set()
+            for _ in range(8):
+                target = reference.get("object")
+                if not isinstance(target, dict) or target.get("type") not in ("commit", "tag"):
+                    raise UsageError("The actual release tag has no supported source identity; preserve this channel as unconfirmed.", {})
+                schema._sha(target.get("sha"), "release tag source")
+                if target["type"] == "commit":
+                    if target["sha"] != delivery["merge_commit"]:
+                        raise UsageError("The actual release tag points to a different commit than this task's recorded merge; preserve its source for reconciliation.", {})
+                    break
+                if target["sha"] in seen:
+                    raise UsageError("The annotated release tag contains a cycle; preserve the unconfirmed source.", {})
+                seen.add(target["sha"])
+                reference = self._json(["gh", "api", "repos/{}/git/tags/{}".format(repo["github"], target["sha"])], cwd)
+            else:
+                raise UsageError("The annotated release tag exceeds the bounded source lookup; retain its source for a task-local decision.", {})
             return {"state": "publishing", "tag": tag, "acr_confirmed": True}
         return {"state": "published"}
 
     def commit(self, service, state, task, progress, observed):
+        if observed["state"] != "published":
+            return self._commit(service, state, task, progress, observed)
+        with report_gates.holding(service.path):
+            report_gates.require_no_verdict_gate(service.path, task["task"], state["recovery"]["dispatches"])
+            supervised = supervision.load(service.path)
+            for identifier in progress["jobs"].values():
+                job = workflow_dispatch.current_job(state, supervised, identifier)
+                report_gates.require_clear(service.path, job["report"], True)
+            return self._commit(service, state, task, progress, observed)
+
+    def _commit(self, service, state, task, progress, observed):
         if observed["state"] == "merged":
             publication = observed["claim"]
             progress["delivery"]["merge_commit"] = observed["merge_commit"]

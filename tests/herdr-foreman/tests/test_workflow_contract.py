@@ -115,7 +115,7 @@ class WorkflowContractTest(unittest.TestCase):
         progress["phase"] = "exception"
         with self.assertRaises(UsageError):
             workflow.validate_progress(progress)
-        progress["exception"] = {"code": "uncertain_send", "phase": "implement", "sources": [], "actions": ["native_reconciliation"]}
+        progress["exception"] = {"id": "a" * 64, "code": "uncertain_send", "phase": "implement", "sources": [], "actions": ["native_reconciliation"]}
         workflow.validate_progress(progress)
         for field, value in (("phase", []), ("generation", True), ("round", -1)):
             bad = copy.deepcopy(progress); bad[field] = value

@@ -308,12 +308,15 @@ def validate_progress(value):
         recovery.validate_receipt(captured)
     exception = value["exception"]
     if exception is not None:
-        if (not isinstance(exception, dict) or set(exception) != {"code", "phase", "sources", "actions"}
+        if (not isinstance(exception, dict) or set(exception) != {"id", "code", "phase", "sources", "actions"}
                 or not isinstance(exception["phase"], str) or exception["phase"] not in PHASES - {"exception", "complete"}
                 or not isinstance(exception["sources"], list) or len(exception["sources"]) > 8
                 or not isinstance(exception["actions"], list) or not 0 < len(exception["actions"]) <= 8):
             raise UsageError("Retain a bounded current decision packet with evidence pointers and permitted next actions.", {})
         _text(exception["code"], "exception code", 128)
+        _text(exception["id"], "exception occurrence", 64)
+        if re.fullmatch(r"[a-f0-9]{64}", exception["id"]) is None:
+            raise UsageError("Retain this exact task exception occurrence; an older authorization cannot resume a later failure.", {})
         for source in exception["sources"]:
             _text(source, "exception source", 4096)
         for action in exception["actions"]:

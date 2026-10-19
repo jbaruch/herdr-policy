@@ -88,6 +88,28 @@ def current_grant(state, task):
     return row.get("authority") if row else None
 
 
+def migrate_grants(store):
+    """Upgrade validated grants in the state owner's existing migration pass.
+
+    Schema-1 service admission supported prepared chains only. Preserve that
+    authority class even if its captured document is missing or claims a newer
+    type; a document label cannot retroactively admit a task executor. No
+    historical input, native process, binding or lease is opened here.
+    """
+    changed = False
+    for row in store["tasks"].values():
+        if row["schema_version"] != 2:
+            continue
+        grant = row["authority"]
+        if grant["schema_version"] == 1:
+            validate_grant(grant)
+            grant.update(schema_version=GRANT_VERSION,
+                         contract_schema=1 if grant["mode"] == "service" else None)
+            validate_grant(grant)
+            changed = True
+    return changed
+
+
 def _load(path):
     state, usable = load_state_checked(path, persist_migration=False)
     if not usable:
@@ -171,7 +193,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
              "mode": "legacy" if returning else "service", "service_id": None, "lease_path": None,
              "contract": None, "contract_schema": None, "policy": None, "binding": None,
              "authorization": deepcopy(data["authorization"]), "at": at}
-    workflow = None
+    workflow, artifact_directory = None, None
     if not returning:
         version, digest = loaded_policy(plugin_root)
         captured, _document = capture_contract(data["contract"])
@@ -192,6 +214,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
             policy_paths.brief_inputs(Path(__file__).resolve().parents[1], workflow_workspace.base_checkout(_document),
                 Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
             workflow = workflow_contract.initial_progress(generation + 1, at)
+            artifact_directory = _document["artifact_directory"]
         grant.update(service_id=data["service_id"], lease_path=data["lease_path"], contract=captured,
                      policy={"version": version, "digest": digest}, binding=_binding(supervised))
     validate_grant(grant)
@@ -215,6 +238,9 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         if not returning and _unresumed_hold(current):
             raise UsageError("An operator hold arrived during admission; preserve its resume conditions.", {})
         with process_lease(lease_path):
+            if artifact_directory is not None:
+                from .workflow_workspace import prepare_directory
+                prepare_directory(artifact_directory, fresh=True)
             row.update(schema_version=2, authority=grant)
             row.pop("progression", None)
             if workflow is not None:
