@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 from tests import test_workflow_service as fixture
 from foreman import recovery, supervision, workflow_contract, workflow_recovery, workflow_release, workflow_review
-from foreman import workflow_artifacts, workflow_rename
+from foreman import load_set, workflow_artifacts, workflow_rename
 from foreman import progression_owner as authority
 from foreman.errors import StateError
 from foreman.state import load_state_checked, save_state, state_lock
@@ -198,6 +198,13 @@ class WorkflowReleaseTest(unittest.TestCase):
                     "sha256": "a" * 64, "device": 1, "inode": count + 3})
             hidden = lifecycle["remaining"][-1]["name"]
             save_state(self.path, state)
+            members = supervision.load(self.path)["members"]
+            reports = {member["id"]: supervision.expected_assignment(member)["report"] for member in members}
+            packet = load_set.build(state, reports, {}, set(), "diagnose", task="one", exists=lambda path: Path(path).exists())
+            self.assertEqual(packet["core"]["task"]["progression"]["delivery"]["artifacts"]["remaining_count"], 256)
+            self.assertNotIn(hidden, json.dumps(packet))
+            self.assertLessEqual(len((json.dumps(packet, indent=2) + "\n").encode()), load_set.OUTPUT_BYTES)
+            self.assertEqual(len(lifecycle["remaining"]), 256)
             before = {p.name: p.read_bytes() for p in root.iterdir()}
             result = runner.tick()
             self.assertEqual(result["data"]["status"], "exception")
@@ -218,6 +225,80 @@ class WorkflowReleaseTest(unittest.TestCase):
             before = {p.name: p.read_bytes() for p in root.iterdir()}
             self.assertEqual(runner.tick()["data"]["status"], "exception")
             self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+
+    def test_replaced_delivery_json_is_preserved_against_the_canonical_closure_receipt(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            delivery = next(root.glob("delivery-*-developer.json"))
+            member = next(row for row in supervision.load(self.path)["members"]
+                          if any(proof["path"] == str(delivery) for proof in row["resolution"]["evidence"]))
+            expected = next(proof for proof in member["resolution"]["evidence"] if proof["path"] == str(delivery))
+            self.assertEqual(expected["sha256"], recovery.receipt(str(delivery))[0]["sha256"])
+            delivery.write_bytes(b'{"foreign": "Replacement bytes after native closure."}\n')
+            before = {p.name: p.read_bytes() for p in root.iterdir()}
+            self.assertEqual(runner.tick()["data"]["status"], "exception")
+            self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+            self.assertIsNone(self.case.progress()["delivery"]["artifacts"]["quarantine"])
+
+    def test_missing_expected_artifacts_never_retire_the_remaining_directory(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            root = self.at_artifact_cleanup(runner)
+            original = {p.name: p.read_bytes() for p in root.iterdir()}
+            release_report = next(root.glob("report-*-release.md")).name
+            snapshot = next(root.glob("reviews-*.json")).name
+            cases = [(next(root.glob("report-*-developer.md")).name,), (release_report, snapshot), (snapshot,),
+                     (next(root.glob("brief-*.md")).name,), ("common.md",), ("plan.json",),
+                     (next(root.glob("delivery-*.json")).name,)]
+            for removed in cases:
+                with self.subTest(removed=removed):
+                    for name in removed:
+                        (root / name).unlink()
+                    before = {p.name: p.read_bytes() for p in root.iterdir()}
+                    state = self.case.owner.state()
+                    progress = state["recovery"]["tasks"]["one"]["progression"]
+                    with self.assertRaisesRegex((StateError, fixture.UsageError), "evidence is missing"):
+                        workflow_artifacts.inventory(runner, state, progress)
+                    self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
+                    self.assertIsNone(progress["delivery"]["artifacts"]["quarantine"])
+                    for name in removed:
+                        (root / name).write_bytes(original[name])
+            preserved = root.with_name("preserved-original-artifacts")
+            root.rename(preserved)
+            with self.assertRaisesRegex(StateError, "artifacts are missing"):
+                workflow_artifacts.inventory(runner, self.case.owner.state(), self.case.progress())
+            self.assertEqual({p.name: p.read_bytes() for p in preserved.iterdir()}, original)
+            preserved.rename(root)
+
+    def test_first_delivery_two_record_preserves_another_pinned_services_old_reader(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            def release_closed():
+                progress = self.case.progress()
+                identifier = progress["jobs"].get("release")
+                return progress["phase"] == "release" and progress["pending"] is None and identifier is not None and any(
+                    row["id"] == identifier and not row["active"] and row["resolution"] is not None
+                    for row in supervision.load(self.path)["members"])
+            self.case.advance(runner, release_closed, delivery=self.deliver)
+            other_contract = self.root / "mixed-policy-contract.json"
+            other_contract.write_text('{"schema_version": 1, "task": "two"}\n')
+            data = {**self.case.owner.data, "task": "two", "service_id": "older-service",
+                    "lease_path": str(self.root / "older-service.lease"), "contract": str(other_contract)}
+            with patch("foreman.progression_owner.loaded_policy", return_value=("0.6.0", "a" * 64)), state_lock(self.path):
+                authority.handoff(self.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+            original = deepcopy(self.case.owner.state()["recovery"]["tasks"]["two"])
+            self.assertTrue(all(row.get("progression", {}).get("delivery") is None
+                                for row in self.case.owner.state()["recovery"]["tasks"].values()))
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception")
+            state = self.case.owner.state()
+            self.assertIsNone(state["recovery"]["tasks"]["one"]["progression"]["delivery"])
+            self.assertEqual(state["recovery"]["tasks"]["two"], original)
+            self.published_workflow_reader().validate_progress(state["recovery"]["tasks"]["one"]["progression"])
 
     def test_changed_release_review_snapshot_preserves_all_artifacts(self):
         self.case.admit()

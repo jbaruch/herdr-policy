@@ -890,7 +890,9 @@ mismatch refuses with a state error and leaves the original file unchanged,
 including on read-only previews. Restore the exact admitted policy to drain or
 explicitly return its service through its original owner before upgrading;
 editing grants never supplies a handoff. A completed workflow has no remaining
-executor obligation. The check reads no native history and transfers no authority.
+executor obligation. The same preflight runs before creating the first delivery-2
+record; a file with no prior delivery still needs its other readers preserved.
+The check reads no native history and transfers no authority.
 Completed records become `legacy_preserved` without filesystem changes;
 active records gain pending cleanup. Read-only previews require that owner
 migration first. Older readers reject delivery 2; retain a compatible owner
@@ -898,7 +900,14 @@ for in-flight records rather than downgrading their obligations. Canonical
 dispatch/closure receipts and the GitHub closure reference survive retirement.
 The CLI projects `artifacts` as schema-1 `kind: artifact_cleanup_view`, with
 phase, quarantine, finalization suffix and remaining count; it omits the
-manifest. Full lifecycle ownership is in `skills/herdr-foreman/references/progression.md`.
+manifest. Task records in `load-set` use that same observational projection;
+the owner retains the full manifest. Native close records both report and
+delivery byte receipts in the existing enrollment resolution, checked against
+the durable close intent. Retirement requires those original receipts and all
+expected reports, delivery files, briefs, common text, plan and release review
+snapshots before any initial move. Missing or changed evidence refuses; older
+closures lacking a delivery receipt are preserved rather than adopted by name.
+Full lifecycle ownership is in `skills/herdr-foreman/references/progression.md`.
 A `complete` label without its matching merged task
 closure, accepted delivery, finished cleanup and no pending intent cannot
 release Stop obligations.

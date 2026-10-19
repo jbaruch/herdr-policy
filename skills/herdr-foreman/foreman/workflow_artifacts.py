@@ -165,7 +165,7 @@ def inventory(service, state, progress):
     task = service.capability.task
     members = supervision.load(service.path)["members"]
     unsent = {row["id"] for row in state["recovery"]["dispatches"] if _proved_unsent(state, row)}
-    known, reports, briefs, reviews = {"common.md", "plan.json"}, {}, [], {}
+    known, reports, briefs, reviews, deliveries = {"common.md", "plan.json"}, {}, [], {}, {}
     for member in members:
         assigned = supervision.expected_assignment(member)
         if Path(assigned["report"]).parent == root and (
@@ -200,29 +200,33 @@ def inventory(service, state, progress):
             raise UsageError("Retain the native report until one byte-bound closure receipt identifies it.", {})
         reports[report.name] = receipts[0]
         briefs.append((row, str(report)))
-        known.update({Path(row["brief"]).name, report.name, "delivery-{}.json".format(identifier)})
+        delivery_name = "delivery-{}.json".format(identifier)
+        delivery_path = str(root / delivery_name)
+        proofs = [item for item in member["resolution"]["evidence"] if item["path"] == delivery_path]
+        if len(proofs) != 1:
+            raise UsageError("Retain this delivery file until its closed native enrollment supplies the original byte receipt; a filename cannot prove ownership.", {})
+        deliveries[delivery_name] = proofs[0]
+        known.update({Path(row["brief"]).name, report.name, delivery_name})
         if row["role"] == "release":
             review = "reviews-{}.json".format(identifier)
             known.add(review)
             reviews[review] = report.name
     with _directory(root) as descriptor:
         if descriptor is None:
-            return None
+            raise StateError("The expected task artifacts are missing before retirement was recorded; preserve their owner receipts and reconcile the original evidence.", {})
         names = _names(descriptor)
         if any(name not in known for name in names):
             raise UsageError("Unowned files remain in the task directory; preserve them and reconcile their purpose before cleanup.", {})
+        if known - set(names):
+            raise UsageError("Expected task evidence is missing before retirement was recorded; restore its exact bytes or reconcile it through its original owner.", {})
         captured = {}
         for name in names:
             receipt, body, info = _capture(descriptor, name, root)
             captured[name] = (receipt, body if name == "common.md" or name.startswith("brief-") or name in reports else b"", info)
-        for name, expected in reports.items():
-            if name in captured and captured[name][0] != {key: expected[key] for key in ("path", "sha256")}:
-                raise UsageError("A closed native report changed; preserve its bytes and original closure evidence.", {})
+        for name, expected in {**reports, **deliveries}.items():
+            if captured[name][0] != {key: expected[key] for key in ("path", "sha256")}:
+                raise UsageError("A closed native report or delivery file changed; preserve its bytes and original closure evidence.", {})
         for name, report in reviews.items():
-            if name not in captured:
-                continue
-            if report not in captured:
-                raise UsageError("Retain this review snapshot until its unchanged closed release report supplies its original byte receipt.", {})
             try:
                 claim = report_contract.workflow_claim(captured[report][1].decode("utf-8"))
             except UnicodeError:
@@ -233,8 +237,6 @@ def inventory(service, state, progress):
                 raise UsageError("The release review snapshot differs from its closed report's byte receipt; preserve both artifacts.", {})
         contents = {item[0]["path"]: item[1] for item in captured.values()}
         for row, report in briefs:
-            if row["brief"] not in contents:
-                continue
             if row["common"] not in contents or recovery.brief_identity(
                     {"common": row["common"], row["role"]: row["brief"]}, row["role"], report, contents) != row["brief_identity"]:
                 raise UsageError("A dispatched brief changed; preserve its original task evidence instead of retiring substituted bytes.", {})
