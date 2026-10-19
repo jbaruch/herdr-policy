@@ -53,11 +53,21 @@ def origin_identity(value):
     return match[1] if match else None
 
 
+def verify_origin(root, expected):
+    """Bind fetch and every effective push URL to the admitted repository."""
+    urls = [git(root, "remote", "get-url", "origin").strip(),
+            *git(root, "remote", "get-url", "--push", "--all", "origin").splitlines()]
+    identities = [origin_identity(url) for url in urls]
+    if len(urls) < 2 or any(identity is None or identity.casefold() != expected.casefold() for identity in identities):
+        raise UsageError("The actual fetch or push repository differs from this task's admitted origin; preserve its refs and reconcile the configured targets.", {})
+
+
 def base_checkout(contract):
     root = Path(contract["repository"]["worktree"]).resolve()
     common = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
     private = Path(git(root, "rev-parse", "--absolute-git-dir").strip())
     base = common.parent
+    verify_origin(base, contract["repository"]["github"])
     if (private == common or common.name != ".git" or base == root
             or Path(git(base, "rev-parse", "--show-toplevel").strip()).resolve() != base
             or origin_identity(git(base, "remote", "get-url", "origin").strip()) != contract["repository"]["github"]):
@@ -81,7 +91,7 @@ def inspect(contract, task, *, built=False):
         raise UsageError("The selected writer has uncommitted work; preserve it and obtain a complete built report before verification or release.", {})
     head = git(root, "rev-parse", "HEAD").strip()
     tree = git(root, "rev-parse", "HEAD^{tree}").strip()
-    changed = git(root, "diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z",
+    changed = git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z",
                   task["base_revision"], "HEAD", "--")
     paths = [path for path in changed.split("\0") if path]
     if len(paths) > 256 or any(not any(fnmatchcase(path, allowed) for allowed in task["allowed_paths"]) for path in paths):

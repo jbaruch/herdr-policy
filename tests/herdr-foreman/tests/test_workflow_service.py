@@ -22,6 +22,8 @@ from tests.test_workflow_contract import contract as declaration
 from foreman import config, policy_paths, progression_owner as authority, recovery, report_delivery, report_gates, supervision, tiers
 from foreman import workflow_dispatch, workflow_planning, workflow_service
 from foreman.errors import HerdrError
+from foreman.workflow_workspace import inspect as inspect_workspace
+from foreman.errors import UsageError
 from foreman.state import add_snapshot, save_state, state_lock
 from foreman.workflow_native import NativeWorkflowAdapter
 
@@ -214,6 +216,46 @@ class WorkflowServiceTest(unittest.TestCase):
         verdict = "VERDICT: {}\n".format("approved" if selected == "verified" else "blocking") if reviewing else ""
         Path(job["report"]).write_text(verdict + "WORKFLOW: " + json.dumps(claim) + "\n")
         return claim
+
+    def test_close_preserves_a_replacement_native_session(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: bool(self.progress()["jobs"]))
+            job = self.active()[0]
+            self.deliver(job)
+            runner.tick()
+            self.native.agents[job["agent"]]["agent_session"]["value"] = "replacement-native-session"
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertIn(job["pane_id"], self.native.panes)
+        self.assertTrue(next(row for row in supervision.load(self.path)["members"] if row["id"] == job["id"])["active"])
+
+    def test_close_replays_an_actually_absent_agent_and_pane(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            self.advance(runner, lambda: bool(self.progress()["jobs"]))
+            job = self.active()[0]
+            self.deliver(job)
+            runner.tick()
+            self.native.agents.pop(job["agent"])
+            self.native.panes.pop(job["pane_id"])
+            self.assertEqual(runner.tick()["data"]["status"], "effect_recorded")
+            self.assertEqual(runner.tick()["data"]["status"], "advanced")
+        self.assertFalse(next(row for row in supervision.load(self.path)["members"] if row["id"] == job["id"])["active"])
+
+    def test_rename_cannot_delete_an_unauthorized_source_path(self):
+        private = self.worktree / "private/config.py"
+        private.parent.mkdir()
+        private.write_text("private_fixture = True\n")
+        self.git("add", "private/config.py")
+        self.git("commit", "-m", "Private fixture scope base")
+        task = {**self.case_task(), "base_revision": self.git("rev-parse", "HEAD").strip()}
+        self.git("mv", "private/config.py", "src/config.py")
+        self.git("commit", "-m", "Private fixture out-of-scope rename")
+        with self.assertRaisesRegex(UsageError, "allowed paths"):
+            inspect_workspace(self.document, task, built=True)
 
     def case_task(self):
         return self.owner.state()["recovery"]["tasks"]["one"]

@@ -122,6 +122,15 @@ class WorkflowContractTest(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(UsageError):
                 workflow.validate_progress(bad)
 
+    def test_release_readiness_can_report_a_source_blocker_before_a_pr_exists(self):
+        value = claim("release", "blocking")
+        value["correction"] = {name: name in {"scope_unchanged", "cause_settled"} for name in workflow.REVIEW_CONTEXT}
+        value["findings"] = [{"schema_version": 1, "id": "readiness-defect", "severity": "blocking", "status": "open"}]
+        self.assertEqual(self.parse(value, role="release")["outcome"], "blocking")
+        value.update(outcome="ready", correction=None, findings=[])
+        with self.assertRaisesRegex(UsageError, "PR number"):
+            self.parse(value, role="release")
+
     def test_scope_or_causal_uncertainty_remains_explicit_without_blocking_findings(self):
         context = {"schema_version": 1, **{field: field in {
             "scope_unchanged", "cause_settled", "authority_current", "evidence_current"}

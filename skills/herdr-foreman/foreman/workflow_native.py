@@ -14,7 +14,8 @@ import subprocess
 import time
 
 from . import assign, config, lifecycle, members, recovery, report_delivery, report_gates, supervision, workflow_dispatch
-from .errors import StateError, UsageError
+from .errors import HerdrError, StateError, UsageError
+from .herdr import error_code
 from .launch import verify_running
 from .workflow_workspace import REPORT_LIMIT, capture
 
@@ -156,7 +157,17 @@ class NativeWorkflowAdapter:
             raise UsageError("Restore the actual validated report before closing its native assignment.", {})
         with report_gates.holding(self.capability.state_path):
             report_gates.require_clear(self.capability.state_path, job["report"], accepted)
-            closure = lifecycle.close(self.client, job["agent"], job["pane_id"], sleep=self.sleeper)
+            def same_native():
+                try:
+                    live = self.client.agent_get(job["agent"])
+                except HerdrError as exc:
+                    if error_code(exc) != "agent_not_found":
+                        raise
+                    return  # The lifecycle owner still proves pane absence/ownership.
+                if live.get("pane_id") != job["pane_id"] or report_delivery.native_identity(live) != job["native_session"]:
+                    raise UsageError("The native session changed after report delivery; preserve the replacement and reconcile the original close obligation.", {})
+            closure = lifecycle.close(self.client, job["agent"], job["pane_id"],
+                                      before_close=same_native, sleep=self.sleeper)
             outcome = "Workflow {}: {}".format(job["id"], "accepted" if accepted else "needs_work")
             drained = supervision.drain(self.capability.state_path)
             events = [event for event in drained["events"] if event["member"] == job["id"]]

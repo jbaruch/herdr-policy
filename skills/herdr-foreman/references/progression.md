@@ -123,6 +123,9 @@ permits self-approval. Current evidence retrieval follows
 The process returns this packet on its retained execution handle; it supplies
 no generic native asynchronous message service. Keep that handle available for
 the caller's completion/exception delivery rather than relying on a PID file.
+Heartbeat transaction contention retries within the existing liveness grace;
+authority failures still stop immediately. Persistent contention loses health
+instead of authorizing takeover or repeating an effect.
 
 ## Recover and return
 

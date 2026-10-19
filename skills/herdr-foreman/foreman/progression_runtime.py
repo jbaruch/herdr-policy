@@ -21,7 +21,7 @@ from .errors import StateError, UsageError
 from .errors import ForemanError
 from .diagnostics import stderr_warn
 from .process_lease import held, owned_by, validate_proof
-from .state import state_lock
+from .state import TransactionBusy, state_lock
 
 
 SCHEMA_VERSION = 2
@@ -137,9 +137,17 @@ def keep_alive(capability, clock):
     failures = []
     pulse(capability, clock())
     def beat():
+        busy_ticks = 0
         while not stop.wait(PULSE_SECONDS):
             try:
                 pulse(capability, clock())
+                busy_ticks = 0
+            except TransactionBusy as exc:
+                busy_ticks += 1
+                if busy_ticks * PULSE_SECONDS < LIVE_GRACE_SECONDS:
+                    continue
+                failures.append(exc)
+                return
             except ForemanError as exc:
                 failures.append(exc)
                 return
@@ -177,6 +185,8 @@ def continuation(state_path, data, at, plugin_root, *, probe=supervision_runtime
     # Legacy owner stores cannot contain the new admitted contract type. Do
     # not migrate/read their historical sources merely to check native Stop.
     raw = supervision.read_json(state_path)
+    if raw is None and any(row["schema_version"] == 2 for row in data["watchers"]):
+        raise StateError("Restore the missing primary task owner before Stop; retained task-executor evidence cannot be treated as an empty legacy store.", {})
     recovery = raw.get("recovery", {}) if isinstance(raw, dict) else {}
     rows = recovery.get("tasks", {}) if isinstance(recovery, dict) else {}
     if not isinstance(rows, dict) or not any(

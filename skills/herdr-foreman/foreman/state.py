@@ -164,6 +164,10 @@ def empty_state():
     return {"schema_version": STATE_SCHEMA_VERSION, "snapshots": [], "assignments": [], "recovery": empty_recovery(), "specialist_assessments": []}
 
 
+class TransactionBusy(StateError):
+    """Another live owner holds this nonblocking transaction; no state was read."""
+
+
 @contextmanager
 def state_lock(path):
     """Serialize owner transactions using a live OS lock, never a stale file flag."""
@@ -177,7 +181,7 @@ def state_lock(path):
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise StateError("Another foreman command owns this state transaction. Wait for that process; do not delete the lock or start a second dispatch.", {}) from None
+            raise TransactionBusy("Another foreman command owns this state transaction. Wait for that process; do not delete the lock or start a second dispatch.", {}) from None
         except OSError as exc:
             raise StateError("Cannot lock state {}: {}. Use a filesystem supporting process locks before dispatch.".format(path, exc), {}) from None
         yield

@@ -9,10 +9,13 @@ import copy
 from datetime import timedelta
 import json
 import subprocess
+import threading
 import unittest
+from unittest.mock import patch
 
 from foreman import progression_runtime as runtime, supervision, supervision_runtime
 from foreman.errors import ForemanError
+from foreman.state import TransactionBusy, state_lock
 from tests import test_progression_owner as fixture
 
 
@@ -51,6 +54,26 @@ class ProgressionRuntimeTest(unittest.TestCase):
             self.assertEqual(data["events"], [])
             self.assertEqual(self.case.path.read_bytes(), before)
             self.assertEqual(self.health(self.at(135))["state"], "live")
+
+    def test_transient_real_transaction_contention_does_not_kill_heartbeat(self):
+        collided, recovered = threading.Event(), threading.Event()
+        original = runtime.pulse
+        def observed(*args, **kwargs):
+            try:
+                result = original(*args, **kwargs)
+            except TransactionBusy:
+                collided.set()
+                raise
+            if collided.is_set():
+                recovered.set()
+            return result
+        with self.case.session() as cap, patch.object(runtime, "PULSE_SECONDS", 0.02), patch.object(runtime, "pulse", side_effect=observed):
+            with runtime.keep_alive(cap, lambda: fixture.AT) as require_healthy:
+                with state_lock(self.case.path):
+                    self.assertTrue(collided.wait(5), "The fixture did not exercise real lock contention")
+                self.assertTrue(recovered.wait(5), "The executor did not recover its next heartbeat")
+                require_healthy()
+                self.assertEqual(self.health()["state"], "live")
 
     def test_real_child_process_can_monitor_without_a_foreman_model_turn(self):
         child = subprocess.Popen([sys.executable, "-c", CHILD, str(fixture.ROOT / "skills/herdr-foreman"),

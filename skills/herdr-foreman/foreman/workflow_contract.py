@@ -193,7 +193,7 @@ def claim(body, task, role, profile, head, criteria):
     if role == "release":
         pr = value["pull_request"]
         if (pr is not None and (type(pr) is not int or pr < 1)
-                or value["outcome"] != "blocked" and pr is None):
+                or value["outcome"] in ("ready", "delivered") and pr is None):
             raise UsageError("Bind release preparation to its actual GitHub PR number.", {})
         snapshot = value["review_snapshot"]
         if ((snapshot is not None and (not isinstance(snapshot, str) or re.fullmatch(r"[a-f0-9]{64}", snapshot) is None))

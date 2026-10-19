@@ -54,6 +54,18 @@ class WorkflowContinuationTest(unittest.TestCase):
             self.assertIsNone(self.check())
         self.assertIsNotNone(self.check())
 
+    def test_missing_primary_owner_never_erases_retained_task_obligations(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            self.case.runner(capability)
+            progression_runtime.pulse(capability, self.case.now())
+        self.case.path.unlink()
+        result = self.check()
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("missing primary task owner", result["reason"])
+
     def test_live_executor_covers_its_members_and_never_an_unrelated_obligation(self):
         self.case.admit()
         with self.case.owner.session() as capability:

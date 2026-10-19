@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 
 from copy import deepcopy
 import json
+import os
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -35,6 +36,10 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.calls = []
         self.fail_helper = None
         self.invalid_package = False
+        self.failed_run = False
+        self.moderation_version = None
+        self.report_version = None
+        self.report_tag = None
         self.bundle = self.root / "release-skill-fixture"
         self.bundle.mkdir()
         for name in ("check-closing-issues.py", "resolve-publish-run.sh", "confirm-tessl-landed.sh",
@@ -60,6 +65,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         if argv[:2] == ["gh", "api"]:
             payload = self.pr
         elif argv[:3] == ["gh", "run", "watch"]:
+            if self.failed_run and "--exit-status" in argv:
+                return subprocess.CompletedProcess(argv, 1, None, "Private failed publisher fixture.")
             payload = None
         elif argv[:2] == ["acr", "validate"]:
             payload = {"ok": True, "result": None if self.invalid_package else {"valid": True, "version": "0.4.0"}}
@@ -71,7 +78,7 @@ class WorkflowReleaseTest(unittest.TestCase):
                 "check-closing-issues.py": {"verdict": "ok", "closing": [], "partial_references": [], "no_issue": True},
                 "resolve-publish-run.sh": {"database_id": 42},
                 "confirm-tessl-landed.sh": self.landed,
-                "verify-moderation-cleared.sh": {"ok": True, "version": self.landed},
+                "verify-moderation-cleared.sh": {"ok": True, "version": self.moderation_version or self.landed},
                 "verify-github-release.sh": {"ok": True, "tag": "v0.4.0", "assets": 3}}[helper]
         stdout = None if options.get("stdout") == subprocess.DEVNULL else (
             payload + "\n" if isinstance(payload, str) else json.dumps(payload) + "\n")
@@ -105,8 +112,8 @@ class WorkflowReleaseTest(unittest.TestCase):
             review_evidence=recovery.receipt(str(review_path))[0], publication={"schema_version": 1,
                 "baseline": "0.3.1" if channels["tessl"] else None,
                 "baseline_at": self.case.now() if channels["tessl"] else None,
-                "publisher_run": 42 if published else None, "tag": "v0.4.0" if channels["acr"] else None,
-                "tessl_version": self.landed if channels["tessl"] else None})
+                "publisher_run": 42 if published else None, "tag": self.report_tag or ("v0.4.0" if channels["acr"] else None),
+                "tessl_version": (self.report_version or self.landed) if channels["tessl"] else None})
         Path(job["report"]).write_text("WORKFLOW: " + json.dumps(claim) + "\n")
         return claim
 
@@ -152,6 +159,80 @@ class WorkflowReleaseTest(unittest.TestCase):
                                      "verify-moderation-cleared.sh", "verify-github-release.sh"])
             resolution = next(call for call in self.calls if len(call) > 1 and Path(call[1]).name == "resolve-publish-run.sh")
             self.assertEqual(resolution[4:], [self.pr["merge_commit_sha"], "publish.yml", "main"])
+
+    def publication(self, *, acr=True):
+        self.case.document["publication"] = {"tessl": {"workspace": "fixture", "plugin": "package"},
+                                             "acr": acr, "workflow": "publish.yml"}
+        self.case.document["effects"].append("publish")
+        self.case.admit()
+
+    def test_failed_publisher_never_confirms_a_channel(self):
+        self.publication()
+        self.failed_run = True
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        delivery = self.case.progress()["delivery"]
+        self.assertFalse(delivery["accepted"] or delivery["tessl_confirmed"] or delivery["acr_confirmed"])
+        self.assertTrue(self.case.worktree.is_dir())
+
+    def test_moderation_must_name_the_observed_landed_version(self):
+        self.publication()
+        self.moderation_version = "0.3.9"
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            self.case.advance(runner, lambda: self.case.progress()["delivery"]["tessl_version"] is not None)
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertEqual(self.case.progress()["delivery"]["tessl_version"], self.landed)
+        self.assertFalse(self.case.progress()["delivery"]["tessl_confirmed"])
+
+    def test_native_and_independent_observed_versions_must_agree(self):
+        self.publication()
+        self.report_version = "0.3.9"
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            runner.tick()
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertFalse(self.case.progress()["delivery"]["tessl_confirmed"])
+        self.assertFalse(self.case.progress()["delivery"]["accepted"])
+
+    def test_tessl_only_delivery_refuses_an_unselected_acr_tag(self):
+        self.publication(acr=False)
+        self.report_tag = "v0.4.0"
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "merge", delivery=self.deliver)
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertFalse(self.case.progress()["delivery"]["accepted"])
+
+    def test_release_resolves_project_policy_from_the_admitted_base_checkout(self):
+        self.case.admit()
+        with self.case.owner.session() as capability, patch.dict(os.environ):
+            os.environ.pop("HERDR_CODING_POLICY_ROOT", None)
+            runner = self.runner(capability)
+            bundle = workflow_release.WorkflowReleaseAdapter._bundle(self.adapter, runner)
+        self.assertEqual(bundle, self.case.repository / ".tessl/plugins/jbaruch/coding-policy/skills/release")
+        self.assertFalse((self.case.worktree / ".tessl").exists())
+
+    def test_separate_foreign_push_url_prevents_cleanup_effects(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "cleanup", delivery=self.deliver)
+            self.git(self.case.repository, "config", "--add", "remote.origin.pushurl", "https://github.com/other/repository.git")
+            count = len(self.calls)
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertFalse(any("push" in call or "remove" in call for call in self.calls[count:]))
+        self.assertTrue(self.case.worktree.is_dir())
+        self.assertEqual(self.case.progress()["delivery"]["cleanup_step"], 0)
 
     def test_unknown_channel_never_claims_acceptance_or_starts_teardown(self):
         self.case.document["publication"] = {"tessl": {"workspace": "fixture", "plugin": "package"},

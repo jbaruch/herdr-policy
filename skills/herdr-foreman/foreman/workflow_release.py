@@ -51,7 +51,7 @@ class WorkflowReleaseAdapter:
         if explicit is not None and not Path(explicit).is_absolute():
             raise UsageError("Use an absolute coding-policy package root for the complete selected release bundle.", {})
         return policy_paths.coding_release(Path(__file__).resolve().parents[1],
-            Path(service.document["repository"]["worktree"]), Path.home() / ".tessl", explicit)
+            workspace.base_checkout(service.document), Path.home() / ".tessl", explicit)
 
     def _helper(self, bundle, name, arguments, cwd, *, json_output=True):
         script = bundle / name
@@ -112,6 +112,8 @@ class WorkflowReleaseAdapter:
                 raise UsageError("The delivered release claim does not bind its full reading to a ready current-head canonical watcher result.", {})
             publication = claim["publication"]
             channels = service.document["publication"]
+            if not channels["acr"] and publication["tag"] is not None:
+                raise UsageError("A release without an ACR channel cannot claim an ACR publication tag.", {})
             if channels["tessl"] is not None:
                 if publication["baseline"] is None or supervision.timestamp(publication["baseline_at"]) >= merged_at:
                     raise UsageError("Preserve the actual pre-merge Tessl baseline and its capture time; a post-merge or absent read cannot confirm this publication.", {})
@@ -137,7 +139,7 @@ class WorkflowReleaseAdapter:
             run = resolved.get("database_id")
             if type(run) is not int or run < 1 or run != claim["publication"]["publisher_run"]:
                 raise UsageError("The unique source/workflow/push/ref publisher differs from the native release's run; preserve both identities for reconciliation.", {})
-            self._run(["gh", "run", "watch", str(run), "--repo", repo["github"]], cwd, quiet=True)
+            self._run(["gh", "run", "watch", str(run), "--repo", repo["github"], "--exit-status"], cwd, quiet=True)
             return {"state": "publishing", "publisher_run": run}
         if type(run) is not int or run < 1 or run != claim["publication"]["publisher_run"]:
             raise UsageError("The unique source/workflow/push/ref publisher differs from the native release's run; preserve both identities for reconciliation.", {})
@@ -149,9 +151,11 @@ class WorkflowReleaseAdapter:
                     progress["publication_baseline"], run], cwd, json_output=False)
                 if not isinstance(landed, str) or re.fullmatch(r"\d+\.\d+\.\d+", landed) is None:
                     raise StateError("The canonical registry confirmation returned no actual landed version; retain the unconfirmed channel.", {})
+                if landed != claim["publication"]["tessl_version"]:
+                    raise UsageError("The native release report and independent canonical helper observed different landed Tessl versions; preserve both for reconciliation.", {})
                 return {"state": "publishing", "tessl_version": landed}
             moderation = self._helper(bundle, "verify-moderation-cleared.sh", [tessl["workspace"], tessl["plugin"], landed], cwd)
-            if not isinstance(moderation, dict) or moderation.get("ok") is not True:
+            if not isinstance(moderation, dict) or moderation.get("ok") is not True or moderation.get("version") != landed:
                 raise UsageError("The canonical moderation helper did not confirm the actual landed version.", {})
             return {"state": "publishing", "tessl_confirmed": True}
         if channels["acr"] and not delivery["acr_confirmed"]:
@@ -201,6 +205,7 @@ class WorkflowReleaseAdapter:
             return self._run(["git", "--no-pager", "-C", base, *arguments], base, allow_failure=allow_failure)
         if workspace.origin_identity(git("remote", "get-url", "origin").stdout.strip()) != repo["github"]:
             raise UsageError("The cleanup base's actual origin changed; preserve this task's remaining local work.", {})
+        workspace.verify_origin(base, repo["github"])
         if (Path(base).resolve() != Path(base)
                 or Path(git("rev-parse", "--show-toplevel").stdout.strip()).resolve() != Path(base)):
             raise UsageError("The cleanup base moved or became an alias; preserve its current owner instead of mutating a substitute checkout.", {})
