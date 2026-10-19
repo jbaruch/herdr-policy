@@ -106,6 +106,16 @@ class OwnerExportTest(unittest.TestCase):
         self.assertEqual(len(result["tasks"]), 1)
         self.assertEqual(result["assignments"], [])
 
+    def test_send_at_the_excluded_end_boundary_remains_only_a_reservation(self):
+        owner, supervision = inputs()
+        owner["recovery"]["events"] = [
+            transport_event("dispatch_reserved", "2026-10-10T00:01:00Z"),
+            transport_event("dispatch_sending", END.isoformat()),
+            transport_event("dispatch_recorded", END.isoformat(), status="applied")]
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(len(result["tasks"]), 1)
+        self.assertEqual(result["assignments"], [])
+
     def test_later_result_reconciliation_or_retry_cannot_remove_or_resolve_an_unknown_send(self):
         for outcome in ("applied", "not_sent", "retry"):
             with self.subTest(outcome=outcome):

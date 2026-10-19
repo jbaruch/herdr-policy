@@ -242,7 +242,7 @@ def dispatch_attempts(store, end):
                 continue
             status, sent, recorded = "reserved", None, False
             for event in history:
-                if instant(event["at"]) > end:
+                if instant(event["at"]) >= end:
                     continue
                 kind, data = event["kind"], event["details"]
                 if kind == "dispatch_sending":
