@@ -208,7 +208,9 @@ not authorize clearing operator holds. Only when existing authority permits
 resumption and every unresumed hold's condition is satisfied, use
 `supervision-resume --compact --hold <observed-id>`, repeating `--hold` for the
 complete inspected set. The owner checks that set under its transaction lock;
-a new or otherwise changed set refuses without clearing holds. Skip resume when
+a new or otherwise changed set refuses without clearing holds. Every resume
+format requires this complete set; direct owner calls also reject an omitted set.
+Skip resume when
 no hold needs resuming. `hold: false` at a changed event boundary does not cancel
 an unresumed operator hold. Reconcile sources, pending events and all relevant
 pages before the saved continuation or watch loop. An unsatisfied hold condition

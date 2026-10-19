@@ -297,6 +297,27 @@ class ContextViewsTest(CliCase):
         self.assertTrue(resumed["resumed"])
         self.assertTrue(all(row["resumed_at"] is not None for row in store.load(self.state)["holds"]))
 
+    def test_resume_requires_inspected_holds_in_every_output_format(self):
+        self.bind()
+        store.hold(self.state, {"id": "operator-decision", "kind": "waiting_for_user",
+                               "resume_condition": "The operator supplies the saved decision.",
+                               "evidence": [str(self.source)], "dispositions": []}, AT)
+        before = store.store_path(self.state).read_bytes()
+        for options in ([], ["--compact"]):
+            self.out, self.err = io.StringIO(), io.StringIO()
+            code, out, err = self.run_cli(self.base() + ["supervision-resume", "--now", AT] + options)
+            self.assertEqual((code, out), (1, ""))
+            self.assertIn("holds_required", err)
+            self.assertEqual(store.store_path(self.state).read_bytes(), before)
+        with self.assertRaisesRegex(UsageError, "requires"):
+            store.resume(self.state, AT)
+        self.assertEqual(store.store_path(self.state).read_bytes(), before)
+        self.out, self.err = io.StringIO(), io.StringIO()
+        code, out, err = self.run_cli(self.base() + ["supervision-resume", "--hold", "operator-decision", "--now", AT])
+        self.assertEqual(code, 0, err)
+        self.assertTrue(json.loads(out)["resumed"])
+        self.assertIsNotNone(store.load(self.state)["holds"][0]["resumed_at"])
+
     def test_many_holds_can_be_inspected_before_atomic_resume(self):
         self.bind()
         names = ["hold-{:02}".format(index) for index in range(40)]

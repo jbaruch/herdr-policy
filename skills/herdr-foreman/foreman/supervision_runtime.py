@@ -380,8 +380,6 @@ def run_command(args, state_path, now, *, client=None, clock=None, sleeper=None,
         return result
     if action == "resume":
         expected = getattr(args, "expected_holds", None)
-        if getattr(args, "compact", False) and expected is None:
-            raise UsageError("Compact resume requires --hold for every inspected unresumed hold. A context reset does not authorize clearing holds; skip resume when no hold needs resuming.", {})
         result = store.resume(state_path, at, expected_holds=expected)
         if getattr(args, "compact", False):
             return context_output.bounded({"schema_version": 1, "resumed": result["resumed"],

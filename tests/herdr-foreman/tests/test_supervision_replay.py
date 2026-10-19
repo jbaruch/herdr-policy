@@ -146,7 +146,7 @@ class SupervisionReplayTest(unittest.TestCase):
     def test_resume_cannot_initialize_missing_owner_before_rebind(self):
         store.store_path(self.path).unlink()
         with self.assertRaisesRegex(StateError, "missing or unbound"):
-            store.resume(self.path, LATER)
+            store.resume(self.path, LATER, expected_holds=[])
         self.assertFalse(store.store_path(self.path).exists())
 
     def test_dangling_owner_symlink_is_not_overwritten(self):
@@ -204,7 +204,7 @@ class SupervisionReplayTest(unittest.TestCase):
         self.assertIsNone(store.load(other)["binding"])
         self.assertEqual(store.load(other)["members"], [])
         with self.assertRaisesRegex(StateError, "missing or unbound"):
-            store.resume(other, LATER)
+            store.resume(other, LATER, expected_holds=[])
         store.bind(other, other_who, LATER, root=self.bindings)
         self.assertEqual(store.load(other)["binding"]["identity"], other_who)
 

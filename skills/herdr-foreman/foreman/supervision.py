@@ -425,13 +425,16 @@ def hold(state_path, record, at):
 
 def resume(state_path, at, *, expected_holds=None):
     timestamp(at)
-    if expected_holds is not None and (not isinstance(expected_holds, list)
-                                       or not all(isinstance(value, str) and value for value in expected_holds)
-                                       or len(set(expected_holds)) != len(expected_holds)):
+    if expected_holds is None:
+        raise UsageError("Resume requires the complete inspected hold set (--hold for each CLI hold). A context reset does not authorize clearing holds; skip resume when no hold needs resuming.",
+                         {"reason": "holds_required"})
+    if (not isinstance(expected_holds, list)
+            or not all(isinstance(value, str) and value for value in expected_holds)
+            or len(set(expected_holds)) != len(expected_holds)):
         raise UsageError("Name each inspected unresumed hold exactly once before resuming.", {})
     def mutate(data):
         current = {row["id"] for row in data["holds"] if row["resumed_at"] is None}
-        if expected_holds is not None and set(expected_holds) != current:
+        if set(expected_holds) != current:
             raise UsageError("Unresumed holds changed since inspection. Read the bounded supervision status and verify every current hold's condition before resuming.",
                              {"reason": "holds_changed", "expected_count": len(expected_holds), "current_count": len(current)})
         for row in data["holds"]:
