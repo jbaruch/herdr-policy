@@ -799,7 +799,8 @@ one-replacement validation lives in the owner module's `validate` function.
 ### Admitted Task Progression
 
 Recovery store version 19 owns task metadata version 2. The single writer is
-the herdr-foreman owner through `progression-admit`, `progression-return` and
+the herdr-foreman owner through `progression-admit`, `progression-return`,
+`progression-reconcile` and
 the admitted `progression-run` loop. All changes share the canonical state
 transaction lock. Legacy task metadata remains version 1 with no grant;
 upgrading an older store never invents a service handoff. A version-18-or-older
@@ -821,6 +822,13 @@ readback. The cursor advances only after the exact expected task dispatches
 are owner-recorded as applied. A persisted pending intent with incomplete
 readback remains uncertain after restart. Completion of this cursor means the
 prepared assignment chain ended; it proves no acceptance, release or outcome.
+
+`progression-reconcile` clears only a complete expected dispatch set already
+recorded `not_sent`, with no active enrollment and no live service lease. It
+keeps the cursor and grant unchanged. One `progression_intent_reconciled` event
+records the task, expected generation, intent and explicit authorization in
+`details`; that owner receipt supports idempotent replay. Missing or partially
+applied sets do not qualify. No new store or parallel task history is created.
 
 The kernel lease is a dedicated empty file, not a schema-bearing authority
 record. Process death releases its lock but neither returns the task nor

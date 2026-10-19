@@ -35,7 +35,10 @@ GitHub-history copy belongs in this contract.
 
 `after` names earlier steps. `gate` is `delivered` or `assessed`; delivery uses
 the canonical native checkpoint and exact enrolled identity. Assessment also
-requires the existing enrollment's accepted resolution. Neither gate supplies
+requires the existing enrollment's accepted resolution. A closed enrollment
+uses its captured ledger prefix, current canonical accepted assessment, report
+contract and native final source; it does not require the removed pane. Missing,
+changed or contradictory evidence wakes the foreman. Neither gate supplies
 acceptance of the task. Supported responsibilities, budgets, refusal predicates
 and parser contracts live in `skills/herdr-foreman/foreman/progression_service.py`.
 
@@ -67,6 +70,15 @@ without another send. Missing, partial or uncertain readback preserves the
 pending intent and stops progression. A dead process or free lease proves no
 effect outcome. Reconcile through the existing dispatch/native owners; the
 initial adapter does not automatically clear an ambiguous service intent.
+
+After the dispatch owners prove every expected member of a pending step
+`not_sent` and settle its enrollments, the verified bound foreman may run
+`progression-reconcile --state OWNER --record FILE`. The record contains `task`,
+actual `expected_generation`, exact `intent` and explicit `authorization`.
+The service lease must be free. This clears only that pending intent, leaves
+the cursor unchanged and records one owner reconciliation receipt. It does not
+dispatch, resume a hold or accept work. Missing, uncertain or partly applied
+sets remain pending. The same completed reconciliation replays without a write.
 
 The bound foreman may record current exception assessments through the normal
 owners without taking the service's dispatch lease. Returning a task requires

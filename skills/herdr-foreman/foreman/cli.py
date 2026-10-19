@@ -1460,7 +1460,10 @@ def cmd_apply(args, client=None, warn=None, trace=None):
 
 def _apply(args, client, warn, trace, hold_gates):
     pinned = getattr(args, "service_inputs", None)
-    config_payload = json.loads(pinned[str(Path(_config_path(args)).resolve())]) if pinned is not None else None
+    try:
+        config_payload = json.loads(pinned[str(Path(_config_path(args)).resolve())]) if pinned is not None else None
+    except (KeyError, UnicodeError, ValueError):
+        raise UsageError("Restore the admitted UTF-8 config JSON before dispatch; no replacement configuration is inferred.", {}) from None
     templates = (config_owner.parse_config(config_payload, source=str(_config_path(args)))
                  if pinned is not None else load_config(_config_path(args)))
     document = _load_assignments(args.assignments, document=True, contents=pinned)
@@ -3338,7 +3341,7 @@ COMMANDS = {
     "close-member": cmd_close_member,
     "check-member": cmd_check_member,
     "load-set": cmd_load_set,
-    **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return")},
+    **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return", "progression-reconcile")},
     "progression-run": cmd_progression_run,
     **{command: cmd_recovery for command in ("task", "checkpoint", "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report", "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work", "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review", "recover-report", "assess-specialist", "close-task")},
     "detect-triggers": cmd_detect_triggers,

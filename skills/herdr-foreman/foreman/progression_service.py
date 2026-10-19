@@ -17,8 +17,9 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 
-from . import load_set, members, progression_owner as authority, recovery, report_delivery, supervision
+from . import config, load_set, members, progression_owner as authority, recovery, report_delivery, supervision
 from .assign import normalize_assignments
 from .errors import UsageError
 from .state import save_state, state_lock
@@ -32,16 +33,20 @@ MIN_INTERVAL, MAX_INTERVAL = 1, 60
 ALLOWED_ROLES = frozenset({"developer", "reviewer", "tester", "consultation"})
 
 
-def read_contract(path):
-    """Bound configuration retrieval before parsing or emitting any of it."""
+def capture_contract(path):
+    """Return one bounded contract snapshot and its exact byte receipt."""
     try:
         with Path(path).open("rb") as stream:
             body = stream.read(CONTRACT_BYTES + 1)
         if len(body) > CONTRACT_BYTES:
             raise UsageError("Keep the active progression contract within its byte budget; reference current inputs instead of copying history.", {})
-        return json.loads(body)
+        return {"path": str(path), "sha256": hashlib.sha256(body).hexdigest()}, json.loads(body)
     except (OSError, ValueError):
         raise UsageError("Restore the admitted bounded workflow JSON before starting progression.", {}) from None
+
+
+def read_contract(path):
+    return capture_contract(path)[1]
 
 
 def validate_progress(value):
@@ -105,8 +110,9 @@ def prepare_contract(value, task):
         captured_inputs = _verify_inputs(row)
         try:
             plan = json.loads(captured_inputs[str(Path(args.assignments).resolve())])
+            config.parse_config(json.loads(captured_inputs[str(Path(args.config).resolve())]), source=args.config)
         except (OSError, ValueError):
-            raise UsageError("Restore the captured assignment plan before progression.", {}) from None
+            raise UsageError("Restore valid captured assignment-plan and config JSON before progression.", {}) from None
         roles = set(normalize_assignments(plan))
         if not roles or not roles.issubset(ALLOWED_ROLES):
             raise UsageError("This progression adapter supports implementation and independent verification only; release and specialist/profile transitions need their verified adapters.", {})
@@ -148,7 +154,10 @@ class ProgressionService:
         capability.require_current(capability.state_path, state, capability.task)
         grant = authority.current_grant(state, capability.task)
         assert grant is not None
-        self.steps = prepare_contract(read_contract(grant["contract"]["path"]), capability.task)
+        captured, document = capture_contract(grant["contract"]["path"])
+        if captured != grant["contract"]:
+            raise UsageError("Restore the admitted contract before preparing its dispatch chain.", {})
+        self.steps = prepare_contract(document, capability.task)
 
     def _check_native(self, enrollment):
         binary = self.client.context.executable
@@ -193,6 +202,41 @@ class ProgressionService:
         return supervision.digest({"assignment": supervision.expected_assignment(member),
                                    "active": member["active"], "resolution": member["resolution"]})
 
+    def _closed_dependency(self, state, member):
+        """Verify canonical accepted evidence after the scoped pane has closed."""
+        expected = supervision.expected_assignment(member)
+        resolution = member["resolution"]
+        evidence = resolution["evidence"] if resolution else []
+        if len(evidence) != 1:
+            return False
+        captured = evidence[0]
+        dispatch = next((row for row in state["recovery"]["dispatches"] if row["id"] == member["id"]), None)
+        if dispatch is None or any(dispatch[key] != expected[key] for key in ("task", "agent")):
+            return False
+        identity = report_delivery.native_identity({"agent_session": expected["native_session"]})
+        if identity is None or not Path(expected["report"]).is_file():
+            return False
+        try:
+            with Path(captured["path"]).open("rb") as stream:
+                body = stream.read(CAPTURE_BYTES + 1)
+            if (len(body) > CAPTURE_BYTES or len(body) < captured["size"]
+                    or hashlib.sha256(body[:captured["size"]]).hexdigest() != captured["sha256"]):
+                return False
+            with tempfile.NamedTemporaryFile(suffix=".md") as ledger:
+                ledger.write(body)
+                ledger.flush()
+                event = members.assessed_event(ledger.name, expected, self.capability.state_path)
+            if (event["decision"] != "accepted" or resolution["outcome"] not in
+                    {"accepted", "Task ledger event {}: accepted".format(event["id"])}):
+                return False
+            members._require_contract(self.capability.state_path, member["id"], expected["report"])
+            path = report_delivery.source_path(identity)
+            source = report_delivery.read_native_source(path) if path is not None else None
+            return source is not None and report_delivery.bare_final(
+                report_delivery.source_final(source[1], identity["agent"], identity["value"]), expected["report"])
+        except (OSError, UnicodeError, ValueError, UsageError):
+            return False
+
     def _dependencies(self, state, step):
         """Probe without holding the global task-state transaction lock."""
         cap = self.capability
@@ -210,8 +254,11 @@ class ProgressionService:
                     resolution = member["resolution"]
                     if member["active"] or resolution is None:
                         return self._view(state, status="waiting", reason="assessment_required"), stamps
-                    if resolution["outcome"] != "accepted":
-                        return self._view(state, status="exception", wake=True, reason="dependency_not_accepted"), stamps
+                if not member["active"]:
+                    if not self._closed_dependency(state, member):
+                        return self._view(state, status="exception", wake=True, reason="closed_dependency_evidence_unproved"), stamps
+                    stamps[identifier] = self._member_stamp(member)
+                    continue
                 expected = supervision.expected_assignment(member)
                 info = self.client.agent_get(expected["agent"])
                 native = report_delivery.native_identity(info)
@@ -290,10 +337,10 @@ class ProgressionService:
                                stdout=out, stderr=err, client=self.client, service_capability=cap)
         with state_lock(path):
             state = authority._load(path)
-            cap.require_current(path, state, cap.task)
             progress = state["recovery"]["tasks"][cap.task]["progression"]
             if code != 0:
                 return self._view(state, status="exception", wake=True, reason="dispatch_owner_refused", refusal=self._refusal(err.getvalue()))
+            cap.require_current(path, state, cap.task)
             # Even an exit-zero adapter must prove the exact expected owner
             # dispatches. No output string or process exit grants progression.
             applied = {item["id"] for item in state["recovery"]["dispatches"]

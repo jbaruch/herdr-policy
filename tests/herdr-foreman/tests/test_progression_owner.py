@@ -83,6 +83,14 @@ class ProgressionOwnerTest(unittest.TestCase):
             self.admit()
         self.assertEqual(self.path.read_bytes(), before)
 
+    def test_admission_bounds_the_contract_before_writing_a_grant(self):
+        from foreman.progression_service import CONTRACT_BYTES
+        self.contract.write_bytes(b" " * (CONTRACT_BYTES + 1))
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "byte budget"):
+            self.admit()
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_cli_blocks_legacy_task_mutation_before_other_work(self):
         self.admit()
         record = self.root / "command.json"

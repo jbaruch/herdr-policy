@@ -35,11 +35,10 @@ TASK_MUTATIONS = frozenset({
     "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report",
     "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work",
     "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review",
-    "recover-report", "assess-specialist",
+    "recover-report", "assess-specialist", "close-member", "supervision-ack", "supervision-resolve",
     "foreman-reset", "foreman-reset-deliver", "foreman-reset-reconcile", "start-foreman",
 })
-SERVICE_COMMANDS = frozenset({"plan", "apply", "check-member", "close-member", "record-report",
-                              "supervision-resolve", "supervision-ack", "recover-report"})
+SERVICE_COMMANDS = frozenset({"apply"})
 JUDGMENT_COMMANDS = frozenset({"record-report", "close-member", "supervision-ack", "supervision-resolve",
                               "assess-specialist", "record-refusal", "checkpoint", "diagnose", "authorize-corrections",
                               "authorize-approach", "reconcile", "recover-no-work", "reconcile-bootstrap",
@@ -130,6 +129,7 @@ def _settled(state, supervised, task):
 
 def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     """Called under the canonical state lock; never bind, resume or start a worker."""
+    from .progression_service import capture_contract
     fields = {"task", "expected_generation", "authorization"} | (set() if returning else {"service_id", "lease_path", "contract"})
     if not isinstance(data, dict) or set(data) != fields:
         raise UsageError("Supply the complete task authority handoff record and explicit authorization.", {})
@@ -161,7 +161,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
              "authorization": deepcopy(data["authorization"]), "at": at}
     if not returning:
         version, digest = loaded_policy(plugin_root)
-        captured, _body = recovery.receipt(data["contract"])
+        captured, _document = capture_contract(data["contract"])
         grant.update(service_id=data["service_id"], lease_path=data["lease_path"], contract=captured,
                      policy={"version": version, "digest": digest}, binding=_binding(supervised))
     validate_grant(grant)
@@ -204,6 +204,7 @@ class ServiceCapability:
         self._prepared = None
 
     def require_current(self, state_path, state, task):
+        from .progression_service import capture_contract
         self.lease.require_current()
         if Path(state_path).resolve() != self.state_path or task != self.task:
             raise UsageError("The progression capability covers only its admitted state and task.", {})
@@ -222,18 +223,20 @@ class ServiceCapability:
         version, digest = loaded_policy(self.plugin_root)
         if grant["policy"] != {"version": version, "digest": digest}:
             raise UsageError("Loaded service policy changed; stop effects and obtain an explicit new authority handoff.", {})
-        captured, _body = recovery.receipt(grant["contract"]["path"])
+        captured, _document = capture_contract(grant["contract"]["path"])
         if captured != grant["contract"]:
             raise UsageError("The admitted workflow contract changed; preserve the current task and hand it off explicitly.", {})
 
     @contextmanager
     def prepared_step(self, step_id):
-        from .progression_service import read_contract
+        from .progression_service import capture_contract
         state = _load(self.state_path)
         self.require_current(self.state_path, state, self.task)
         grant = current_grant(state, self.task)
         assert grant is not None
-        contract = read_contract(grant["contract"]["path"])
+        captured, contract = capture_contract(grant["contract"]["path"])
+        if captured != grant["contract"]:
+            raise UsageError("Restore the admitted contract before selecting its prepared step.", {})
         step = next((row for row in contract["steps"] if row["id"] == step_id), None)
         if step is None or self._prepared is not None:
             raise UsageError("Select one admitted dispatch step at a time; do not substitute another operation.", {})
@@ -298,7 +301,7 @@ def command_tasks(args, state_path, state):
 
 
 def require_command(state_path, args, capability=None, client=None, client_factory=None):
-    """Run inside the same state transaction as the selected owner command."""
+    """Fence primary transactions and independently locked supervision judgments."""
     if capability is None and getattr(args, "dry_run", False):
         return
     if capability is None and args.command not in TASK_MUTATIONS:
@@ -366,8 +369,64 @@ def service_session(state_path, task, generation, service_id, plugin_root):
         yield capability
 
 
+def reconcile_intent(state_path, data, at, client):
+    """Clear only a complete owner-proved no-send set, never infer an effect."""
+    from .progression_service import capture_contract, intent_id, prepare_contract
+    if not isinstance(data, dict) or set(data) != {"task", "expected_generation", "intent", "authorization"}:
+        raise UsageError("Supply task, current generation, pending intent and explicit reconciliation authorization.", {})
+    recovery.text(data["task"], "task")
+    recovery.text(data["intent"], "pending intent")
+    if len(json.dumps(data).encode("utf-8")) > GRANT_BYTES:
+        raise UsageError("Keep intent reconciliation within the owner record budget; reference the task's GitHub issue for narrative.", {})
+    recovery.authorization(data["authorization"])
+    supervision.timestamp(at)
+    state = _load(state_path)
+    row = recovery.task_record(state["recovery"], data["task"])
+    grant = current_grant(state, data["task"])
+    if (grant is None or grant["mode"] != "service" or type(data["expected_generation"]) is not int
+            or data["expected_generation"] != grant["generation"]):
+        raise UsageError("Read the current service grant and reconcile its actual generation; do not replace task authority.", {})
+    supervised = verify_foreman(state_path, client)
+    progress = row.get("progression")
+    if not progress or progress["pending"] is None:
+        replay = any(event["kind"] == "progression_intent_reconciled" and event["task"] == data["task"]
+                     and event["details"] == data for event in state["recovery"]["events"])
+        if replay:
+            return {"task": data["task"], "intent": data["intent"], "outcome": "not_sent", "replayed": True,
+                    "authorizes_dispatch": False}
+        raise UsageError("No matching pending intent exists; preserve the current cursor and inspect task authority.", {})
+    captured, document = capture_contract(grant["contract"]["path"])
+    if captured != grant["contract"]:
+        raise UsageError("Restore the admitted contract before reconciling its expected dispatch set.", {})
+    steps = prepare_contract(document, data["task"])
+    if progress["cursor"] >= len(steps):
+        raise UsageError("Restore the pending cursor's admitted step before intent reconciliation.", {})
+    step = steps[progress["cursor"]]
+    identifier = intent_id(data["task"], grant["generation"], step["id"])
+    if (progress["pending"] != {"schema_version": 1, "step": step["id"], "intent": identifier}
+            or data["intent"] != identifier):
+        raise UsageError("Reconcile only the current pending intent; a different step supplies no no-send proof.", {})
+    expected = {identifier + ":" + role for role in step["roles"]}
+    dispatches = {item["id"]: item for item in state["recovery"]["dispatches"] if item["id"] in expected}
+    if (set(dispatches) != expected or any(item["task"] != data["task"] or item["status"] != "not_sent"
+                                          for item in dispatches.values())):
+        raise UsageError("Every expected dispatch must be owner-proved not_sent; preserve missing, uncertain or partially applied effects for native reconciliation.", {})
+    _settled(state, supervised, data["task"])
+    def commit(current):
+        if _binding(current) != _binding(supervised):
+            raise UsageError("Verify the current bound foreman before reconciling this intent.", {})
+        _settled(state, current, data["task"])
+        with process_lease(grant["lease_path"]):
+            progress["pending"] = None
+            recovery._event(state["recovery"], at, "progression_intent_reconciled", data["task"], deepcopy(data))
+            save_state(state_path, state)
+        return {"task": data["task"], "intent": identifier, "outcome": "not_sent", "replayed": False,
+                "authorizes_dispatch": False}
+    return supervision.transaction(state_path, commit)
+
+
 def register_commands(sub, common):
-    for name in ("progression-admit", "progression-return"):
+    for name in ("progression-admit", "progression-return", "progression-reconcile"):
         parser = sub.add_parser(name, parents=[common], help="Explicit task authority handoff through the verified bound foreman.")
         parser.add_argument("--record", required=True, metavar="FILE")
         parser.add_argument("--now", metavar="ISO")
@@ -378,5 +437,7 @@ def run_command(args, state_path, at, client):
         data = json.loads(Path(args.record).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         raise UsageError("Restore the complete authority handoff JSON record before retrying.", {}) from None
+    if args.command == "progression-reconcile":
+        return reconcile_intent(state_path, data, at, client), None
     return handoff(state_path, data, at, client, Path(__file__).resolve().parents[3],
                    returning=args.command == "progression-return"), None
