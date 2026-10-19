@@ -31,6 +31,7 @@ RUNTIME_ENVIRONMENT = frozenset({
     "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL",
     "SYSTEMROOT", "XDG_STATE_HOME", "XDG_CONFIG_HOME", "PYTHONDONTWRITEBYTECODE",
     "HERDR_ENV", "HERDR_PANE_ID",
+    "WORKTREE_ROOT",
 })
 
 
@@ -40,13 +41,13 @@ def runtime_environment(source=None):
     return {key: value for key, value in source.items() if key in RUNTIME_ENVIRONMENT}
 
 
-def command(*arguments, env=None, input_text=None, check_behavior=False, quiet=False):
+def command(*arguments, env=None, cwd=None, input_text=None, check_behavior=False, quiet=False):
     environment = runtime_environment(env)
     # Only the pinned registry client's immutable-source fetch needs this token.
     # Installed hooks, decoders and owners never receive it.
     if arguments[:2] == ("acr", "install") and os.environ.get("GH_TOKEN"):
         environment["GH_TOKEN"] = os.environ["GH_TOKEN"]
-    result = subprocess.run(arguments, input=input_text, capture_output=True, text=True, env=environment)
+    result = subprocess.run(arguments, input=input_text, capture_output=True, text=True, env=environment, cwd=cwd)
     if result.returncode:
         failure = BehaviorFailure if check_behavior else OSError
         raise failure("{} exited {}; inspect the selected operation without logging candidate output".format(
@@ -103,7 +104,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
         raise ValueError("{}: expected three owned hook entrypoints, got {}".format(agent, len(paths)))
     state = project / "private-state"
     environment = {**runtime_environment(), "XDG_STATE_HOME": str(state), "XDG_CONFIG_HOME": str(project / "private-config"),
-                   "PYTHONDONTWRITEBYTECODE": "1"}
+                   "PYTHONDONTWRITEBYTECODE": "1", "WORKTREE_ROOT": str(project / "private-worktrees")}
     for key in ("HERDR_ENV", "HERDR_PANE_ID", "PYTHONPATH"):
         environment.pop(key, None)
     foreign = project / "foreign"
@@ -123,23 +124,23 @@ def exercise(project, agent, host, herdr_source, coding_source):
             raise ValueError("{}: standalone {} consulted team prerequisites".format(agent, event))
         # This ordinary prompt/unbound Stop must reach its owner and return
         # silently; the wrapper's fail-closed fallback also exits zero.
-        command("bash", str(path), event, env={**environment, "HERDR_ENV": "1"}, check_behavior=True, quiet=True,
+        command("bash", str(path), event, env={**environment, "HERDR_ENV": "1"}, cwd=project, check_behavior=True, quiet=True,
                 input_text='{"session_id":"isolated-fixture","prompt":"Ordinary prompt"}\n')
     # Execute the installed owner with development trees physically absent.
-    json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment, check_behavior=True))
+    json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment, cwd=project, check_behavior=True))
     # Both runtime vendor envelopes remain decodable without calibration tools.
     for kind, payload in (("claude", [{"type": "result", "structured_output": {"fixture": "decoded"}}]),
                           ("grok", {"text": '{"fixture":"decoded"}'})):
         raw, decoded = project / (kind + "-envelope.json"), project / (kind + "-answer.json")
         raw.write_text(json.dumps(payload))
         command("python3", str(skill / "classify/extract-answer.py"), kind, str(raw), str(decoded),
-                env=environment, check_behavior=True)
+                env=environment, cwd=project, check_behavior=True)
         if json.loads(decoded.read_text()) != {"fixture": "decoded"}:
             raise BehaviorFailure("{}: installed {} envelope decoder changed the answer".format(agent, kind))
     if coding_source:
         environment.pop("HERDR_CODING_POLICY_ROOT", None)
         inputs = json.loads(command("python3", str(skill / "policy-paths.py"), "brief-inputs",
-                                    "--shared", str(project), env=environment, check_behavior=True))
+                                    "--shared", str(project), env=environment, cwd=project, check_behavior=True))
         release = project / host / "skills/acr__jbaruch__coding-policy__release"
         if inputs["POLICY_INDEX"] != str(release / "POLICY.md"):
             raise ValueError("{}: unrelated native instructions replaced the selected general policy".format(agent))
@@ -150,7 +151,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
             raise ValueError("{}: generic hook bundle is incomplete".format(agent))
         for path in general_hooks:
             event = "session-start" if "session-start" in path.parent.name else "stop-handoff"
-            command("bash", str(path), event, env=environment, check_behavior=True, input_text='{"stop_hook_active":true}\n')
+            command("bash", str(path), event, env=environment, cwd=project, check_behavior=True, input_text='{"stop_hook_active":true}\n')
     acr("check", project)
     acr("uninstall", project, "github:jbaruch/herdr-policy")
     acr("realize", project)
