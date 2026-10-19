@@ -25,6 +25,7 @@ OLDEST_PENDING_LIMIT = 10
 MAX_SNAPSHOT_BYTES = 2_097_152
 QUEUE_STATES = frozenset({"completed", "pending", "unmeasured"})
 QUEUE_FIELDS = {"assessed_at": "assessment_state", "resolved_at": "resolution_state"}
+NATIVE_CONTEXT_DIRECTORIES = frozenset({".agents", ".codex", ".claude", ".cursor"})
 
 
 def instant(value):
@@ -246,13 +247,19 @@ def report_path(value):
     skill = Path(__file__).resolve().parents[1]
     installation = skill.parent.parent if skill.parent.name == "skills" else skill
     forbidden = {installation}
+    for root in path.parents:
+        if (root.name in NATIVE_CONTEXT_DIRECTORIES
+                or root.name == "plugins" and root.parent.name == ".tessl"
+                or (root / ".tessl-plugin/plugin.json").is_file()
+                or (root / "agent-plugin.yaml").is_file() or (root / "SKILL.md").is_file()):
+            forbidden.add(root)
     for start in (skill, Path.cwd(), path.parent):
         for root in (start, *start.parents):
             if (root / ".git").exists():
                 forbidden.add(root)
                 break
     if any(path.is_relative_to(root) for root in forbidden):
-        raise ValueError("choose a private report path outside repositories and this installed package")
+        raise ValueError("choose a private report path outside repositories and installed code")
     return path
 
 

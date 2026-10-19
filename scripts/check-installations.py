@@ -160,15 +160,17 @@ def exercise(project, agent, host, herdr_source, coding_source):
     snapshot = project / "measurement-snapshot.json"
     snapshot.write_text(json.dumps({"schema": 2, "window": {"start": "2026-10-10T00:00:00Z", "end": "2026-10-10T01:00:00Z"},
                                     "tasks": [], "assignments": []}))
+    measurement_environment = {key: value for key, value in environment.items() if key != "PYTHONDONTWRITEBYTECODE"}
+    measurement_payload = {str(path.relative_to(skill)) for path in skill.rglob("*")}
     measured = json.loads(command("python3", str(skill / "measurements.py"), str(snapshot),
-                                  env=environment, cwd=project, check_behavior=True))
+                                  env=measurement_environment, cwd=project, check_behavior=True))
     if (measured.get("schema") != 2 or measured.get("authorizes_progression") is not False
             or measured.get("coverage", {}).get("tasks") != 0
             or set(measured.get("waiting", {})) != {"assessment", "resolution"}):
         raise BehaviorFailure("{}: installed measurement command failed its read-only summary contract".format(agent))
     report = project.parent / ("measurement-report-" + agent + ".json")
     receipt = json.loads(command("python3", str(skill / "measurements.py"), str(snapshot), "--output", str(report),
-                                 env=environment, cwd=project, check_behavior=True))
+                                 env=measurement_environment, cwd=project, check_behavior=True))
     saved_report = json.loads(report.read_text())
     if (receipt.get("kind") != "measurement_report_receipt" or receipt.get("path") != str(report.resolve())
             or receipt.get("authorizes_progression") is not False or stat.S_IMODE(report.stat().st_mode) != 0o600
@@ -177,13 +179,15 @@ def exercise(project, agent, host, herdr_source, coding_source):
     forbidden = skill / "measurement-report.json"
     try:
         command("python3", str(skill / "measurements.py"), str(snapshot), "--output", str(forbidden),
-                env=environment, cwd=project, check_behavior=True)
+                env=measurement_environment, cwd=project, check_behavior=True)
     except BehaviorFailure:
         pass
     else:
         raise BehaviorFailure("{}: installed measurement output accepted an owned package path".format(agent))
     if forbidden.exists():
         raise BehaviorFailure("{}: measurement output modified its installed payload".format(agent))
+    if {str(path.relative_to(skill)) for path in skill.rglob("*")} != measurement_payload:
+        raise BehaviorFailure("{}: measurement imports created files inside the installed payload".format(agent))
     repeated_identity = json.loads(command("python3", str(skill / "policy-paths.py"), "identity", env=environment,
                                            cwd=project, check_behavior=True))
     if repeated_identity != identity:

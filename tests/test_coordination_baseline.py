@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -14,6 +15,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "skills/herdr-foreman"))
 from scripts.coordination_baseline import summarize
 from foreman.coordination_metrics import MAX_SNAPSHOT_BYTES
 from foreman.context_output import OUTPUT_BYTES
@@ -231,6 +233,54 @@ class BaselineTest(unittest.TestCase):
             self.assertEqual(result["schema"], 2)
             self.assertIs(result["authorizes_progression"], False)
             self.assertEqual(result["coverage"]["tasks"], 2)
+
+    def test_summary_entrypoints_leave_fresh_payloads_unchanged_without_bytecode_environment_flags(self):
+        for command in ("native", "compatibility"):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as scratch:
+                root = Path(scratch)
+                clone = root / "source"
+                skill = clone / "skills/herdr-foreman"
+                shutil.copytree(ROOT / "skills/herdr-foreman/foreman", skill / "foreman",
+                                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
+                shutil.copyfile(ROOT / "skills/herdr-foreman/measurements.py", skill / "measurements.py")
+                (clone / "scripts").mkdir()
+                shutil.copyfile(ROOT / "scripts/coordination_baseline.py", clone / "scripts/coordination_baseline.py")
+                path = root / "snapshot.json"
+                path.write_text(json.dumps(fixture()))
+                before = {p.relative_to(clone) for p in clone.rglob("*")}
+                environment = dict(os.environ)
+                environment.pop("PYTHONDONTWRITEBYTECODE", None)
+                entrypoint = skill / "measurements.py" if command == "native" else clone / "scripts/coordination_baseline.py"
+                result = subprocess.run([sys.executable, str(entrypoint), str(path)], capture_output=True,
+                                        text=True, cwd=root, env=environment, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["schema"], 2)
+                self.assertEqual({p.relative_to(clone) for p in clone.rglob("*")}, before)
+
+    def test_reports_preserve_foreign_tessl_native_and_manifest_owned_packages(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            path = root / "snapshot.json"
+            path.write_text(json.dumps(fixture()))
+            relative = ["global/.tessl/plugins/other/package", "global/.codex/skills/acr__other__package__skill",
+                        "global/.claude/plugins/cache/other/package", "global/.cursor/skills/other",
+                        "global/.agents/skills/other", "other-manifest-package", "other-skill"]
+            for selected in relative:
+                with self.subTest(package=selected):
+                    package = root / selected
+                    package.mkdir(parents=True)
+                    if selected == "other-manifest-package":
+                        (package / "agent-plugin.yaml").write_text("schemaVersion: 1\n")
+                    if selected == "other-skill":
+                        (package / "SKILL.md").write_text("# Another installed skill\n")
+                    sentinel = package / "original.txt"
+                    sentinel.write_bytes(b"Other owner bytes.\n")
+                    output = package / "measurement-report.json"
+                    result = self.command(path, "--output", output, cwd=root)
+                    self.assertEqual((result.returncode, result.stdout), (2, ""))
+                    self.assertIn("outside repositories and installed code", result.stderr)
+                    self.assertFalse(output.exists())
+                    self.assertEqual(sentinel.read_bytes(), b"Other owner bytes.\n")
 
     def test_large_reports_keep_the_full_cohort_and_return_only_a_private_receipt(self):
         with tempfile.TemporaryDirectory() as scratch:
