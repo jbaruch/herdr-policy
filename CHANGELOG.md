@@ -3,7 +3,7 @@
 ## 0.6.1 — 2026-10-19
 
 - Retire an accepted native task's private plan, brief, report and delivery/review files after confirmed publication and Git teardown. Use bounded batches in the existing cleanup intent; retain canonical owner receipts and the GitHub closure reference.
-- Preserve active enrollments, changed evidence, foreign entries and linked files. Resume interrupted unlink batches without redispatching work. Existing completed directories and legacy `.hr` trees require their separate inventory and migration.
+- Add delivery schema 2 with owner migration and an explicit bounded artifact lifecycle. Atomically quarantine targets before verifying identity and deleting; preserve changed evidence, foreign entries, links and active enrollments. Resume interrupted batches without redispatching. Existing completed directories become preserved history; legacy `.hr` cleanup remains separate.
 
 ## 0.6.0 — 2026-10-19
 

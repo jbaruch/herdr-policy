@@ -868,19 +868,30 @@ authorization, verifies the current foreman and a free lease, then restores
 only a retryable stage. One `progression_exception_resumed` owner event records
 that authorization. It cannot resolve material decisions or unknown sends.
 
-`delivery` is null or a schema-1 object with `pull_request`, `merge_commit`,
+`delivery` is null or a schema-2 object with `pull_request`, `merge_commit`,
 `publisher_run`, `tag`, `tessl_version`, `tessl_confirmed`, `acr_confirmed`,
-`accepted`, `base_checkout` and `cleanup_step`. Actual confirmations are retained
+`accepted`, `base_checkout`, `cleanup_step` and `artifacts`. Actual confirmations are retained
 separately; one channel never substitutes for another. Cleanup has five Git
-steps followed by private artifact retirement at `cleanup_step: 5`. The same
-schema-2 cleanup intent has empty `argv` for file retirement and at most 32
-`inputs` receipts. Started batches read back already absent files; changed
-remaining bytes and unresolved enrollments refuse. The owner removes only its
-admitted directory's known files, then closes the task after actual acceptance.
-This changes no stored field or schema. Canonical dispatch/closure receipts
-remain after local working files retire; history readers use the GitHub closure
-reference, while missing evidence for unresolved work still refuses. The
-bounded lifecycle is documented in `skills/herdr-foreman/references/progression.md`.
+steps followed by artifact retirement at `cleanup_step: 5`. `artifacts` is
+schema 1 with `phase`, `quarantine`, `root`, `stage` and `remaining`. Phases are
+`pending`, `staging`, `retiring`, `retired` and migrated `legacy_preserved`.
+Root/stage identities are schema-1 `{device,inode}` records. At most 256
+remaining schema-1 entries bind `name`, `sha256`, `device` and `inode`.
+The existing schema-2 cleanup intent uses empty `argv` and at most 32 `inputs`
+receipts for one batch. Atomic moves precede inode/byte verification and
+deletion in the exclusive `.herdr-retire-` namespace. Its empty envelope moves
+to the recorded path plus `.retired` before final removal. Mismatches preserve
+the moved bytes. The manifest clears when retirement completes.
+
+The primary owner migrates delivery 1 to 2 on read and rewrites it before use.
+Completed records become `legacy_preserved` without filesystem changes;
+active records gain pending cleanup. Read-only previews require that owner
+migration first. Older readers reject delivery 2; retain a compatible owner
+for in-flight records rather than downgrading their obligations. Canonical
+dispatch/closure receipts and the GitHub closure reference survive retirement.
+The CLI projects `artifacts` as schema-1 `kind: artifact_cleanup_view`, with
+phase, quarantine, finalization suffix and remaining count; it omits the
+manifest. Full lifecycle ownership is in `skills/herdr-foreman/references/progression.md`.
 A `complete` label without its matching merged task
 closure, accepted delivery, finished cleanup and no pending intent cannot
 release Stop obligations.

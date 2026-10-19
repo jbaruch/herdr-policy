@@ -321,7 +321,10 @@ def migrate_store(store):
     # Both run: `or` would skip the second whenever the first reported work,
     # leaving version-1 diagnoses for a validator that accepts only version 2.
     checkpoints = _migrate_checkpoints(store)
-    migrated = _migrate_diagnoses(store) or checkpoints
+    diagnoses = _migrate_diagnoses(store)
+    from .workflow_artifacts import migrate_deliveries
+    deliveries = migrate_deliveries(store)
+    migrated = diagnoses or checkpoints or deliveries
     if not legacy:
         return migrated
     assert added is not None

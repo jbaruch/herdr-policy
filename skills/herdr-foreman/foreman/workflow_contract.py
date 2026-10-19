@@ -84,6 +84,8 @@ def contract(value, task):
     for captured in briefs.values():
         recovery.validate_receipt(captured)
     _absolute(value["artifact_directory"], "current workflow artifacts")
+    if Path(value["artifact_directory"]).name.startswith(".herdr-retire-"):
+        raise UsageError("Reserve a task working directory outside the owner's private retirement namespace.", {})
     if Path(value["artifact_directory"]).resolve().is_relative_to(Path(repository["worktree"]).resolve()):
         raise UsageError("Keep current owner inputs outside the writer's checkout; implementation cannot replace its own workflow records.", {})
     effects = value["effects"]
@@ -244,9 +246,15 @@ def validate_progress(value):
         recovery.validate_receipt(value["plan"])
     if value["delivery"] is not None:
         delivery = value["delivery"]
-        _object(delivery, {"schema_version", "pull_request", "merge_commit", "publisher_run", "tag",
-                           "tessl_version", "tessl_confirmed", "acr_confirmed", "accepted",
-                           "base_checkout", "cleanup_step"}, "workflow delivery", version=1)
+        fields = {"schema_version", "pull_request", "merge_commit", "publisher_run", "tag",
+                  "tessl_version", "tessl_confirmed", "acr_confirmed", "accepted", "base_checkout", "cleanup_step"}
+        version = delivery.get("schema_version") if isinstance(delivery, dict) else None
+        if type(version) is not int or version not in (1, 2):
+            raise UsageError("Update the workflow owner before reading this delivery schema; preserve every pending cleanup obligation.", {})
+        _object(delivery, fields | ({"artifacts"} if version == 2 else set()), "workflow delivery", version=version)
+        if version == 2:
+            from .workflow_artifacts import validate as validate_artifacts
+            validate_artifacts(delivery["artifacts"])
         if type(delivery["pull_request"]) is not int or delivery["pull_request"] < 1:
             raise UsageError("Keep the actual task PR identity through merge and publication.", {})
         if delivery["merge_commit"] is not None:
@@ -267,6 +275,9 @@ def validate_progress(value):
             raise UsageError("Actual acceptance and channel confirmation need their bound merge/run/artifact identities.", {})
     if value["phase"] == "complete" and (value["delivery"] is None or not value["delivery"]["accepted"]):
         raise UsageError("A complete workflow needs its actual accepted delivery, separately from a process exit or merge.", {})
+    if (value["phase"] == "complete" and value["delivery"]["schema_version"] == 2
+            and value["delivery"]["artifacts"]["phase"] not in {"retired", "legacy_preserved"}):
+        raise UsageError("Complete the current artifact retirement before closing this workflow; older completed history stays explicitly preserved.", {})
     jobs = value["jobs"]
     if not isinstance(jobs, dict) or not set(jobs).issubset(ROLES):
         raise UsageError("Preserve the current workflow's owner-dispatch identities before recovery.", {})
@@ -375,6 +386,29 @@ def validate_current(value, document):
         elif intent["job"] is not None:
             raise UsageError("Only a native launch or close intent can hold a transient native job.", {})
     delivery = value["delivery"]
+    if delivery is not None and delivery["schema_version"] == 2:
+        lifecycle = delivery["artifacts"]
+        if lifecycle["phase"] == "legacy_preserved" and value["phase"] != "complete":
+            raise UsageError("Only migrated completed history can retain legacy artifacts; active cleanup obligations must remain explicit.", {})
+        if lifecycle["phase"] in {"staging", "retiring", "retired"} and (
+                not delivery["accepted"] or delivery["cleanup_step"] != 5
+                or value["phase"] not in {"cleanup", "exception", "complete"}):
+            raise UsageError("Verify acceptance, publication and Git teardown before starting the artifact lifecycle.", {})
+        if lifecycle["phase"] == "staging" and (intent is None or intent["operation"] != "cleanup"):
+            raise UsageError("Retain the original staging intent before any quarantine effect or readback.", {})
+        quarantine = lifecycle["quarantine"]
+        if quarantine is not None and (Path(quarantine).parent != Path(document["artifact_directory"]).parent
+                or re.fullmatch(r"\.herdr-retire-[a-f0-9]{32}", Path(quarantine).name) is None):
+            raise UsageError("Keep the cleanup quarantine in its admitted parent and private owner namespace; preserve other paths.", {})
+        if intent is not None and intent["operation"] == "cleanup" and delivery["cleanup_step"] == 5:
+            if (lifecycle["phase"] not in {"staging", "retiring"} or intent["argv"]
+                    or intent["job"] is not None or intent["dispatches"]):
+                raise UsageError("Restore the explicit artifact lifecycle before resuming its cleanup intent.", {})
+            expected = {row["name"]: row["sha256"] for row in lifecycle["remaining"]}
+            for receipt in intent["inputs"]:
+                path = Path(receipt["path"])
+                if path.parent != Path(document["artifact_directory"]) or expected.get(path.name) != receipt["sha256"]:
+                    raise UsageError("Bind the artifact batch to its original admitted working files and byte manifest.", {})
     if value["phase"] in ("publish", "cleanup", "complete") and (delivery is None or delivery["merge_commit"] is None):
         raise UsageError("Retain the actual task merge identity before publication or teardown.", {})
     if delivery is not None and (delivery["accepted"] or value["phase"] in ("cleanup", "complete")):

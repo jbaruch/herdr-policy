@@ -17,6 +17,7 @@ from . import cli, config, engagement, load_set, policy_paths, progression_owner
 from . import progression_runtime, recovery, report_delivery, report_gates, supervision
 from . import workflow_contract as schema, workflow_dispatch as dispatch
 from . import workflow_capacity, workflow_planning, workflow_workspace as workspace
+from . import workflow_artifacts
 from .errors import ForemanError, UsageError
 from .progression_service import capture_contract
 from .state import TransactionBusy, latest_snapshot, save_state, state_lock
@@ -92,13 +93,16 @@ class WorkflowService:
         save_state(self.path, state)
 
     def _view(self, progress, status, reason=None, *, capacity=None):
+        delivery = progress["delivery"]
+        if delivery is not None and delivery["schema_version"] == 2:
+            delivery = {**delivery, "artifacts": workflow_artifacts.view(delivery["artifacts"])}
         result = {"schema_version": 2, "wake_agent": status == "exception", "data": {
             "task": self.capability.task, "generation": self.capability.generation,
             "status": status, "phase": progress["phase"], "correction": progress["round"],
             "jobs": progress["jobs"], "pending_intent": progress["pending"]["id"] if progress["pending"] else None,
             "reason": reason, "exception": progress["exception"],
             "exception_digest": supervision.digest(progress["exception"]) if progress["exception"] is not None else None,
-            "delivery": progress["delivery"],
+            "delivery": delivery,
             "authorizes_acceptance": False, "authorizes_release": False}}
         if capacity is not None:
             result["data"]["capacity"] = capacity
@@ -433,10 +437,11 @@ class WorkflowService:
                 progress.update(plan=None, at=self.clock())
             else:
                 progress.update(phase="merge", plan=None, at=self.clock(), delivery={
-                    "schema_version": 1, "pull_request": claims["release"]["pull_request"],
+                    "schema_version": 2, "pull_request": claims["release"]["pull_request"],
                     "merge_commit": None, "publisher_run": None, "tag": None, "tessl_version": None,
                     "tessl_confirmed": False, "acr_confirmed": False, "accepted": False,
-                    "base_checkout": str(workspace.base_checkout(self.document)), "cleanup_step": 0})
+                    "base_checkout": str(workspace.base_checkout(self.document)), "cleanup_step": 0,
+                    "artifacts": workflow_artifacts.initial()})
         self._save(state)
         return self._view(progress, "advanced")
 
