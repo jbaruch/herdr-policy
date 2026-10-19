@@ -3,6 +3,9 @@
 ## 0.2.1 — 2026-10-18
 
 - Add a read-only evidence exporter and baseline analyzer with report-bound native timing, separate assessment/resolution delays, explicit unknowns, and private provenance. Retained-source reruns preserve uncertainty rather than treating owner closures as accepted outcomes.
+- Verify assessment-ledger receipts against their original byte prefixes before parsing; legitimate later appends preserve the captured evidence, while changed original bytes remain unknown.
+- Refuse installed legacy combined team trees before resolving general helpers, including local, global and executing Tessl peers. Preserve explicit source-only development helpers and existing owner records.
+- Move conformance CI to the confirmed coding-policy 0.4.0 release source and its routed general release contracts.
 - Record the Drover component-adaptation decision and comparative pilot criteria. The decision does not activate background progression or grant runtime authority.
 
 ## 0.2.0 — 2026-10-18

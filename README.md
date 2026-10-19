@@ -55,7 +55,7 @@ Remote controllers retain their policy-digest, lease and owner-receipt contract 
 
 ## Development
 
-Source measurements and the selected progression architecture are documented in [docs/coordination-baseline.md](docs/coordination-baseline.md) and [docs/decisions/0001-background-progression.md](docs/decisions/0001-background-progression.md).
+See [docs/coordination-baseline.md](docs/coordination-baseline.md) and [docs/decisions/0001-background-progression.md](docs/decisions/0001-background-progression.md) for source measurements and the selected progression architecture.
 
 Use Python 3.11+, Bash, Git, jq, Shellcheck 0.11.0 and Pyright 1.1.414. Check out the compatible coding-policy source for shared-helper integration tests; it is a development dependency, never vendored into this plugin.
 
@@ -66,7 +66,7 @@ tessl plugin lint .
 acr validate . --json
 ```
 
-The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI installs the published relocation baseline outside the checkout and pins the ACR validator. It gates actual native installation and canonical Tessl skill review at 85%. Source package manifests share one explicit version.
+The runner executes each Python and Bash suite separately with private XDG state. Tests import the canonical `skills/` sources without adding those paths to runtime subprocess environments. Select individual suites by passing their repository-relative paths. CI installs the published general-policy baseline outside the checkout and pins the ACR validator. It gates actual native installation and canonical Tessl skill review at 85%. Source package manifests share one explicit version.
 
 CI uses a non-publishing `member` key for baseline access and an isolated skill-review job. The publisher key exists only in the `publish` [environment](https://github.com/jbaruch/herdr-policy/settings/environments), restricted to `main`; PR test code cannot obtain it. Creation, storage and renewal are documented in `.env.example`. [Tessl workspace roles](https://docs.tessl.io/administrators/roles) define these permissions.
 

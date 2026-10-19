@@ -252,17 +252,20 @@ from pathlib import Path
 root = Path(sys.argv[1])
 import os
 cp = Path(os.environ["HERDR_CODING_POLICY_ROOT"])
-release = (cp / "skills/release/SKILL.md").read_text()
+release_root = cp / "skills/release"
+release = (release_root / "SKILL.md").read_text() + "\n" + "\n".join(
+    path.read_text() for path in sorted((release_root / "references").glob("step-*.md")))
 brief = (root / "herdr-foreman/templates/brief-release.md").read_text()
-mechanics = (cp / "skills/release/SCRIPTING.md").read_text()
+mechanics = (release_root / "references/SCRIPTING.md").read_text() + "\n" + (
+    release_root / "references/release-contract.md").read_text()
 rules = cp / "rules"
 boy_scout = (rules / "boy-scout.md").read_text()
 severity = (rules / "review-severity.md").read_text()
 advisory_directive = next(line for line in boy_scout.splitlines() if line.startswith("- **Advisory**"))
 risk_directive = next(line for line in boy_scout.splitlines() if line.startswith("- **Unrelated blocking risk**"))
 integration = (root.parent / "rules/coding-policy-integration.md").read_text()
-# Generic standalone duties remain compatible with the published relocation
-# oracle and the reduced package; team-specific routing belongs to Herdr.
+# Generic duties follow the published reduced-policy baseline; team-specific
+# routing belongs to Herdr.
 assert "current conversation" in risk_directive
 references = {
     "herdr-foreman/references/round-completion.md": ["skills/herdr-foreman/templates/brief-release.md"],
