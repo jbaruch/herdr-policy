@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 — 2026-10-18
+
+- Replace the mandatory historical load floor with schema-2 current decision context. Bound printed context to 16 KiB and question-specific evidence reads to 4 KiB, with explicit continuations and no implied acceptance. Preserve current unsuperseded blockers, missing evidence and unknown-delivery refusal; oversized obligations fail visibly rather than being truncated.
+- Define pure risk-based responsibility profiles and task-local correction routes without granting dispatch or acceptance authority. Add an OS process-lease primitive for the progression service prototype; acquiring it does not admit tasks or authorize effects.
+
 ## 0.2.1 — 2026-10-18
 
 - Trigger central policy review on same-repository PR events and enroll the scheduled backstop; keep Codex authentication centralized and document the dispatch secret.

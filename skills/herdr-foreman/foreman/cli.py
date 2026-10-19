@@ -468,11 +468,14 @@ def build_parser():
     cost_parser = sub.add_parser("cost-report", parents=[common],
                                  help="Report each task's resource use through acceptance from the owner records. Read-only.")
     cost_parser.add_argument("--task", help="Report this task alone.")
-    load_parser = sub.add_parser("load-set", parents=[common], help="List the durable records one foreman decision must load, derived from the owner records.")
+    load_parser = sub.add_parser("load-set", parents=[common], help="Return bounded current decision context without replaying task history.")
     load_parser.add_argument("--decision", required=True, choices=load_set.DECISIONS)
     load_target = load_parser.add_mutually_exclusive_group(required=True)
     load_target.add_argument("--task", help="Task identity for plan, brief, gate and diagnose.")
     load_target.add_argument("--enrollment", help="Enrollment (dispatch) id for wake.")
+    load_parser.add_argument("--read-file", help="Read a bounded excerpt from one listed current evidence reference.")
+    load_parser.add_argument("--question", help="Specific question requiring the selected evidence excerpt.")
+    load_parser.add_argument("--offset", type=int, default=0, help="Byte offset for an explicit evidence continuation.")
 
     sub.add_parser(
         "state",
@@ -2348,8 +2351,12 @@ def cmd_cost_report(args, client=None, warn=None, trace=None):
 
 
 def cmd_load_set(args, client=None, warn=None, trace=None):
+    if any(value is not None and len(value.encode("utf-8")) > 1_024 for value in (args.task, args.enrollment)):
+        raise UsageError("Select a recorded task or enrollment identity of at most 1024 bytes before requesting decision context.", {})
     if (args.decision == "wake") != (args.enrollment is not None):
         raise UsageError("Pass --enrollment for wake and --task for every other decision.", {"decision": args.decision})
+    if args.read_file is None and (args.question is not None or args.offset != 0):
+        raise UsageError("Use --question and --offset only with --read-file for one listed evidence reference.", {})
     state_path = _state_path(args)
     state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
     if not usable:
@@ -2366,8 +2373,11 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
     if args.decision != "wake" and args.task not in state["recovery"]["tasks"] and not any(
             row.get("task") == args.task for row in state["assignments"]):
         raise UsageError("Task {!r} is neither registered nor assigned; check its identity with `{}`.".format(args.task, runnable.command("state")), {})
-    return load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
-                          exists=_file_present), None
+    packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
+                            exists=_file_present)
+    if args.read_file is not None:
+        packet = load_set.read_evidence(packet, args.read_file, args.question, args.offset)
+    return packet, None
 
 
 def _file_present(path):

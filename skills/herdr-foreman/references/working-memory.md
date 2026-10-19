@@ -189,25 +189,37 @@ and native-session verification to perform before scheduling.
 
 ## Load a decision's records
 
-`foreman load-set` lists the durable records one foreman decision depends on,
-joined from the owner records rather than recalled:
+`foreman load-set` returns bounded current-task context from the owner records:
 
 ```text
 foreman load-set --decision plan|brief|gate|diagnose --task <task>
 foreman load-set --decision wake --enrollment <enrollment-id>
+foreman load-set --decision diagnose --task <task> --read-file <listed-reference> --question <specific-question> [--offset <byte-offset>]
 ```
 
-Output: `{"schema_version": 1, "decision", "task", "enrollment", "round_start",
-"core", "records", "files"}`. `core` holds the task record, its budget status
-and each open attention item in full. `files` lists `{"path", "why", "present"}` in
-load order. A missing file stays listed with `present: false`. What each
-decision adds is the contract in `skills/herdr-foreman/foreman/load_set.py`
-(module docstring). Read every listed file before deciding. The set is a
-floor: lessons from `memory-list` come on top, and nothing on the list is
-skipped. A non-zero exit names an unusable state file, or a missing or
-mismatched `--task` / `--enrollment`, on stderr. An unknown task, or an
-enrollment with no supervision record, is refused rather than answered with an
-empty set.
+Schema 2 adds `budget`, `history_included: false` and
+`authorizes_progression: false`. This ephemeral view changes no persisted owner
+schema. It retains task/budget facts, open attention and current-round references.
+Briefing and diagnosis retain unsuperseded blocking review references. A missing
+file stays listed with `present: false`; an unknown send still refuses the decision.
+
+`files` is a retrieval menu, not a required reading list. Read only evidence
+needed for the specific current question. Use `--read-file` for a bounded excerpt;
+`next_offset` exposes unread bytes. An excerpt never proves a complete review,
+acceptance, or no unresolved findings. Recheck the current head and owner gates
+before acting. Required unavailable or unexamined evidence keeps the decision held.
+
+The output and evidence-read budgets belong to `OUTPUT_BYTES` and `READ_BYTES`
+in `skills/herdr-foreman/foreman/load_set.py`. Oversized current obligations fail
+visibly rather than being silently truncated. Unknown tasks or enrollments refuse.
+Readers requiring schema 1 must update before consuming schema 2; neither shape
+grants progression authority.
+
+GitHub owns durable issue, PR, review and delivery history. Retrieve historical
+evidence by task and question with an explicit output budget. Do not mirror it
+into `.hr`, recursively dump local records, or replay completed rounds on resume.
+Local records retain only their active operational/recovery purpose. Preserve
+existing unknown deliveries and protected artifacts until their owners reconcile.
 
 ## Persistence contract
 
