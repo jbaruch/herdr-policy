@@ -16,6 +16,9 @@ import statistics
 import sys
 
 
+OLDEST_PENDING_LIMIT = 10
+
+
 def instant(value):
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -65,6 +68,49 @@ def paired(assignments, first, second):
             else:
                 values.append(duration)
     return {**distribution(values), "excluded": dict(excluded)}
+
+
+def union_seconds(intervals):
+    """Count overlapping waits once within one task and one queue."""
+    total, right = 0.0, None
+    for opened, closed in sorted(intervals):
+        left = max(opened, right) if right is not None else opened
+        total += max(0.0, (closed - left).total_seconds())
+        right = max(right, closed) if right is not None else closed
+    return total
+
+
+def waiting(assignments, start, end, endpoint):
+    """Observe pending ages at the window end and union waits inside it."""
+    excluded, by_task, pending = Counter(), {}, []
+    for item in assignments:
+        if item["native_match"] != "matched":
+            excluded["unknown_native"] += 1
+            continue
+        if not item.get("native_completed_at"):
+            excluded["missing_completion"] += 1
+            continue
+        opened = instant(item["native_completed_at"])
+        closed = instant(item[endpoint]) if item.get(endpoint) else None
+        if opened > end:
+            excluded["future_completion"] += 1
+            continue
+        if closed is not None and closed < opened:
+            excluded["reversed_clock"] += 1
+            continue
+        if closed is not None and closed < start:
+            excluded["outside_window"] += 1
+            continue
+        if closed is None or closed > end:
+            pending.append({"assignment_id": item["id"], "task_id": item["task_id"],
+                            "age_seconds": (end - opened).total_seconds()})
+        by_task.setdefault(item["task_id"], []).append((max(opened, start), min(closed or end, end)))
+    pending.sort(key=lambda row: (-row["age_seconds"], row["assignment_id"]))
+    return {"pending_age_seconds": distribution([row["age_seconds"] for row in pending]),
+            "oldest": pending[:OLDEST_PENDING_LIMIT], "oldest_limit": OLDEST_PENDING_LIMIT,
+            "omitted_pending": max(0, len(pending) - OLDEST_PENDING_LIMIT),
+            "wait_task_seconds": sum(union_seconds(rows) for rows in by_task.values()),
+            "covered_tasks": len(by_task), "excluded": dict(excluded)}
 
 
 def summarize(snapshot):
@@ -132,6 +178,8 @@ def summarize(snapshot):
         "latency_seconds": {"native_work": paired(assignments, "native_started_at", "native_completed_at"),
                             "completion_to_assessment": paired(assignments, "native_completed_at", "assessed_at"),
                             "completion_to_resolution": paired(assignments, "native_completed_at", "resolved_at")},
+        "waiting": {"assessment": waiting(assignments, start, end, "assessed_at"),
+                    "resolution": waiting(assignments, start, end, "resolved_at")},
         "effort": {"foreman": effort, "report_bytes": totals([item.get("report_bytes") for item in assignments]),
                    "foreman_output_bytes_per_accepted": effort["output_bytes"]["total"] / accepted
                    if accepted and effort["output_bytes"]["unknown"] == 0 else None,

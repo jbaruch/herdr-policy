@@ -184,6 +184,21 @@ and reversed clocks have separate exclusion counts. Never add assessment and
 resolution delays: they overlap. No queue delay is automatically classified as
 avoidable orchestration.
 
+The `waiting` summary reports assessment and resolution queues at the fixed
+window end. An endpoint recorded after that boundary remains pending there.
+Each queue has pending-age median and p90, a bounded list ordered by age, an
+omitted count and explicit exclusions for missing completion, unknown native
+identity, future completion or reversed clocks. `OLDEST_PENDING_LIMIT` in
+`scripts/coordination_baseline.py` owns the list budget.
+
+`wait_task_seconds` merges overlapping intervals within each task and queue,
+then sums across tasks. Exposure is clipped to the observation window; pending
+age retains the original completion time. This measures seconds of waiting
+summed across tasks. Assessment and resolution totals overlap and cannot be added.
+Blocked tasks remain included. Holds are reported separately and never
+subtracted as presumed waste. This calculation reads the sanitized snapshot
+and creates no owner ledger or recurring model turn.
+
 Activity is a conservative envelope-overlap proxy at the supplied one-minute
 foreground buckets. Matched envelopes use native start/completion when present;
 missing native boundaries widen to dispatch/resolution or the observation end.
