@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -174,16 +175,32 @@ class EvidenceReader:
                 path = Path(evidence["path"])
                 if path.suffix != ".md":
                     continue
-                header, events = self.ledger_reader.ledger_events(path)
+                size = evidence.get("size")
+                expected = evidence.get("sha256")
+                if type(size) is not int or size < 0 or not isinstance(expected, str):
+                    self.exclusions["ledger_receipt_unusable"] += 1
+                    continue
+                with path.open("rb") as stream:
+                    prefix = stream.read(size)
+                digest = hashlib.sha256(prefix).hexdigest()
+                if len(prefix) != size or digest != expected.lower():
+                    self.exclusions["ledger_receipt_mismatch"] += 1
+                    continue
+                # Parse exactly the captured bytes. Later append-only events
+                # must not replace this receipt's assessment or provenance.
+                with tempfile.NamedTemporaryFile(suffix=".md") as frozen:
+                    frozen.write(prefix)
+                    frozen.flush()
+                    header, events = self.ledger_reader.ledger_events(frozen.name)
                 if (header["task"] != assignment["task"]
                         or Path(header["dispatch_state"]).expanduser().resolve() != Path(state_identity).resolve()):
                     continue
-                self.source_digests.add(hashlib.sha256(path.read_bytes()).hexdigest())
+                self.source_digests.add(digest)
                 times.update(instant(row["at"]) for row in events
                              if row["subject"] == "assignment" and row["dispatch_id"] == assignment["id"]
                              and row["worker"] == assignment["agent"] and row["report"] == assignment["report"]
                              and row["decision"] in self.ledger_reader.ASSESSED and instant(row["at"]) <= end)
-            except (OSError, ValueError, KeyError, TypeError, self.source_error):
+            except (OSError, OverflowError, ValueError, KeyError, TypeError, self.source_error):
                 self.exclusions["ledger_reference_not_usable"] += 1
         return min(times).isoformat() if times else None
 

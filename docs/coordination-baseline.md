@@ -62,6 +62,12 @@ counts. An identical repeat is permitted; a differing
 existing provenance file requires a fresh output path. The CLI emits no native
 text, raw task/session identities, worker names or private paths in its snapshot.
 
+Assessment timing uses the resolution receipt's byte size and SHA-256. Parse
+only the verified original prefix when a ledger has later appends. Changed,
+short or unavailable captured bytes leave assessment time unknown and add an
+exclusion diagnostic. A new hash of an unverified replacement is not evidence
+for the original assessment.
+
 The cohort includes tasks registered or attempted inside the half-open window.
 Applied, `sending` and `sent_but_not_started` dispatches remain assignment envelopes. Confirmed
 unsent attempts retain their task in the cohort but create no busy worker.
@@ -95,12 +101,23 @@ unique assignments.
 
 An October 18 rerun over the window above retained 30 tasks and 392 assignment
 envelopes: 368 had report-bound native completion and 24 remained unknown. The
-resolution-delay sample had 344 pairs; the assessment-delay sample had 240.
+resolution-delay and receipt-verified assessment-delay samples each had 344 pairs.
 These differ from the original latest-day samples and cannot replace their
 reported numbers. All 30 task classes/risks and foreman effort remain unmeasured
 in this automatic export. Four owner closures prove neither integration nor
 deployment nor acceptance. Join independently verified outcome/effort and
 class/risk evidence before a comparison; do not interpret absent metrics as zero.
+
+| Paired interval | Pairs | Median | Nearest-rank p90 |
+| --- | --- | --- | --- |
+| Native start to completion | 368 | 7.65 min | 17.64 min |
+| Native completion to assessment | 344 | 18.22 min | 73.13 min |
+| Native completion to owner resolution | 344 | 19.52 min | 73.14 min |
+
+The receipt-verified rerun parsed original captured ledger prefixes, including
+valid prefixes in subsequently appended ledgers. One unusable ledger reference
+and 15 native finals not bound to their reports remain exclusion diagnostics.
+The two subsequent delays overlap and must not be added together.
 
 ## Sanitized snapshot
 

@@ -2,9 +2,11 @@
 
 import copy
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
@@ -52,6 +54,33 @@ def native(*_arguments):
 
 
 class OwnerExportTest(unittest.TestCase):
+    def test_assessment_rejects_modified_receipts_and_accepts_original_appended_prefix(self):
+        reader = EvidenceReader(ROOT)
+        _owner, supervision = inputs()
+        member = supervision["members"][0]
+        original_time = "2026-10-10T00:12:00Z"
+        event = {"schema_version": 1, "id": "assessment-1", "at": original_time, "subject": "assignment",
+                 "dispatch_id": member["id"], "worker": member["assignment"]["agent"], "role": "reviewer",
+                 "report": member["assignment"]["report"], "observed": "report delivered", "decision": "accepted",
+                 "head_revision": "a" * 40, "evidence": member["assignment"]["report"], "assessment": "read in full"}
+        header = "---\nschema_version: 1\ntask: private-task\nbase_revision: " + "a" * 40 + "\ndispatch_state: /private/owner-state.json\n---\n\n# Task Ledger\n\n"
+        def section(row):
+            return "## " + row["id"] + "\n\n" + "".join("- {}: {}\n".format(key, value) for key, value in row.items()) + "\n"
+        body = (header + section(event)).encode()
+        with tempfile.TemporaryDirectory() as scratch:
+            ledger = Path(scratch) / "TASK-LEDGER.md"
+            member["resolution"]["evidence"] = [{"schema_version": 1, "path": str(ledger),
+                                                "sha256": hashlib.sha256(body).hexdigest(), "size": len(body)}]
+            ledger.write_bytes(body)
+            self.assertEqual(reader.assessment(member, "/private/owner-state.json", END), "2026-10-10T00:12:00+00:00")
+            ledger.write_bytes(body.replace(original_time.encode(), b"2026-10-10T00:15:00Z"))
+            self.assertIsNone(reader.assessment(member, "/private/owner-state.json", END))
+            self.assertEqual(reader.exclusions["ledger_receipt_mismatch"], 1)
+            later = {**event, "id": "assessment-2", "at": "2026-10-10T00:18:00Z"}
+            ledger.write_bytes(body + section(later).encode())
+            self.assertEqual(reader.assessment(member, "/private/owner-state.json", END), "2026-10-10T00:12:00+00:00")
+            self.assertEqual(reader.source_digests, {hashlib.sha256(body).hexdigest()})
+
     def test_codex_native_turn_timing_ignores_later_bookkeeping(self):
         rows = [{"type": "event_msg", "payload": {"type": "task_started"}, "timestamp": "2026-10-10T00:02:00Z"},
                 {"type": "event_msg", "payload": {"type": "task_complete"}, "timestamp": "2026-10-10T00:07:00Z"},
