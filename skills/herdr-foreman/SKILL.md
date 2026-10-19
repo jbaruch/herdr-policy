@@ -8,14 +8,18 @@ description: >
   measure Herdr worker capacity, recover refused dispatches, restart or relaunch
   idle workers, collect reports, run or retrieve retrospectives,
   catch up on outstanding user attention, curate team lessons, save and resume
-  foreman handoffs, run explicitly admitted native task workflows or prepared dispatch chains, or report a task's cost or resource use through acceptance.
-  Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention and cost reports work
+  foreman handoffs, run explicitly admitted native task workflows or prepared dispatch chains, summarize sanitized coordination measurements, or report a task's cost or resource use through acceptance.
+  Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention, measurements and cost reports work
   offline. Other standalone tasks skip this skill.
 ---
 
 # Herdr Foreman Skill
 
 Process steps in order. Do not skip ahead.
+
+For offline summaries of sanitized coordination measurements, follow
+`references/coordination-metrics.md`. That operation owns its own sequence;
+the live-round steps below govern team work.
 
 For a supported explicitly admitted schema-2 task workflow, read its contract
 and command reference:

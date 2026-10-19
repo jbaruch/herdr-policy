@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -70,7 +71,8 @@ def revision(value):
 
 
 def verify_runtime_payload(skill):
-    required = ("foreman/remote_owner.py", "classify/extract-answer.py")
+    required = ("foreman/remote_owner.py", "classify/extract-answer.py",
+                "foreman/coordination_metrics.py", "measurements.py", "references/coordination-metrics.md")
     if any(not (skill / name).is_file() for name in required) or (skill / "tests").exists():
         raise BehaviorFailure("incomplete runtime or installed development test tree; repair the package inventory")
     misplaced = [name for name in ("adversarial.py", "evaluate.sh", "scoring.py")
@@ -155,10 +157,37 @@ def exercise(project, agent, host, herdr_source, coding_source):
             or re.fullmatch(r"[a-f0-9]{64}", identity["digest"]) is None
             or identity.get("authorizes_dispatch") is not False):
         raise BehaviorFailure("{}: installed policy has no verified native identity".format(agent))
+    snapshot = project / "measurement-snapshot.json"
+    snapshot.write_text(json.dumps({"schema": 2, "window": {"start": "2026-10-10T00:00:00Z", "end": "2026-10-10T01:00:00Z"},
+                                    "tasks": [], "assignments": []}))
+    measured = json.loads(command("python3", str(skill / "measurements.py"), str(snapshot),
+                                  env=environment, cwd=project, check_behavior=True))
+    if (measured.get("schema") != 2 or measured.get("authorizes_progression") is not False
+            or measured.get("coverage", {}).get("tasks") != 0
+            or set(measured.get("waiting", {})) != {"assessment", "resolution"}):
+        raise BehaviorFailure("{}: installed measurement command failed its read-only summary contract".format(agent))
+    report = project.parent / ("measurement-report-" + agent + ".json")
+    receipt = json.loads(command("python3", str(skill / "measurements.py"), str(snapshot), "--output", str(report),
+                                 env=environment, cwd=project, check_behavior=True))
+    saved_report = json.loads(report.read_text())
+    if (receipt.get("kind") != "measurement_report_receipt" or receipt.get("path") != str(report.resolve())
+            or receipt.get("authorizes_progression") is not False or stat.S_IMODE(report.stat().st_mode) != 0o600
+            or saved_report.get("schema_version") != 1 or saved_report.get("summary") != measured):
+        raise BehaviorFailure("{}: installed measurement output failed its private report contract".format(agent))
+    forbidden = skill / "measurement-report.json"
+    try:
+        command("python3", str(skill / "measurements.py"), str(snapshot), "--output", str(forbidden),
+                env=environment, cwd=project, check_behavior=True)
+    except BehaviorFailure:
+        pass
+    else:
+        raise BehaviorFailure("{}: installed measurement output accepted an owned package path".format(agent))
+    if forbidden.exists():
+        raise BehaviorFailure("{}: measurement output modified its installed payload".format(agent))
     repeated_identity = json.loads(command("python3", str(skill / "policy-paths.py"), "identity", env=environment,
                                            cwd=project, check_behavior=True))
     if repeated_identity != identity:
-        raise BehaviorFailure("{}: unchanged installed policy identity is not stable".format(agent))
+        raise BehaviorFailure("{}: installed policy identity changed during measurement".format(agent))
     # Reach the installed progression entrypoint's policy-selection boundary.
     # The fixture reads the selected policy and exits before any grant/lease.
     progression_probe = """
@@ -242,6 +271,7 @@ raise SystemExit("Installed progression did not reach its policy-selection bound
         raise ValueError("{}: lifecycle modified user-owned content".format(agent))
     return {"agent": agent, "bootstrap_listed": before.get("ok") is True, "upgrade": "pass",
             "idempotence": "pass", "runtime": "pass", "envelope_decoders": "pass", "standalone_hooks": "pass",
+            "measurements": "pass", "private_measurement_report": "pass",
             "skill_commands": skill_commands,
             "removal": "pass", "user_content": "preserved"}
 

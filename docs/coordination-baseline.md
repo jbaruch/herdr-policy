@@ -126,102 +126,14 @@ valid prefixes in subsequently appended ledgers. One unusable ledger reference
 and 15 native finals not bound to their reports remain exclusion diagnostics.
 The two subsequent delays overlap and must not be added together.
 
-## Sanitized snapshot
+## Measurement input and summaries
 
-Run `python3 scripts/coordination_baseline.py /private/path/snapshot.json`.
-The CLI reads only this file, emits one JSON summary, and performs no network
-or team-state operations. A malformed export exits 2 with a diagnostic and no
-measurement. Keep snapshots and their raw-source maps outside the repository.
-
-Input schema 1 has these required top-level fields:
-
-| Field | Contract |
-| --- | --- |
-| `schema` | Integer `1` |
-| `window` | `start` and `end`, offset-aware ISO timestamps; fixed, positive-duration observation window |
-| `tasks` | Array with unique nonempty `id`, explicit `state`, `class`, `risk`; include failed, blocked and unknown work |
-| `assignments` | Array with unique `id`, listed `task_id`, `native_match` of `matched` or `unknown`, and `dispatched_at` |
-| `activity_minutes` | Optional unique minute-aligned timestamps inside the observation window; no samples means unmeasured activity |
-
-Optional task records:
-
-- `integration`, `deployment`, `acceptance`: each has an `at` timestamp inside
-  the observation window and an `evidence` array of opaque references. Both are
-  required to count an evidenced stage. The exporter verifies the source;
-  references alone do not independently prove an external effect. Omit events
-  outside the window rather than silently counting preexisting outcomes.
-- `foreman`: known `active_seconds`, `exec_calls`, `output_bytes`, and
-  `reconstruction_bytes`. Each source event contributes once across the cohort;
-  split a shared event by a recorded allocation or mark attribution unknown.
-  A missing/null measurement remains unknown. Do not add overlapping activity.
-- `rework_rounds`, `escaped_defects`: nonnegative measurements or null. An
-  unmeasured defect rate is not zero defects.
-- `holds`: entries with `start`, `end` (null when open), and `reason` from
-  `operator`, `policy`, `dependency`, `quota`, `outage`, `verification`, `unknown`. Preserve
-  operator/policy/dependency holds; the analyzer lists them without summing them
-  into waits or subtracting them as if every held second were avoidable.
-
-Optional assignment fields are `native_started_at`, `native_completed_at`,
-`assessed_at`, `resolved_at`, and `report_bytes`. Native timestamps require a
-verified enrollment/session match in the exporter. Retain unmatched records;
-do not infer native completion from a status banner or report modification time.
-
-Before export, join immutable enrollment and native-session identities, retain
-the match decision in a private source map, fix the window, and record task
-selection/exclusions. Preserve missing evidence and changed/invalidated heads.
-Normalize clocks to offset-aware timestamps; never replace negative delays with
-zero. Remove transcript bodies, usernames, credentials, repository-local paths
-and production data; opaque ids preserve joins. Exporter/version and source
-digests belong in the private provenance record, not a public transcript dump.
-
-## Calculation and interpretation
-
-`scripts/coordination_baseline.py` owns the derived summary format. Summary
-schema 2 adds the `waiting` queues below; the exported input remains schema 1.
-Readers select their supported summary version explicitly. Regenerate a
-summary from its sanitized snapshot; this calculation never migrates or
-rewrites source evidence, owner state or previously saved reports.
-
-Latency records pair each assignment's timestamps. Native work is start to
-native completion; assessment delay is native completion to contract assessment;
-resolution delay is native completion to owner resolution. Report each sample's
-own denominator, median and nearest-rank p90. Unknown identity, missing endpoints
-and reversed clocks have separate exclusion counts. An endpoint after the
-observation boundary is excluded as `future_endpoint` from paired latency;
-it cannot settle a pending queue at that boundary. Never add assessment and
-resolution delays: they overlap. No queue delay is automatically classified as
-avoidable orchestration.
-
-The `waiting` summary reports assessment and resolution queues at the fixed
-window end. An endpoint recorded after that boundary remains pending there.
-Each queue has pending-age median and p90, a bounded list ordered by age, an
-omitted count and explicit exclusions for missing completion, unknown native
-identity, future completion or reversed clocks. `OLDEST_PENDING_LIMIT` in
-`scripts/coordination_baseline.py` owns the list budget.
-
-`wait_task_seconds` merges overlapping intervals within each task and queue,
-then sums across tasks. Exposure is clipped to the observation window; pending
-age retains the original completion time. This measures seconds of waiting
-summed across tasks. Assessment and resolution totals overlap and cannot be added.
-Blocked tasks remain included. Holds are reported separately and never
-subtracted as presumed waste. This calculation reads the sanitized snapshot
-and creates no owner ledger or recurring model turn.
-
-Activity is a conservative envelope-overlap proxy at the supplied one-minute
-foreground buckets. Matched envelopes use native start/completion when present;
-missing native boundaries widen to dispatch/resolution or the observation end.
-Unknown envelopes remain possibly busy from dispatch to resolution/window end.
-The output says **envelopes**, not physical workers: duplicate ownership or a
-reused native session can overcount workers. This is not exact fleet utilization
-and must not be relabeled as the historical concurrency estimate without checking
-the private original sampling and identity-deduplication method.
-
-Effort totals retain known/unknown counts. Cohort output per evidenced accepted
-outcome includes failed and blocked work in the numerator. It is null when no
-accepted outcome exists or any output measurement is unknown. Compare bytes
-with bytes and time with time; no bytes-to-tokens or tokens-to-dollars conversion
-is assumed. GitHub integration, actual deployment and measured acceptance are
-reported separately. An exporter assertion is distinct from verified readback.
+The packaged [measurement reference](../skills/herdr-foreman/references/coordination-metrics.md)
+owns the input and summary schemas, queue-state interpretation, overlap rules
+and bounded installed command. The repository's
+`scripts/coordination_baseline.py` remains a compatibility entrypoint to that
+same implementation. Owner-evidence export remains the frozen-source analysis
+operation above.
 
 ## Preregister the ten-task pilot
 

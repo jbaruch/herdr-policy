@@ -59,6 +59,10 @@ class InstallationErrorsTest(unittest.TestCase):
                 CHECK.verify_runtime_payload(skill)
             (skill / "classify").mkdir()
             (skill / "classify/extract-answer.py").write_text("runtime envelope decoder")
+            for name in ("foreman/coordination_metrics.py", "measurements.py", "references/coordination-metrics.md"):
+                path = skill / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("packaged measurement runtime fixture")
             CHECK.verify_runtime_payload(skill)
             for name in ("adversarial.py", "evaluate.sh", "scoring.py"):
                 path = skill / "classify" / name

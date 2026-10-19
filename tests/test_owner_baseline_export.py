@@ -61,6 +61,27 @@ def transport_event(kind, at, **data):
 
 
 class OwnerExportTest(unittest.TestCase):
+    def test_missing_assessment_evidence_is_unmeasured_for_a_resolved_assignment(self):
+        owner, supervision = inputs()
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(result["schema"], 2)
+        self.assertEqual(result["assignments"][0]["assessment_state"], "unmeasured")
+        self.assertEqual(result["assignments"][0]["resolution_state"], "completed")
+        queue = summarize(result)["waiting"]["assessment"]
+        self.assertEqual(queue["pending_age_seconds"]["n"], 0)
+        self.assertEqual(queue["covered_tasks"], 0)
+        self.assertEqual(queue["excluded"], {"unmeasured_endpoint": 1})
+
+    def test_open_canonical_resolution_is_explicitly_pending(self):
+        owner, supervision = inputs()
+        supervision["members"][0].update(active=True, resolution=None)
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(result["assignments"][0]["resolution_state"], "pending")
+        self.assertEqual(result["assignments"][0]["assessment_state"], "unmeasured")
+        queues = summarize(result)["waiting"]
+        self.assertEqual(queues["resolution"]["pending_age_seconds"]["n"], 1)
+        self.assertEqual(queues["assessment"]["pending_age_seconds"]["n"], 0)
+
     def test_new_authority_schema_is_read_only_and_does_not_expose_its_private_grant(self):
         owner, supervision = inputs()
         owner["recovery"]["schema_version"] = 19
