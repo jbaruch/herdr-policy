@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 — 2026-10-19
+
+- Verify ACR native installation identity through its public locked package and realization ledger, and require installed bytes to match checked target hashes. Add read-only identity inspection and exercise it from actual Codex, Claude Code and Cursor installations in CI.
+
 ## 0.3.1 — 2026-10-19
 
 - Recognize Codex 0.162.0's terminal `cyber_policy` refusal through native source, original prompt, turn and live-pane proof, including attempts that performed tool work ([coding-policy#767](https://github.com/jbaruch/coding-policy/issues/767)). Keep the existing unchanged-brief alternate-provider limit and preserve model eligibility for unrelated tasks. Refuse recording when a report has since appeared.

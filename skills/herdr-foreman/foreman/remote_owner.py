@@ -35,6 +35,11 @@ from . import supervision, recovery
 def loaded_policy(plugin_root):
     """Compute policy-byte identity; the trusted controller separately loads that policy."""
     root = Path(plugin_root).resolve()
+    from . import native_policy
+    if root.name in native_policy.ADAPTERS:
+        root = root / "skills" / native_policy.SKILL
+    if root.name == native_policy.SKILL:
+        return native_policy.loaded_policy(root)
     try:
         manifest = json.loads((root / ".tessl-plugin/plugin.json").read_text(encoding="utf-8"))
         files = sorted(path for directory in (root / "rules", root / "skills/herdr-foreman")

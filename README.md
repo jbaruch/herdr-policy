@@ -53,6 +53,19 @@ Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR 
 
 Remote controllers retain their policy-digest, lease and owner-receipt contract in [remote-context.md](skills/herdr-foreman/references/remote-context.md). This extraction does not add receipt rotation: a policy upgrade requires an explicit verified reattachment, and existing remote deployment remains disabled until that authority is established. Do not erase owner stores to bypass a mismatch.
 
+Inspect the executing policy identity from this checkout with:
+
+```sh
+python3 skills/herdr-foreman/policy-paths.py identity
+```
+
+The JSON reports the actual version, byte digest and policy root with
+`authorizes_dispatch: false`. Native ACR identity verifies per-adapter Codex,
+Claude Code and Cursor targets through public `acr list`/`acr check` metadata;
+coordinator entries may coexist in a schema-2 ledger. Shared-skill execution
+from `.agents/skills` is outside this reader. Fresh-process verification can
+fetch locked dependencies and requires registry access.
+
 ## Development
 
 See [docs/coordination-baseline.md](docs/coordination-baseline.md) and [docs/decisions/0001-background-progression.md](docs/decisions/0001-background-progression.md) for source measurements and the selected progression architecture.

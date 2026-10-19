@@ -5,6 +5,8 @@ from pathlib import Path as _TestPath
 _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[1]))
 _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
+import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -125,6 +127,31 @@ class PolicyPathsTest(unittest.TestCase):
                 (release / "POLICY.md").unlink()
                 with self.assertRaises(UsageError):
                     brief_inputs(skill, self.shared, self.global_tessl)
+
+
+    def identity_cli(self, shared=None):
+        script = Path(__file__).resolve().parents[3] / "skills/herdr-foreman/policy-paths.py"
+        return subprocess.run([sys.executable, str(script), "identity", "--shared", str(shared or self.shared),
+            "--global-tessl", str(self.global_tessl)], cwd=self.shared, capture_output=True, text=True)
+
+    def test_source_identity_cli_reports_its_actual_package_without_dispatch(self):
+        result = self.identity_cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = Path(__file__).resolve().parents[3]
+        value = json.loads(result.stdout)
+        self.assertEqual(value["policy_root"], str(root))
+        self.assertEqual(value["version"], json.loads((root / ".tessl-plugin/plugin.json").read_text())["version"])
+        self.assertRegex(value["digest"], r"^[a-f0-9]{64}$")
+        self.assertIs(value["authorizes_dispatch"], False)
+        self.assertEqual(list(self.shared.iterdir()), [])
+
+    def test_identity_cli_refuses_invalid_selection_with_no_success_json(self):
+        result = self.identity_cli(self.root / "missing")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("policy-paths:", result.stderr)
+        self.assertIn("repair", result.stderr)
+        self.assertEqual(list(self.shared.iterdir()), [])
 
 
 if __name__ == "__main__":
