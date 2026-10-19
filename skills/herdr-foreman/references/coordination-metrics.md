@@ -2,7 +2,9 @@
 
 Summarize a sanitized snapshot offline. This operation follows this reference;
 live team-round steps govern native work. It returns observational evidence
-and grants no task, release or production authority.
+and grants no task, release or production authority. Return the summary or
+receipt and finish this skill here. On a non-zero exit, report the diagnostic
+and finish here without starting live team work.
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
@@ -94,54 +96,39 @@ zero. Remove transcript bodies, usernames, credentials, repository-local paths
 and production data; opaque ids preserve joins. Exporter/version and source
 digests belong in the private provenance record, not a public transcript dump.
 
-## Calculation and interpretation
+## Summary fields and interpretation
 
-`foreman/coordination_metrics.py` owns the derived summary format. Summary
-schema 2 adds the `waiting` queues below and accepts input schemas 1 and 2.
-Readers select their supported summary version explicitly. Regenerate a
-summary from its sanitized snapshot; this calculation never migrates or
-rewrites source evidence, owner state or previously saved reports.
+`foreman/coordination_metrics.py` owns derived summary schema 2. Readers select
+that supported version explicitly. Regenerate a summary from its sanitized
+snapshot; this operation never migrates or rewrites source evidence, owner
+state or previously saved reports.
 
-Latency records pair each assignment's timestamps. Native work is start to
-native completion; assessment delay is native completion to contract assessment;
-resolution delay is native completion to owner resolution. Report each sample's
-own denominator, median and nearest-rank p90. Unknown identity, missing endpoints
-and reversed clocks have separate exclusion counts. An endpoint after the
-observation boundary is excluded as `future_endpoint` from paired latency;
-it cannot settle a pending queue at that boundary. Never add assessment and
-resolution delays: they overlap. No queue delay is automatically classified as
-avoidable orchestration.
+`latency_seconds` reports native work, assessment and resolution distributions.
+Read each denominator and its named exclusions with that distribution; unknown
+or unusable endpoints remain visible. The calculations are owned by `paired`
+and `distribution` in the calculator. Assessment and resolution delays overlap
+and cannot be added. A queue delay alone does not establish avoidable effort.
 
-The `waiting` summary reports assessment and resolution queues at the fixed
-window end. An endpoint recorded after that boundary remains pending there.
-Each queue has pending-age median and p90, a bounded list ordered by age, an
-omitted count and explicit exclusions for missing completion, unknown native
-identity, future completion or reversed clocks. `OLDEST_PENDING_LIMIT` in
-`foreman/coordination_metrics.py` owns the list budget.
+`waiting` distinguishes verified pending queues from unmeasured endpoints.
+Each queue reports age statistics, an oldest list, omitted counts, known
+`wait_task_seconds`, covered tasks and exclusions. `waiting` and `union_seconds`
+in the calculator own the exposure calculations; `OLDEST_PENDING_LIMIT` owns
+the list budget. These are known waiting exposures across tasks, not foreman
+active effort. Read their coverage and exclusions together. Assessment and
+resolution totals overlap and cannot be added. Blocked work remains included.
+Holds retain their separate reason categories and never prove presumed waste.
 
-`wait_task_seconds` merges known intervals within each task and queue,
-then sums across tasks. Exposure is clipped to the observation window; pending
-age retains the original completion time. This measures seconds of waiting
-summed across tasks. Assessment and resolution totals overlap and cannot be added.
-Unmeasured endpoints have named exclusions and contribute no assumed waiting
-interval. Read the coverage and exclusions with every known-exposure total.
-Blocked tasks remain included. Holds are reported separately and never
-subtracted as presumed waste. This calculation reads the sanitized snapshot
-and creates no owner ledger or recurring model turn.
+`activity` describes possibly busy envelopes, not distinct physical workers.
+Duplicate ownership or a reused native session can overcount workers. This
+conservative proxy is not exact fleet utilization and must not be relabeled as
+the historical concurrency estimate without checking the private original
+sampling and identity-deduplication method. `summarize` owns its sampling
+calculation.
 
-Activity is a conservative envelope-overlap proxy at the supplied one-minute
-foreground buckets. Matched envelopes use native start/completion when present;
-missing native boundaries widen to dispatch/resolution or the observation end.
-Unknown envelopes remain possibly busy from dispatch to resolution/window end.
-The output says **envelopes**, not physical workers: duplicate ownership or a
-reused native session can overcount workers. This is not exact fleet utilization
-and must not be relabeled as the historical concurrency estimate without checking
-the private original sampling and identity-deduplication method.
-
-Effort totals retain known/unknown counts. Cohort output per evidenced accepted
-outcome includes failed and blocked work in the numerator. It is null when no
-accepted outcome exists or any output measurement is unknown. Compare bytes
-with bytes and time with time; no bytes-to-tokens or tokens-to-dollars conversion
-is assumed. GitHub integration, actual deployment and measured acceptance are
-reported separately. An exporter assertion is distinct from verified readback.
-
+`effort` retains known and unknown measurement counts and reports output per
+evidenced accepted outcome when measurable. Its calculations live in `totals`
+and the effort projection in `summarize`. A null value is unmeasured, not zero.
+Failed and blocked work remains in the cohort. Compare bytes with bytes and
+time with time; no bytes-to-tokens or tokens-to-dollars conversion is assumed.
+GitHub integration, actual deployment and measured acceptance remain separate
+outcomes. An exporter assertion is distinct from verified external readback.

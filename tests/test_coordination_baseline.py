@@ -286,6 +286,16 @@ class BaselineTest(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout), (2, ""))
             self.assertIn("regular JSON snapshot", result.stderr)
 
+    def test_deeply_nested_input_emits_an_actionable_diagnostic_without_a_report(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path, output = Path(scratch) / "snapshot.json", Path(scratch) / "report.json"
+            path.write_bytes(b"[" * 2000 + b"0" + b"]" * 2000)
+            result = self.command(path, "--output", output)
+            self.assertEqual((result.returncode, result.stdout), (2, ""))
+            self.assertIn("repair the snapshot", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(output.exists())
+
     def test_report_outputs_refuse_repository_paths(self):
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / "snapshot.json"
@@ -319,15 +329,19 @@ class BaselineTest(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_nonfinite_aggregate_refuses_without_a_partial_report(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            path, output = Path(scratch) / "snapshot.json", Path(scratch) / "report.json"
-            data = fixture()
-            for task in data["tasks"]:
-                task["foreman"]["output_bytes"] = 1e308
-            path.write_text(json.dumps(data))
-            result = self.command(path, "--output", output)
-            self.assertEqual((result.returncode, result.stdout), (2, ""))
-            self.assertFalse(output.exists())
+        for value in (1e308, 10 ** 1000):
+            with self.subTest(value_type=type(value).__name__), tempfile.TemporaryDirectory() as scratch:
+                path, output = Path(scratch) / "snapshot.json", Path(scratch) / "report.json"
+                data = fixture()
+                data["tasks"][0]["acceptance"] = {"at": "2026-10-10T00:40:00Z", "evidence": ["fixture:readback"]}
+                for task in data["tasks"]:
+                    task["foreman"]["output_bytes"] = value
+                path.write_text(json.dumps(data))
+                result = self.command(path, "--output", output)
+                self.assertEqual((result.returncode, result.stdout), (2, ""))
+                self.assertIn("repair the snapshot", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertFalse(output.exists())
 
     def test_summary_does_not_forward_unexpected_source_metadata(self):
         data = fixture()

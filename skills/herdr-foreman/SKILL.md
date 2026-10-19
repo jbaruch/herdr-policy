@@ -17,10 +17,6 @@ description: >
 
 Process steps in order. Do not skip ahead.
 
-For offline summaries of sanitized coordination measurements, follow
-`references/coordination-metrics.md`. That operation owns its own sequence;
-the live-round steps below govern team work.
-
 For a supported explicitly admitted schema-2 task workflow, read its contract
 and command reference:
 
@@ -137,12 +133,20 @@ user-attention blocker naming `foreman migrate-home` (`skills/herdr-foreman/stat
 Migration), and run nothing else until the operator has stopped every foreman
 and run it.
 
-Four request kinds are answered offline, need no live Herdr, and finish here
+Five request kinds are answered offline, need no live Herdr, and finish here
 after the requested operation. Each reference carries its own owner commands and
 their contracts. Use the recorded state override or default, report any non-zero
 diagnostic, and never fabricate missing history. They grant no new task
 authority.
 
+- **Sanitized coordination measurements** — read the command and schema contract:
+
+  ```text
+  skills/herdr-foreman/references/coordination-metrics.md
+  ```
+
+  Return the bounded summary or private-report receipt and finish here. Report
+  any non-zero diagnostic and finish here without starting a live round.
 - **Catch-up or saved attention** — `skills/herdr-foreman/references/attention.md`. Read all
   attention pages before claiming completeness.
 - **Lesson curation, saved foreman context, or a foreman handoff** —

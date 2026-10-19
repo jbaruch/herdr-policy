@@ -46,6 +46,7 @@ def totals(values):
 
 
 def distribution(values):
+    """Median and nearest-rank p90 over the measured values."""
     ordered = sorted(values)
     return {"n": len(ordered), "median": statistics.median(ordered) if ordered else None,
             "p90": ordered[math.ceil(0.9 * len(ordered)) - 1] if ordered else None}
@@ -62,6 +63,7 @@ def identified(records):
 
 
 def paired(assignments, first, second, observed_end):
+    """Pair named timestamps only for matched, ordered, observed endpoints."""
     values = []
     excluded = Counter()
     for item in assignments:
@@ -304,7 +306,7 @@ def main():
             raise ValueError("summary exceeds its printed context budget; retain the full cohort and use --output with a private report path")
         if output_file is not None:
             write_private_report(*output_file)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError, OverflowError) as exc:
         print("coordination-baseline: {} — repair the snapshot or output path using references/coordination-metrics.md and rerun".format(exc), file=sys.stderr)
         return 2
     sys.stdout.write(rendered.decode("utf-8"))
