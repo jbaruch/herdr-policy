@@ -1,0 +1,2 @@
+# Local pre-commit runner; Dependabot checks this pin weekly.
+pre-commit==4.7.0

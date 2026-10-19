@@ -6,3 +6,12 @@ agent-plugin.yaml
 .gitignore
 *.bak
 *.tmp
+pyrightconfig.json
+tests/
+.pre-commit-config.yaml
+.gitleaksignore
+requirements-dev.txt
+scripts/
+.herdr/
+.env.example
+.test-dependencies/

@@ -1,0 +1,80 @@
+name: Tests
+
+on:
+  pull_request:
+  workflow_call:
+    secrets:
+      TESSL_REVIEW_TOKEN:
+        required: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extraction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7; Dependabot weekly
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2; Dependabot weekly
+      # Compatibility source: review monthly with the baseline install, in a dedicated PR.
+      - uses: jbaruch/coding-policy/.github/actions/setup-diagnostics@9101b94c189c265ea61c82c071cb34b0e1c9fc32
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6; Dependabot weekly
+        with:
+          # Match the pinned ACR module; review monthly with the ACR revision below.
+          go-version: '1.27.0'
+          cache: false
+      - name: Install pinned ACR CLI with Go
+        # Review this compatibility pin monthly and after ACR release-contract changes.
+        run: GOBIN="$RUNNER_TEMP/acr-bin" go install github.com/jbaruch/agentic-context-registry/cmd/acr@f8dffcecc0eb98f13b2d7d90cd399f99208becf2
+      - name: Install pinned secret scanner
+        # Renew monthly with .pre-commit-config.yaml in a focused dependency PR.
+        run: GOBIN="$RUNNER_TEMP/security-bin" go install github.com/zricethezav/gitleaks/v8@83d9cd684c87d95d656c1458ef04895a7f1cbd8e
+      - name: Scan committed history for secrets
+        run: '"$RUNNER_TEMP/security-bin/gitleaks" git --redact --no-banner .'
+      - name: Prepare private baseline install directory
+        run: mkdir -p "$RUNNER_TEMP/herdr-test-policy"
+      - name: Install published relocation baseline outside the checkout
+        # Member access cannot publish. Only this trusted literal CLI fetch
+        # receives it; PR-controlled scripts never receive a publisher key.
+        # Renew this oracle monthly in a dedicated compatibility PR.
+        working-directory: ${{ runner.temp }}/herdr-test-policy
+        env:
+          TESSL_TOKEN: ${{ secrets.TESSL_REVIEW_TOKEN }}
+        run: tessl install jbaruch/coding-policy@0.3.406 --agent codex --yes --strict --accept-warnings
+      - name: Language diagnostics
+        run: python3 scripts/run-diagnostics.py
+      - name: Validate Tessl package
+        run: tessl plugin lint .
+      - name: Validate ACR package
+        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" acr validate . --json
+      - name: Run runtime regression suites
+        env:
+          HERDR_CODING_POLICY_ROOT: ${{ runner.temp }}/herdr-test-policy/.tessl/plugins/jbaruch/coding-policy
+        run: python3 scripts/run-tests.py
+      - name: Check actual ACR upgrade, native execution and removal
+        # This candidate-pair pin becomes the confirmed 0.4 release commit at cutover;
+        # review monthly thereafter, alongside the compatible manifest versions.
+        env:
+          HERDR_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: PATH="$RUNNER_TEMP/acr-bin:$PATH" python3 scripts/check-installations.py --herdr-source "github:jbaruch/herdr-policy@$HERDR_REVISION" --coding-source github:jbaruch/coding-policy@9eaa60ad829f2e9e3b0380028d542b46c3af96ad
+  skill-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7; Dependabot weekly
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2; Dependabot weekly
+        with:
+          token: ${{ secrets.TESSL_REVIEW_TOKEN }}
+      # This isolated job runs only pinned trusted actions, never PR scripts.
+      - name: Review changed Tessl skills
+        uses: jbaruch/coding-policy/.github/actions/skill-review@9101b94c189c265ea61c82c071cb34b0e1c9fc32
+        with:
+          threshold: '85'
+          base-ref: ${{ github.event.pull_request.base.sha || '' }}

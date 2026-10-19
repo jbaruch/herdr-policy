@@ -1,0 +1,10 @@
+# Exact historical fingerprints of nonfunctional redaction/mock-client fixtures.
+# The JWT fixtures have invalid HS256 signatures. No path or rule is excluded;
+# new staged changes and new commits containing secret-shaped data still fail.
+638d5bca23996fa0ce247bd033d6e126006a7b60:tests/herdr-foreman/tests/test_herdr.py:generic-api-key:560
+638d5bca23996fa0ce247bd033d6e126006a7b60:tests/herdr-foreman/tests/test_herdr.py:generic-api-key:582
+638d5bca23996fa0ce247bd033d6e126006a7b60:tests/herdr-foreman/tests/test_herdr.py:generic-api-key:670
+638d5bca23996fa0ce247bd033d6e126006a7b60:tests/herdr-foreman/tests/test_herdr.py:jwt:565
+638d5bca23996fa0ce247bd033d6e126006a7b60:tests/herdr-foreman/tests/test_herdr.py:jwt:566
+638d5bca23996fa0ce247bd033d6e126006a7b60:tests/herdr-foreman/tests/test_report_verdict.py:generic-api-key:30
+638d5bca23996fa0ce247bd033d6e126006a7b60:tests/herdr-foreman/tests/test_typesafe_client.py:generic-api-key:23
