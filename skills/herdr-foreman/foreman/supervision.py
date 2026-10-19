@@ -1,7 +1,7 @@
 """Durable foreman-owned fleet observations, acknowledgements, and stop bindings.
 
-Documents and native bindings are schema 1; attested remote bindings are a
-distinct schema-2 record type. The canonical selected state owns an adjacent
+Documents and native bindings are schema 1; attested remote bindings and current
+task-executor watcher rows have distinct schema-2 record types. The canonical selected state owns an adjacent
 `.supervision.json`; exact native foreman identities discover it through one
 hashed binding under the default state directory. Reads never migrate or write.
 Unknown/corrupt files are preserved and mutations refuse them. Transactions use
@@ -111,7 +111,9 @@ def load(state_path):
                 or data.get("state_path") != str(canonical(state_path))):
             raise ValueError("document identity or schema differs")
         for key in ("members", "events", "acknowledgements", "holds", "watchers"):
-            if not isinstance(data.get(key), list) or any(not isinstance(row, dict) or row.get("schema_version") != 1 for row in data[key]):
+            versions = (1, 2) if key == "watchers" else (1,)
+            if not isinstance(data.get(key), list) or any(not isinstance(row, dict) or type(row.get("schema_version")) is not int
+                                                        or row["schema_version"] not in versions for row in data[key]):
                 raise ValueError("invalid {} rows".format(key))
         if data.get("binding") is not None and (not isinstance(data["binding"], dict) or data["binding"].get("schema_version") not in (1, 2)):
             raise ValueError("invalid binding")
@@ -187,6 +189,10 @@ def load(state_path):
                 text(disposition["outcome"], "disposition outcome")
                 validate_receipts(disposition["evidence"])
         for row in data["watchers"]:
+            if row["schema_version"] == 2:
+                from .progression_runtime import validate
+                validate(row)
+                continue
             if row["status"] not in ("running", "stopped") or not isinstance(row["process"], dict):
                 raise ValueError("invalid watcher")
             timestamp(row["heartbeat"])

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — 2026-10-19
+
+- Require the exact live native foreman pane/session/cwd at task startup, state writes, liveness and native effects; reject remote schema-2 admission. Bind every review/inline author's identity and each review state into the complete review digest, rejecting incomplete evidence.
+- Keep operator holds binding through acceptance, run canonical stall checks while startup identity is missing, and replay a completed no-send reconciliation without retiring its replacement. Document the public ACR realization check's dependency-fetch requirement for fresh native readers.
+- Migrate and persist accepted schema-1 grants through the existing state owner. Preserve their original prepared-chain authority, generations and pending obligations without reopening historical contracts; read-only previews refuse until the owner migration completes.
+- Wait observationally on foreground transaction contention, reserve fresh artifact directories exclusively, and bind resume authorization to each exception occurrence. Verify the actual peeled ACR tag source and hold report gates through acceptance. Retain the per-adapter native ownership boundary for installation identity.
+- Require a successful publisher conclusion, matching observed native/helper Tessl versions and artifact-bound moderation; reject unselected publication claims. Preserve foreign push targets, replacement native sessions and out-of-scope rename sources. Retry transient heartbeat contention within its existing grace and retain Stop obligations when the primary task owner is missing. Exercise the shipped review-reader CLI's bounded success/failure contracts.
+- Add explicitly admitted schema-2 task execution through native implementation, independent review/testing, same-task corrections, full native release ownership, independent publication readback and narrow local cleanup. Preserve canonical dispatch, assessment, report-gate and supervision owners instead of generating round ledgers or loading historical `.hr` content.
+- Allow foreman Stop only for exact current obligations covered by a healthy implemented executor. Bind its current supervision row to the admitted generation, policy, contract, native foreman and actual kernel lock-owner PID/inodes. Prepared chains and unknown effects provide no continuation.
+- Add installation-aware ACR policy identity checks and exercise the installed identity endpoint for Codex, Claude Code and Cursor. Preserve source/Tessl lookup and refuse changed, unrealized or unowned native payloads.
+- Add verified no-send reconciliation and exact-packet resume for restored task observations and cleanup. Preserve unknown sends, counters, accepted channel evidence and operator holds. Sensitive/specialist work and non-merge acceptance remain explicit exceptions; installation performs no live migration and makes no comparative ROI claim.
+
 ## 0.3.2 — 2026-10-19
 
 - Verify ACR native installation identity through its public locked package and realization ledger, and require installed bytes to match checked target hashes. Add read-only identity inspection and exercise it from actual Codex, Claude Code and Cursor installations in CI.

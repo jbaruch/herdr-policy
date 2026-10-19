@@ -47,6 +47,7 @@ exclusion, so over-reading fails safe and a declared contribution is never lost
 to a refusal elsewhere.
 """
 
+import json
 import re
 
 from .errors import UsageError
@@ -158,6 +159,31 @@ def trigger_bindings(text):
     This recognises lines only; `triggers.validate_bootstrap_binding` judges them.
     """
     return [line[len(TRIGGER_PREFIX):] for _number, line in _unfenced(text)[0] if line.startswith(TRIGGER_PREFIX)]
+
+
+def workflow_claim(text):
+    """One operative WORKFLOW JSON object; quoted examples supply no claim.
+
+    The workflow owner validates its fields against the actual dispatch and
+    admitted task. This parser supplies no delivery, approval or effect permit.
+    """
+    candidates = []
+    for _number, line in _unfenced(text)[0]:
+        candidate = _operative_text(line)
+        if candidate is not None and re.match(r"WORKFLOW\b", candidate):
+            candidates.append(candidate)
+    if len(candidates) != 1 or not candidates[0].startswith("WORKFLOW: "):
+        raise UsageError("Return one operative WORKFLOW: JSON object for this dispatch; examples, missing and duplicate claims cannot advance the task.", {})
+    raw = candidates[0][len("WORKFLOW: "):]
+    if len(raw.encode("utf-8")) > 8192:
+        raise UsageError("Keep the current workflow claim within 8 KiB; leave detailed evidence in the report and its referenced sources.", {})
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        raise UsageError("Correct the WORKFLOW JSON object before its owner can assess this report.", {}) from None
+    if not isinstance(value, dict):
+        raise UsageError("Return a WORKFLOW object, rather than a scalar or array, for owner validation.", {})
+    return value
 
 
 def declared_contributions(text):

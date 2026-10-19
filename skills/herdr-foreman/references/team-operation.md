@@ -1,6 +1,6 @@
 # Team Operation
 
-The Herdr team round contract. `rules/agent-team-operation.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through `skills/herdr-foreman/SKILL.md`, and every worker brief names it as a required read.
+The legacy Herdr team round contract. `rules/agent-team-operation.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. Its scoped admitted task-workflow exception follows `skills/herdr-foreman/references/task-workflow.md` instead. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through `skills/herdr-foreman/SKILL.md`, and every legacy worker brief names it as a required read.
 
 ## Bounded Factual Lookup
 

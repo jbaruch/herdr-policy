@@ -111,11 +111,10 @@ def correction_route(context, findings):
         reasons.append("unresolved_evidence")
     if any(item["status"] == "disputed" and item["severity"] != "advisory" for item in current):
         reasons.append("disputed_blocking_finding")
-    if blocking:
-        if not context["scope_unchanged"]:
-            reasons.append("scope_changed")
-        if not context["cause_settled"]:
-            reasons.append("causal_uncertainty")
+    if not context["scope_unchanged"]:
+        reasons.append("scope_changed")
+    if not context["cause_settled"]:
+        reasons.append("causal_uncertainty")
     action = "decision_packet" if reasons else "owner_correction" if blocking else "continue_required_verification_or_release"
     return {"schema_version": 1, "action": action, "scope": "task",
             "blocking_findings": blocking, "acknowledge_advisories": advisories,
