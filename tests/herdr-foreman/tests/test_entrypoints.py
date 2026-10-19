@@ -204,6 +204,16 @@ class ScriptExecutionTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "cannot import the script"):
                 script_test_count(path)
 
+    def test_probe_normalizes_python_311_boolean_exit_codes_and_rejects_other_payloads(self):
+        for payload, expected in ((False, 0), (True, 1), (None, 0), ("unsupported", 2)):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as scratch:
+                path = Path(scratch) / "test_boolean_exit.py"
+                path.write_text("import unittest\nclass A(unittest.TestCase):\n"
+                    "    def test_body(self):\n        pass\n"
+                    "if __name__ == '__main__':\n    unittest.main(exit=False)\n"
+                    "    raise SystemExit({!r})\n".format(payload))
+                self.assertEqual(script_test_count(path), (1, expected))
+
     def test_a_stranded_class_would_be_caught(self):
         # Prove the check has teeth: a file whose guard sits mid-body reports
         # fewer tests than the loader finds.
