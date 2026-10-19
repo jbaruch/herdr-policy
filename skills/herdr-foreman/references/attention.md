@@ -15,7 +15,7 @@ Run through the installed `skills/herdr-foreman/foreman.sh` with an explicit `ba
 | `attention-progress --record progress.json [--now ISO]` | Progress fact with ledger source; a statement about task content also cites its report as an `artifact` source | Saved event and `replayed` |
 | `attention-list [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Same structured view as `catch-up` |
 | `catch-up [--task ID] [--limit N] [--offset N] [--since ISO] [--include-closed] [--compact] [--now ISO]` | Offline view | Byte-bounded actionable, deferred, progress and optional closed pages |
-| `attention-show --id ID [--now ISO]` | Obligation ID | Current record and its complete lifecycle history |
+| `attention-show --id ID [--history] [--limit N] [--offset N] [--now ISO]` | Obligation ID | Current record; opt-in bounded lifecycle history |
 
 The owner file is `<Path(selected --state).expanduser().resolve()>.attention.json`. Its adjacent `.lock` is a live OS transaction lock. The owner uses `state_lock` and `save_state` for serialized atomic replacement. Preserve both the attention history and task ledgers outside task worktrees during cleanup. Canonical aliases of the selected state share one queue. Readers never create locks, initialize files, migrate data, update presentation markers, or contact workers.
 
@@ -105,6 +105,9 @@ Both forms obey the view schema and printed-byte bound in
 Follow the returned cursor, not the requested row count. An indivisible oversized
 record refuses with `context_complete: false`; it remains in the owner queue and
 still gates dispatch. A partial page never resolves an undisplayed obligation.
+`attention-show` returns only the current record by default. Use `--history`
+for a specific lifecycle question and follow `history_pagination.next_offset`;
+prior presentations and resolutions are retained without being replayed on resume.
 
 A progress input contains exactly `id`, `task`, `summary`, `assessment`, and `sources`. Assessment is `verified`, `reported`, or `unknown`; at least one source must be the associated `task_ledger`. Use `reported` for unaccepted worker claims. The utility records its UTC event time. The catch-up shows the timestamp with **Verified when recorded**, **Reported; acceptance unverified**, or **Acceptance unknown**. Even `verified` means verified when recorded; revalidate the actual task ledger and source evidence before claiming current acceptance. This cached summary never replaces the task ledger or treats Herdr lifecycle labels as acceptance. Give a changed fact a new progress ID; preserve the earlier claim and correction.
 

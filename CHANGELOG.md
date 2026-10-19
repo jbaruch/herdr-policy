@@ -2,9 +2,10 @@
 
 ## 0.5.0 — 2026-10-19
 
-- Bound queue, catch-up, memory and supervision read views by their printed JSON bytes. Return explicit pagination and stable event-sequence cursors; retain unshown obligations and reject an indivisible oversized record. CLI context views use schema 2 while persisted owner schemas remain unchanged.
+- Bound queue, attention, memory and supervision read views by their printed JSON bytes. Return explicit pagination and stable event-sequence cursors; retain unshown obligations and reject an indivisible oversized record. CLI context views use schema 2 while persisted owner schemas remain unchanged.
 - Offer compact catch-up and supervision results without duplicate presentation, observation bodies or pending-event echoes. Make lesson history an explicit paginated request, and refuse oversized new handoffs before committing them or clearing a foreman into an unreadable capture.
 - Resume from current owner queries and selected evidence references instead of raw owner files or historical reports. Preserve operator holds across context resets; compact resumption atomically checks the complete inspected hold set before clearing it.
+- Document capability-specific release floors and owner-format-aware rollback for the extracted pair; package rollback cannot rewind committed native effects.
 
 ## 0.4.0 — 2026-10-19
 

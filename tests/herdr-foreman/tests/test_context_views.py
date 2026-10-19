@@ -104,13 +104,37 @@ class ContextViewsTest(CliCase):
         data = {**obligation("large-blocker", kind="blocker"), "context": "雪" * 7000}
         attention.write(self.state, "record", data, AT)
         before = attention.storage_path(self.state).read_bytes()
-        code, out, err = self.run_cli(self.base() + ["catch-up", "--compact", "--now", AT])
-        self.assertEqual(code, 1)
-        self.assertEqual(out, "")
-        self.assertIn("context_budget_exceeded", err)
-        self.assertLess(len(err.encode()), context_output.OUTPUT_BYTES)
+        for command in (["catch-up", "--compact", "--now", AT], ["attention-show", "--id", "large-blocker"]):
+            self.out, self.err = io.StringIO(), io.StringIO()
+            code, out, err = self.run_cli(self.base() + command)
+            self.assertEqual(code, 1)
+            self.assertEqual(out, "")
+            self.assertIn("context_budget_exceeded", err)
+            self.assertLess(len(err.encode()), context_output.OUTPUT_BYTES)
         self.assertEqual(attention.storage_path(self.state).read_bytes(), before)
         self.assertEqual([row["id"] for row in attention.dispatch_gate(self.state, "owner/repo#5", AT)], ["large-blocker"])
+
+    def test_attention_lookup_keeps_history_out_of_current_context(self):
+        attention.write(self.state, "record", obligation("long-history"), AT)
+        for index in range(30):
+            attention.write(self.state, "update", {
+                "event_id": "present-{}".format(index), "id": "long-history", "expected_revision": index + 1,
+                "action": "present", "reason": "Record the actual presentation without resolving the question.",
+                "evidence": {"schema_version": 1, "kind": "delivery", "ref": "conversation/message",
+                             "summary": "Presentation evidence. " + "x" * 600}}, AT)
+        before = attention.storage_path(self.state).read_bytes()
+        current, _ = self.output(["attention-show", "--id", "long-history"])
+        self.assertEqual(current["entry"]["status"], "open")
+        self.assertEqual(current["history"], [])
+        self.assertEqual(current["history_count"], 31)
+        offset, seen = 0, []
+        while offset is not None:
+            view, _ = self.output(["attention-show", "--id", "long-history", "--history", "--limit", "50",
+                                   "--offset", str(offset)])
+            seen.extend(row["event_id"] for row in view["history"])
+            offset = view["history_pagination"]["next_offset"]
+        self.assertEqual(seen, ["record:long-history"] + ["present-{}".format(index) for index in range(30)])
+        self.assertEqual(attention.storage_path(self.state).read_bytes(), before)
 
     def test_current_memory_does_not_replay_revision_history(self):
         previous = None
