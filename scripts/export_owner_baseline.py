@@ -50,7 +50,7 @@ def indexed(rows):
 
 
 def candidate_identity(dispatch, member, end):
-    candidates = [dispatch.get("result", {}).get("context_session"),
+    candidates = [(dispatch.get("result") or {}).get("context_session"),
                   member["assignment"].get("native_session")]
     candidates.extend(row.get("native_session") for row in member.get("refinements", [])
                       if instant(row["at"]) <= end)
@@ -205,15 +205,71 @@ class EvidenceReader:
         return min(times).isoformat() if times else None
 
 
+def dispatch_attempts(store, end):
+    """Project attempts as of the boundary, without borrowing a later retry's data."""
+    kinds = {"dispatch_reserved", "dispatch_transport_retry", "dispatch_sending",
+             "dispatch_recorded", "dispatch_not_sent", "dispatch_reconciled"}
+    by_dispatch = {}
+    for event in store["events"]:
+        if event["kind"] in kinds:
+            by_dispatch.setdefault(event["details"]["dispatch"], []).append(event)
+    for current in store["dispatches"]:
+        events = by_dispatch.get(current["id"], [])
+        if not events:
+            # Older imported rows have no transport chronology. Preserve their
+            # coarse reservation timing rather than inventing a send receipt.
+            yield {**current, "reserved_at": current["at"], "enrollment_usable": True}
+            continue
+        parts, pending = [], []
+        reserved = current["at"]
+        last_time = instant(reserved)
+        for event in events:
+            at = instant(event["at"])
+            if at < last_time:
+                raise ValueError("transport chronology is out of order; reconcile the frozen event sequence")
+            last_time = at
+            if event["kind"] == "dispatch_transport_retry":
+                previous = event["details"]["previous"]
+                if any(previous[name] != current[name] for name in ("id", "task", "agent")):
+                    raise ValueError("retry identities contradict; restore the original transport evidence")
+                parts.append((previous, reserved, pending, False))
+                reserved, pending = event["at"], []
+            else:
+                pending.append(event)
+        parts.append((current, reserved, pending, True))
+        for snapshot, reserved, history, latest in parts:
+            if instant(reserved) >= end:
+                continue
+            status, sent, recorded = "reserved", None, False
+            for event in history:
+                if instant(event["at"]) > end:
+                    continue
+                kind, data = event["kind"], event["details"]
+                if kind == "dispatch_sending":
+                    status, sent = "sending", event["at"]
+                elif kind == "dispatch_recorded":
+                    status, recorded = data["status"], True
+                    if status in ("applied", "sending", "sent_but_not_started") and sent is None:
+                        sent = event["at"]
+                elif kind == "dispatch_not_sent":
+                    status = "not_sent"
+                elif kind == "dispatch_reconciled":
+                    status = data["reconciliation"]["input"]["outcome"]
+            yield {**snapshot, "at": sent or reserved, "reserved_at": reserved, "status": status,
+                   "result": snapshot.get("result") if recorded else None,
+                   "enrollment_usable": latest and recorded}
+
+
 def export(owner, supervision, start, end, native, assessment, *, closure):
-    versions = ((owner.get("schema_version"), 11), (owner["recovery"].get("schema_version"), 18),
-                (supervision.get("schema_version"), 1))
-    if any(type(value) is not int or value != expected for value, expected in versions):
+    versions = ((owner.get("schema_version"), (11,)), (owner["recovery"].get("schema_version"), (18, 19)),
+                (supervision.get("schema_version"), (1,)))
+    if any(type(value) is not int or value not in accepted for value, accepted in versions):
         raise ValueError("unsupported owner evidence schema; preserve it and update this reader")
     if start >= end:
         raise ValueError("the observation window must have positive duration")
     store = owner["recovery"]
-    dispatches = [row for row in store["dispatches"] if start <= instant(row["at"]) < end]
+    dispatches = [row for row in dispatch_attempts(store, end)
+                  if start <= instant(row["at"]) < end or start <= instant(row["reserved_at"]) < end]
     selected = [row for row in dispatches if row["status"] in ("applied", "sending", "sent_but_not_started")]
     indexed(selected)
     members = indexed(supervision["members"])
@@ -226,7 +282,7 @@ def export(owner, supervision, start, end, native, assessment, *, closure):
     for dispatch in selected:
         row = {"id": opaque(dispatch["id"], "assignment-"), "task_id": opaque(dispatch["task"], "task-"),
                "dispatched_at": instant(dispatch["at"]).isoformat(), "native_match": "unknown"}
-        member = members.get(dispatch["id"])
+        member = members.get(dispatch["id"]) if dispatch["enrollment_usable"] else None
         if member:
             assignment = member["assignment"]
             if any(assignment[name] != dispatch[name] for name in ("id", "task", "agent")):
@@ -284,7 +340,8 @@ def main():
         from scripts.coordination_baseline import summarize
         summarize(snapshot)
         runtime = args.herdr_source / "skills/herdr-foreman/foreman"
-        provenance = {"schema_version": 2, "python_version": ".".join(str(part) for part in sys.version_info[:3]),
+        provenance = {"schema_version": 3, "window": snapshot["window"],
+                      "python_version": ".".join(str(part) for part in sys.version_info[:3]),
                       "owner_sha256": hashlib.sha256(owner_bytes).hexdigest(),
                       "supervision_sha256": hashlib.sha256(supervision_bytes).hexdigest(),
                       "exporter_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

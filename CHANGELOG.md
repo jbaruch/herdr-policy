@@ -2,6 +2,7 @@
 
 ## 0.3.0 — 2026-10-18
 
+- Read both legacy and service-owned recovery schemas for measurement. Bind private provenance to the normalized observation window and derive retry/send timing from transport events without borrowing future outcomes or a later enrollment.
 - Add explicit task authority admission/return and a prepared native dispatch-chain runner over the existing owner transactions. Fence foreground dispatch, live service leases, current generations and immutable inputs; retain pending intents after interrupted effects. Waiting polls write no history. The initial adapter retains foreman assessment/Stop obligations and supplies no acceptance, release or unattended-continuation authority.
 
 - Replace the mandatory historical load floor with schema-2 current decision context. Bound printed context to 16 KiB and question-specific evidence reads to 4 KiB, with explicit continuations and no implied acceptance. Preserve current unsuperseded blockers, missing evidence and unknown-delivery refusal; oversized obligations fail visibly rather than being truncated.
