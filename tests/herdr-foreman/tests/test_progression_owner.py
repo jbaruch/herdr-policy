@@ -147,10 +147,26 @@ class ProgressionOwnerTest(unittest.TestCase):
             supervision.hold(self.path, {"id": "fixture-hold", "kind": "waiting_for_user",
                                         "resume_condition": "Fixture operator explicitly resumes",
                                         "evidence": [str(evidence)], "dispositions": []}, AT)
+            supervision.enroll(self.path, {"id": "unrelated", "agent": "other-worker", "task": "two",
+                                          "report": str(self.root / "other.md"), "pane_id": None, "native_session": None}, AT)
+            self.assertFalse(supervision.held(supervision.load(self.path)))
             before = supervision.store_path(self.path).read_bytes()
             with self.assertRaisesRegex(UsageError, "operator hold"):
                 capability.require_current(self.path, self.state(), "one")
             self.assertEqual(supervision.store_path(self.path).read_bytes(), before)
+
+    def test_changed_hold_boundary_does_not_authorize_admission(self):
+        evidence = self.root / "hold.md"
+        evidence.write_text("Wait for the fixture operator to resume.\n")
+        supervision.hold(self.path, {"id": "fixture-hold", "kind": "waiting_for_user", "resume_condition": "Explicit resume",
+                                    "evidence": [str(evidence)], "dispositions": []}, AT)
+        supervision.enroll(self.path, {"id": "unrelated", "agent": "other-worker", "task": "two",
+                                      "report": str(self.root / "other.md"), "pane_id": None, "native_session": None}, AT)
+        self.assertFalse(supervision.held(supervision.load(self.path)))
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "operator holds"):
+            self.admit()
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_legacy_migration_never_invents_service_authority(self):
         state = self.state()

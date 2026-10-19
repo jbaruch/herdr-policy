@@ -7,6 +7,9 @@ It supplies no unattended Stop continuation, automatic acceptance, release
 adapter or risk-profile activation. Keep the real execution handle and existing
 fleet-supervision obligations. The prototype and rollout remain tracked in
 herdr-policy issues #8–#12 and #18; planning issues grant no runtime authority.
+This prototype currently requires a source or Tessl policy installation.
+Native ACR skill/hook conformance does not prove the new progression admission
+and startup path; its installation-aware policy identity adapter remains open.
 
 ## Admit one task
 
@@ -41,6 +44,10 @@ contract and native final source; it does not require the removed pane. Missing,
 changed or contradictory evidence wakes the foreman. Neither gate supplies
 acceptance of the task. Supported responsibilities, budgets, refusal predicates
 and parser contracts live in `skills/herdr-foreman/foreman/progression_service.py`.
+Closed dependencies require clear classifier gates. The actual owner apply
+rechecks these gates under their existing lock and keeps that lock through
+dispatch. Evidence failures return a bounded refusal naming the failed stage
+and the required recovery action.
 
 The owner captures verified config/plan/work bytes for apply and checks the
 frozen brief bytes before worker effects. A mutable replacement cannot change
@@ -79,6 +86,10 @@ The service lease must be free. This clears only that pending intent, leaves
 the cursor unchanged and records one owner reconciliation receipt. It does not
 dispatch, resume a hold or accept work. Missing, uncertain or partly applied
 sets remain pending. The same completed reconciliation replays without a write.
+Associated transport-retry identities also refuse this initial reconciliation
+adapter. The original no-send row never proves a later attempt had no effect.
+Pre-reservation refusals without durable dispatch proof remain pending for
+owner recovery; process exit or a refusal message alone does not clear them.
 
 The bound foreman may record current exception assessments through the normal
 owners without taking the service's dispatch lease. Returning a task requires

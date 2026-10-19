@@ -13,9 +13,9 @@ import os
 import unittest
 from unittest.mock import patch
 
-from tests import test_cli as fixtures, test_report_delivery as native_fixtures
+from tests import test_cli as fixtures, test_report_delivery as native_fixtures, test_report_gates as gate_fixtures
 from tests.fakes import ScriptedReads, agent_json
-from foreman import cli, progression_owner as owner, progression_service as service, recovery, supervision
+from foreman import cli, progression_owner as owner, progression_service as service, recovery, report_gates, supervision
 from foreman.errors import ForemanError, UsageError
 from foreman.state import empty_state, load_state_checked, save_state, state_lock
 
@@ -343,10 +343,26 @@ class ProgressionServiceTest(unittest.TestCase):
                         source.write_text(native_body.replace(SESSION, "another-session") if invalid == "native" else native_body)
                         result = runner.tick()
                         self.assertEqual(result["data"]["reason"], "closed_dependency_evidence_unproved")
+                        self.assertTrue(result["data"]["refusal"]["message"])
+                        self.assertIn("Restore", result["data"]["refusal"]["message"])
                         self.assertEqual(self.invocations, 1)
                 ledger.write_text(body)
                 source.write_text(native_body)
                 self.assertEqual(runner.tick()["data"]["status"], "advanced", self.last_error)
+                report_gates.record(self.path, {"schema_version": 2, "agent": "default", "labels": [
+                    gate_fixtures.label(report, gate_fixtures.HIGH)], "unannotated": []}, AT)
+                refusal = runner._closed_dependency(self.state(), supervision.load(self.path)["members"][0])
+                self.assertEqual(refusal["code"], "closed_dependency_classifier_gate")
+                self.assertIn("open block gate", refusal["message"])
+                writes = list(self.fx.runner.writes())
+                step = self.document["steps"][1]
+                with capability.prepared_step("verify", gate_reports=[str(report)]):
+                    out, err = io.StringIO(), io.StringIO()
+                    code = cli.main([*step["argv"], "--state", str(self.path), "--dispatch-id", service.intent_id("one", 3, "verify")],
+                                    stdout=out, stderr=err, client=self.client, service_capability=capability)
+                self.assertEqual(code, 1)
+                self.assertIn("open block gate", err.getvalue())
+                self.assertEqual(self.fx.runner.writes(), writes)
 
     def test_proved_no_send_intent_can_be_reconciled_and_returned_without_advancing(self):
         original, failed = cli.save_state, False
@@ -371,6 +387,14 @@ class ProgressionServiceTest(unittest.TestCase):
         data = {"task": "one", "expected_generation": 1, "intent": intent, "authorization": AUTH}
         record.write_text(json.dumps(data))
         before = self.path.read_bytes()
+        associated = self.state()
+        associated["recovery"]["dispatches"].append({**associated["recovery"]["dispatches"][0],
+            "id": associated["recovery"]["dispatches"][0]["id"] + ":transport-retry-1", "status": "applied"})
+        # The owner-reader seam represents a later validated attempt. Even
+        # without examining its native evidence, the original row is no proof.
+        with patch("foreman.progression_owner._load", return_value=associated), state_lock(self.path), self.assertRaisesRegex(UsageError, "associated transport retries"):
+            owner.reconcile_intent(self.path, data, AT, self.client)
+        self.assertEqual(self.path.read_bytes(), before)
         with self.session(), state_lock(self.path), self.assertRaisesRegex(ForemanError, "Another progression"):
             owner.reconcile_intent(self.path, data, AT, self.client)
         self.assertEqual(self.path.read_bytes(), before)

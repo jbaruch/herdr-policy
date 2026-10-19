@@ -127,6 +127,10 @@ def _settled(state, supervised, task):
                          {"task": task, "pending_dispatch_count": len(pending), "active_enrollment_count": len(active)})
 
 
+def _unresumed_hold(supervised):
+    return any(row["resumed_at"] is None for row in supervised["holds"])
+
+
 def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     """Called under the canonical state lock; never bind, resume or start a worker."""
     from .progression_service import capture_contract
@@ -153,7 +157,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     _settled(state, supervised, data["task"])
     if row.get("progression", {}).get("pending") is not None:
         raise UsageError("Reconcile the service's pending transition before returning or replacing its authority; process exit proves no effect outcome.", {})
-    if not returning and supervision.held(supervised):
+    if not returning and _unresumed_hold(supervised):
         raise UsageError("Existing operator holds prevent service admission; preserve their explicit resume conditions.", {})
     grant = {"schema_version": GRANT_VERSION, "generation": generation + 1,
              "mode": "legacy" if returning else "service", "service_id": None, "lease_path": None,
@@ -182,7 +186,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         if _binding(current) != _binding(supervised):
             raise UsageError("The bound foreman changed during handoff; verify its current owner before retrying.", {})
         _settled(state, current, data["task"])
-        if not returning and supervision.held(current):
+        if not returning and _unresumed_hold(current):
             raise UsageError("An operator hold arrived during admission; preserve its resume conditions.", {})
         with process_lease(lease_path):
             row.update(schema_version=2, authority=grant)
@@ -202,6 +206,7 @@ class ServiceCapability:
         self.task, self.generation, self.service_id = task, generation, service_id
         self.lease, self.plugin_root = lease, Path(plugin_root).resolve()
         self._prepared = None
+        self.gate_reports = ()
 
     def require_current(self, state_path, state, task):
         from .progression_service import capture_contract
@@ -213,7 +218,7 @@ class ServiceCapability:
                 or grant["service_id"] != self.service_id or Path(grant["lease_path"]).resolve() != self.lease._path.resolve()):
             raise UsageError("The task authority generation changed; stop effects and reconcile through its current owner.", {})
         supervised = supervision.load(state_path)
-        if _binding(supervised) != grant["binding"] or supervision.held(supervised):
+        if _binding(supervised) != grant["binding"] or _unresumed_hold(supervised):
             raise UsageError("The supervision binding or operator hold prevents service effects; preserve pending deliveries and resume conditions.", {})
         known = {item["id"] for item in state["recovery"]["dispatches"]
                  if item["task"] == task and item["status"] != "not_sent"}
@@ -228,7 +233,7 @@ class ServiceCapability:
             raise UsageError("The admitted workflow contract changed; preserve the current task and hand it off explicitly.", {})
 
     @contextmanager
-    def prepared_step(self, step_id):
+    def prepared_step(self, step_id, *, gate_reports=()):
         from .progression_service import capture_contract
         state = _load(self.state_path)
         self.require_current(self.state_path, state, self.task)
@@ -241,10 +246,12 @@ class ServiceCapability:
         if step is None or self._prepared is not None:
             raise UsageError("Select one admitted dispatch step at a time; do not substitute another operation.", {})
         self._prepared = step
+        self.gate_reports = tuple(gate_reports)
         try:
             yield
         finally:
             self._prepared = None
+            self.gate_reports = ()
 
     def capture_inputs(self, args):
         from .cli import build_parser
@@ -407,6 +414,9 @@ def reconcile_intent(state_path, data, at, client):
             or data["intent"] != identifier):
         raise UsageError("Reconcile only the current pending intent; a different step supplies no no-send proof.", {})
     expected = {identifier + ":" + role for role in step["roles"]}
+    if any(any(item["id"].startswith(base + ":transport-retry-") for base in expected)
+           for item in state["recovery"]["dispatches"]):
+        raise UsageError("This intent has associated transport retries. Preserve their actual owner identities and reconcile their effects; the original no-send rows cannot clear a later attempt.", {})
     dispatches = {item["id"]: item for item in state["recovery"]["dispatches"] if item["id"] in expected}
     if (set(dispatches) != expected or any(item["task"] != data["task"] or item["status"] != "not_sent"
                                           for item in dispatches.values())):

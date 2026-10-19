@@ -19,9 +19,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from . import config, load_set, members, progression_owner as authority, recovery, report_delivery, supervision
+from . import config, load_set, members, progression_owner as authority, recovery, report_delivery, report_gates, supervision
 from .assign import normalize_assignments
-from .errors import UsageError
+from .errors import ForemanError, UsageError
 from .state import save_state, state_lock
 
 
@@ -204,38 +204,49 @@ class ProgressionService:
 
     def _closed_dependency(self, state, member):
         """Verify canonical accepted evidence after the scoped pane has closed."""
+        def refuse(stage, message):
+            return self._refusal(json.dumps({"error": "closed_dependency_" + stage, "message": message}))
         expected = supervision.expected_assignment(member)
         resolution = member["resolution"]
         evidence = resolution["evidence"] if resolution else []
         if len(evidence) != 1:
-            return False
+            return refuse("ledger", "Restore this enrollment's single owner-bound assessment-ledger receipt before progression; preserve its unresolved obligation.")
         captured = evidence[0]
         dispatch = next((row for row in state["recovery"]["dispatches"] if row["id"] == member["id"]), None)
         if dispatch is None or any(dispatch[key] != expected[key] for key in ("task", "agent")):
-            return False
+            return refuse("owner", "Reconcile the closed enrollment with its original task dispatch owner; another worker's report supplies no authority.")
         identity = report_delivery.native_identity({"agent_session": expected["native_session"]})
         if identity is None or not Path(expected["report"]).is_file():
-            return False
+            return refuse("report", "Restore the original enrolled native identity and report file, or record their unavailability through the bound foreman.")
+        stage = "ledger"
         try:
             with Path(captured["path"]).open("rb") as stream:
                 body = stream.read(CAPTURE_BYTES + 1)
             if (len(body) > CAPTURE_BYTES or len(body) < captured["size"]
                     or hashlib.sha256(body[:captured["size"]]).hexdigest() != captured["sha256"]):
-                return False
+                return refuse("ledger", "Restore the original captured assessment-ledger prefix; changed or unavailable bytes require owner recovery, never acceptance.")
             with tempfile.NamedTemporaryFile(suffix=".md") as ledger:
                 ledger.write(body)
                 ledger.flush()
                 event = members.assessed_event(ledger.name, expected, self.capability.state_path)
             if (event["decision"] != "accepted" or resolution["outcome"] not in
                     {"accepted", "Task ledger event {}: accepted".format(event["id"])}):
-                return False
+                return refuse("assessment", "Obtain the current bound foreman's accepted assessment for this enrollment; a different resolution or later invalidation remains blocking.")
+            stage = "contract"
             members._require_contract(self.capability.state_path, member["id"], expected["report"])
+            stage = "classifier_gate"
+            report_gates.require_clear(self.capability.state_path, expected["report"], True)
+            stage = "native_source"
             path = report_delivery.source_path(identity)
             source = report_delivery.read_native_source(path) if path is not None else None
-            return source is not None and report_delivery.bare_final(
-                report_delivery.source_final(source[1], identity["agent"], identity["value"]), expected["report"])
-        except (OSError, UnicodeError, ValueError, UsageError):
-            return False
+            if source is None or not report_delivery.bare_final(
+                    report_delivery.source_final(source[1], identity["agent"], identity["value"]), expected["report"]):
+                return refuse(stage, "Restore this enrollment's exact native final-source/report proof; missing or contradictory delivery evidence keeps progression held.")
+            return None
+        except ForemanError as exc:
+            return refuse(stage, exc.to_dict()["message"])
+        except (OSError, UnicodeError, ValueError):
+            return refuse(stage, "Restore readable, valid original {} evidence through its owner, then retry; preserve the closed enrollment meanwhile.".format(stage))
 
     def _dependencies(self, state, step):
         """Probe without holding the global task-state transaction lock."""
@@ -255,8 +266,9 @@ class ProgressionService:
                     if member["active"] or resolution is None:
                         return self._view(state, status="waiting", reason="assessment_required"), stamps
                 if not member["active"]:
-                    if not self._closed_dependency(state, member):
-                        return self._view(state, status="exception", wake=True, reason="closed_dependency_evidence_unproved"), stamps
+                    refusal = self._closed_dependency(state, member)
+                    if refusal is not None:
+                        return self._view(state, status="exception", wake=True, reason="closed_dependency_evidence_unproved", refusal=refusal), stamps
                     stamps[identifier] = self._member_stamp(member)
                     continue
                 expected = supervision.expected_assignment(member)
@@ -315,6 +327,8 @@ class ProgressionService:
             current_members = {item["id"]: item for item in supervised["members"]}
             if any(key not in current_members or self._member_stamp(current_members[key]) != stamp for key, stamp in stamps.items()):
                 return self._view(state, status="waiting", reason="dependency_changed_during_observation")
+            gate_reports = [supervision.expected_assignment(current_members[key])["report"]
+                            for key in stamps if not current_members[key]["active"]]
             identifier = intent_id(cap.task, cap.generation, step["id"])
             expected = {identifier + ":" + role for role in step["roles"]}
             if progress["pending"] is not None:
@@ -332,7 +346,7 @@ class ProgressionService:
         # inside its mutation transaction. Do not hold an outer lock or bypass
         # the owner with direct transport calls.
         out, err = io.StringIO(), io.StringIO()
-        with cap.prepared_step(step["id"]):
+        with cap.prepared_step(step["id"], gate_reports=gate_reports):
             code = self.invoke([*step["argv"], "--state", str(path), "--dispatch-id", identifier],
                                stdout=out, stderr=err, client=self.client, service_capability=cap)
         with state_lock(path):

@@ -1453,8 +1453,15 @@ def cmd_apply(args, client=None, warn=None, trace=None):
     # apply returns, so no verdict gate is recorded between the check and the
     # send (#646; foreman/report_gates.py `holding`).
     with ExitStack() as stack:
+        gates_held = False
         def hold_gates():
-            stack.enter_context(report_gates.holding(_state_path(args)))
+            nonlocal gates_held
+            if not gates_held:
+                stack.enter_context(report_gates.holding(_state_path(args)))
+                gates_held = True
+        for report in getattr(args, "service_gate_reports", ()):
+            hold_gates()
+            report_gates.require_clear(_state_path(args), report, True)
         return _apply(args, client, warn, trace, hold_gates)
 
 
@@ -3432,6 +3439,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
                                                    lambda: _client(args, trace=trace))
                 if service_capability is not None and args.command == "apply":
                     args.service_inputs = service_capability.capture_inputs(args)
+                    args.service_gate_reports = service_capability.gate_reports
                 retro_lock = retrospective.lock(_state_path(args)) if not readonly and args.command in {"apply", "start-judge", "relaunch-worker", "retro-record"} else nullcontext()
                 with retro_lock:
                     payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)
