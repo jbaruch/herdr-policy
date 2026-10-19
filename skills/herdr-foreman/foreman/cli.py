@@ -30,6 +30,9 @@ from .assign import apply as apply_assignments
 from .assign import APPLY_SCHEMA_VERSION, dry_run, freeze_decision, freeze_paths, read_frozen, native_context_session, normalize_assignments, resolve_paths, validate_context_mode, validate_fix_history
 from . import no_work_recovery, bootstrap_recovery, model_unavailability, probe_recovery, renderable
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
+from . import progression_owner
+from . import progression_service
+from . import config as config_owner
 from .config import FOREMAN_CONFIG_VERSION, default_config_path, load_config, load_foreman, load_judge, load_role_costs, select_agents
 from .errors import AgentBusyError, IDENTIFIER_UNAVAILABLE_KIND, IDENTIFIER_UNAVAILABLE_RECOVERY, TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND, PlanError, StateError, ForemanError, HerdrError, UsageError, owner_recovery
 from .herdr import (
@@ -131,6 +134,8 @@ def build_parser():
     parser.add_argument("--version", action="version", version="foreman " + __version__)
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
+    progression_owner.register_commands(sub, common)
+    progression_service.register_commands(sub, common)
 
     judge_parser = sub.add_parser("start-judge", parents=[common],
                                   help="Start the plan's judge in a shell pane and verify its launch argv.")
@@ -798,13 +803,13 @@ def _parse_excludes(pairs):
     return excludes
 
 
-def _load_assignments(value, document=False):
+def _load_assignments(value, document=False, contents=None):
     """`--assignments` takes inline JSON or a path to a JSON file."""
     text = value.strip()
     if not text.startswith("{"):
         path = Path(text)
         try:
-            text = path.read_text(encoding="utf-8")
+            text = contents[str(path.resolve())].decode("utf-8") if contents is not None else path.read_text(encoding="utf-8")
         except FileNotFoundError:
             raise UsageError(
                 "--assignments file {} not found - pass the path to `{}` "
@@ -1012,9 +1017,9 @@ def _load_state_for_write(path, warn, *, persist_migration=True):
     return state
 
 
-def _read_record(path):
+def _read_record(path, contents=None):
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(contents[str(Path(path).resolve())] if contents is not None else Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UsageError("Cannot read record {}: {}. Supply readable UTF-8 JSON with the documented fields.".format(path, exc), {}) from None
     if not isinstance(data, dict):
@@ -1454,8 +1459,11 @@ def cmd_apply(args, client=None, warn=None, trace=None):
 
 
 def _apply(args, client, warn, trace, hold_gates):
-    templates = load_config(_config_path(args))
-    document = _load_assignments(args.assignments, document=True)
+    pinned = getattr(args, "service_inputs", None)
+    config_payload = json.loads(pinned[str(Path(_config_path(args)).resolve())]) if pinned is not None else None
+    templates = (config_owner.parse_config(config_payload, source=str(_config_path(args)))
+                 if pinned is not None else load_config(_config_path(args)))
+    document = _load_assignments(args.assignments, document=True, contents=pinned)
     assignments = normalize_assignments(document)
     scoped = bool(templates) and all(agent.assignment_scoped for agent in templates)
     worker_kinds = document.get("worker_kinds") if isinstance(document, dict) else None
@@ -1494,7 +1502,8 @@ def _apply(args, client, warn, trace, hold_gates):
     for value in rounds.values():
         if not isinstance(value, dict) or set(value) - {"type", "context"}:
             raise UsageError("Plan round inputs allow only type and context; model overrides are forbidden.", {})
-    judge = load_judge(_config_path(args))
+    judge = (config_owner.parse_judge(config_payload, source=str(_config_path(args)))
+             if pinned is not None else load_judge(_config_path(args)))
     judge_kind = document.get("worker_kinds", {}).get("judge") if scoped else assignments.get("judge")
     if "judge" in assignments and (judge is None or judge_kind != judge.agent):
         raise UsageError("Judge assignment must use the pinned judge worker kind in config.json.", {})
@@ -1506,7 +1515,7 @@ def _apply(args, client, warn, trace, hold_gates):
     state = _load_state_for_write(state_path, warn, persist_migration=not args.dry_run)
     store = state["recovery"]
     at = args.now or now_iso()
-    work = _read_record(args.work) if args.work else None
+    work = _read_record(args.work, contents=pinned) if args.work else None
     task_context = {"task": args.task, "fix_round": args.fix_round, "plan": args.correction_plan, "work": work}
     if document.get("task_context") is not None and document["task_context"] != task_context:
         raise UsageError("Saved plan and apply name different task, count or correction bounds; replan from the current ledger.", {})
@@ -1610,8 +1619,13 @@ def _apply(args, client, warn, trace, hold_gates):
 
     decision = "frozen" if args.dry_run or not args.task else freeze_decision(assignments, is_replay)
     if decision == "frozen" and not args.dry_run:
+        source_paths = dict(paths)
         paths = freeze_paths(paths)
         contents = paths.contents
+        if pinned is not None:
+            for role, source in source_paths.items():
+                if contents[paths[role]] != pinned[str(Path(source).resolve())]:
+                    raise UsageError("Frozen dispatch bytes differ from the admitted inputs; preserve the task and obtain a new handoff.", {})
     if seated or any(key in document for key in ("slice_paths", "slice_digest", "seat_digests")):
         # Keyed on the metadata, not only on the seats: a saved plan stripped
         # of every seat would otherwise skip the check entirely and dispatch a
@@ -3284,6 +3298,16 @@ def cmd_supervision(args, client=None, warn=None, trace=None):
                                            client=client, clock=now_iso, sleeper=time.sleep), None
 
 
+def cmd_progression_handoff(args, client=None, warn=None, trace=None):
+    return progression_owner.run_command(args, _state_path(args), args.now or now_iso(),
+                                         client if client is not None else _client(args, trace=trace))
+
+
+def cmd_progression_run(args, client=None, warn=None, trace=None):
+    return progression_service.run_command(args, _state_path(args),
+                                           client if client is not None else _client(args, trace=trace), sleeper=time.sleep)
+
+
 def cmd_supervision_gate(args, client=None, warn=None, trace=None):
     """Which pending supervision events need the foreman; see supervision_gate.py."""
     return supervision_gate.pending(supervision.load(_state_path(args))), None
@@ -3314,6 +3338,8 @@ COMMANDS = {
     "close-member": cmd_close_member,
     "check-member": cmd_check_member,
     "load-set": cmd_load_set,
+    **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return")},
+    "progression-run": cmd_progression_run,
     **{command: cmd_recovery for command in ("task", "checkpoint", "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report", "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work", "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review", "recover-report", "assess-specialist", "close-task")},
     "detect-triggers": cmd_detect_triggers,
     "finding-churn": cmd_finding_churn,
@@ -3343,7 +3369,7 @@ COMMANDS = {
 HOME_FREE_COMMANDS = frozenset({"marker-fit", "finding-churn", "probe-unavailable"})
 
 
-def main(argv=None, stdout=None, stderr=None, client=None):
+def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability=None):
     """Entry point. Returns the process exit code rather than calling sys.exit."""
     stdout = stdout if stdout is not None else sys.stdout
     stderr = stderr if stderr is not None else sys.stderr
@@ -3395,9 +3421,14 @@ def main(argv=None, stdout=None, stderr=None, client=None):
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "close-member"}
-            lock = nullcontext() if readonly or separate_owner else state_lock(retrospective.canonical_state(_state_path(args)))
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "close-member", "progression-run"}
+            authority_transaction = service_capability is not None
+            lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:
+                progression_owner.require_command(_state_path(args), args, service_capability, client,
+                                                   lambda: _client(args, trace=trace))
+                if service_capability is not None and args.command == "apply":
+                    args.service_inputs = service_capability.capture_inputs(args)
                 retro_lock = retrospective.lock(_state_path(args)) if not readonly and args.command in {"apply", "start-judge", "relaunch-worker", "retro-record"} else nullcontext()
                 with retro_lock:
                     payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)

@@ -8,7 +8,7 @@ description: >
   measure Herdr worker capacity, recover refused dispatches, restart or relaunch
   idle workers, collect reports, run or retrieve retrospectives,
   catch up on outstanding user attention, curate team lessons, save and resume
-  foreman handoffs, or report a task's cost or resource use through acceptance.
+  foreman handoffs, run explicitly admitted native dispatch chains, or report a task's cost or resource use through acceptance.
   Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention and cost reports work
   offline. Other standalone tasks skip this skill.
 ---
@@ -40,6 +40,15 @@ resolved through `select_tier` and checked against the capability table
 Each command resolves `HS` to its installed Herdr skill or that skill in a
 herdr-policy clone. Repeat the resolver in every call. Prose `skills/...`
 paths are relative to the package root.
+
+Explicitly admitted task progression follows:
+
+```text
+skills/herdr-foreman/references/progression.md
+```
+
+Retain the current supervision, assessment and Stop obligations; this adapter
+supplies no release approval.
 
 Read the lookup rule before running these command blocks:
 

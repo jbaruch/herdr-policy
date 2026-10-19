@@ -651,7 +651,7 @@ document and arrives already stamped.
 
 ## Recovery records
 
-The recovery document uses `schema_version: 18`; individual records retain their
+The recovery document uses `schema_version: 19`; individual records retain their
 independent versions. Version 6 adds the dispatch fields `brief_identity`, `refusal` and
 `refusal_move` and the `refusal_authorizations` collection; version 7 adds the
 dispatch's send-time `provider`; version 8 adds the `diagnoses` collection;
@@ -673,7 +673,7 @@ dispatch is reserved immediately after spawn, before another worker starts.
 Planner rotation counts map completed assignment indices back through these
 dispatches so fresh live names do not erase worker-kind history. The
 owner stamps an older store on load, adds the empty collections, and refuses one
-already carrying a field — or a seat-named dispatch — its version did not own. Generic records remain version 1; stale-Grok delivery and
+already carrying a field — or a seat-named dispatch — its version did not own. Generic records remain version 1; explicitly admitted task metadata uses version 2. Stale-Grok delivery and
 composition-bearing dispatch/result records use version 2; a judge
 dispatch/result carrying its `judge_mode` uses version 3; assignment-scoped
 dispatch/result records use version 4. Version 16 adds dispatch/result version 5's
@@ -795,6 +795,46 @@ change.
 The command's input/output and continuation contract is
 `skills/herdr-foreman/references/no-work-recovery.md`. The source-binding and
 one-replacement validation lives in the owner module's `validate` function.
+
+### Admitted Task Progression
+
+Recovery store version 19 owns task metadata version 2. The single writer is
+the herdr-foreman owner through `progression-admit`, `progression-return` and
+the admitted `progression-run` loop. All changes share the canonical state
+transaction lock. Legacy task metadata remains version 1 with no grant;
+upgrading an older store never invents a service handoff. A version-18-or-older
+store carrying task authority is unowned newer data and fails validation.
+
+A version-2 task retains its original task fields and adds `authority`. Its
+schema-1 fields and validation/budget contract are `GRANT_FIELDS` and
+`validate_grant` in `skills/herdr-foreman/foreman/progression_owner.py`. A grant records one current
+generation, service identity, dedicated kernel lease path, immutable workflow
+receipt, loaded policy identity, supervision-binding identity, authorization
+and timestamp. Returned grants keep the generation and clear service fields.
+No second task database or local handoff history is written.
+
+An optional `progression` record starts at the first dispatch intent. Its
+schema-1 fields are `schema_version`, `generation`, `cursor` and `pending`.
+`pending` is null or a schema-1 record with `step` and stable `intent` identity.
+`skills/herdr-foreman/foreman/progression_service.py` owns `validate_progress`, cursor bounds and
+readback. The cursor advances only after the exact expected task dispatches
+are owner-recorded as applied. A persisted pending intent with incomplete
+readback remains uncertain after restart. Completion of this cursor means the
+prepared assignment chain ended; it proves no acceptance, release or outcome.
+
+The kernel lease is a dedicated empty file, not a schema-bearing authority
+record. Process death releases its lock but neither returns the task nor
+classifies an effect. Every service mutation verifies its live capability,
+task generation, policy, contract and supervision binding inside the owner
+transaction. The real bound foreman retains exception assessment; foreground
+dispatch of a service-owned task is refused. Operator holds stay effective.
+
+This is a gate store under `stateful-artifacts` Gate Store: a reader that cannot
+accept its version must refuse effects. Existing state-mutating owners refuse
+newer recovery versions rather than substituting an empty ledger. Install
+compatible CLI owners and native hooks before admission; never run an old
+sidecar against admitted tasks. Readers do not independently migrate grants.
+The command and initial-adapter limits are in `skills/herdr-foreman/references/progression.md`.
 
 ## Specialist assessment records
 
