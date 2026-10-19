@@ -242,6 +242,9 @@ class WorkflowReleaseAdapter:
                 or Path(git("rev-parse", "--show-toplevel").stdout.strip()).resolve() != Path(base)):
             raise UsageError("The cleanup base moved or became an alias; preserve its current owner instead of mutating a substitute checkout.", {})
         if step == 0:
+            intent = progress["pending"]
+            if intent is None or intent["operation"] != "cleanup" or not intent["effects_started"]:
+                return False
             source = git("rev-parse", "--verify", "--quiet", delivery["merge_commit"] + "^{commit}", allow_failure=True)
             remote = git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + repo["base_branch"], allow_failure=True)
             if source.returncode == 1 or remote.returncode == 1:
@@ -264,7 +267,16 @@ class WorkflowReleaseAdapter:
             if (git("branch", "--show-current").stdout.strip() != repo["base_branch"]
                     or git("status", "--porcelain=v1", "--untracked-files=all").stdout):
                 raise UsageError("The base checkout has other selected or uncommitted work; preserve it before this task's cleanup.", {})
-            return git("rev-parse", "HEAD").stdout == git("rev-parse", "refs/remotes/origin/" + repo["base_branch"]).stdout
+            head = git("rev-parse", "HEAD").stdout.strip()
+            remote = git("rev-parse", "refs/remotes/origin/" + repo["base_branch"]).stdout.strip()
+            if head == remote:
+                return True
+            ancestry = git("merge-base", "--is-ancestor", head, remote, allow_failure=True)
+            if ancestry.returncode == 1:
+                raise UsageError("The clean base checkout contains commits outside the fetched default; preserve them and reconcile its owner before cleanup.", {})
+            if ancestry.returncode:
+                raise StateError("Cannot prove a fast-forward from the current base; preserve cleanup until Git ancestry is readable.", {})
+            return False
         if step == 2:
             writer = Path(repo["worktree"])
             if writer.is_symlink():

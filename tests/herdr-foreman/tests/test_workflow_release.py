@@ -169,6 +169,46 @@ class WorkflowReleaseTest(unittest.TestCase):
             resolution = next(call for call in self.calls if len(call) > 1 and Path(call[1]).name == "resolve-publish-run.sh")
             self.assertEqual(resolution[4:], [self.pr["merge_commit_sha"], "publish.yml", "main"])
 
+    def test_cleanup_fetches_even_when_a_stale_tracking_ref_contains_the_merge(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "cleanup", delivery=self.deliver)
+            assert self.pr is not None
+            merge = self.pr["merge_commit_sha"]
+            remote_head = self.git(self.case.repository, "commit-tree", merge + "^{tree}", "-p", merge,
+                                   "-m", "Private fixture later remote default").strip()
+            self.git(self.case.repository, "push", "origin", remote_head + ":refs/heads/main")
+            self.git(self.case.repository, "update-ref", "refs/remotes/origin/main", merge)
+            self.assertEqual(runner.tick()["data"]["status"], "prepared")
+            self.assertEqual(self.case.progress()["delivery"]["cleanup_step"], 0)
+            self.assertFalse(self.case.progress()["pending"]["effects_started"])
+            self.assertEqual(runner.tick()["data"]["status"], "effect_recorded")
+            self.assertEqual(self.git(self.case.repository, "rev-parse", "refs/remotes/origin/main").strip(), remote_head)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete")
+            self.assertEqual(self.git(self.case.repository, "rev-parse", "HEAD").strip(), remote_head)
+            self.assertEqual(len([call for call in self.calls if "fetch" in call]), 1)
+
+    def test_cleanup_preserves_clean_local_commits_ahead_of_the_fetched_default(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "cleanup"
+                and self.case.progress()["delivery"]["cleanup_step"] == 1, delivery=self.deliver)
+            self.git(self.case.repository, "merge", "--ff-only", "refs/remotes/origin/main")
+            source = self.case.repository / "private-local.txt"
+            source.write_text("Preserve this private local fixture commit.\n")
+            self.git(self.case.repository, "add", "private-local.txt")
+            self.git(self.case.repository, "commit", "-m", "Private fixture local contribution")
+            head = self.git(self.case.repository, "rev-parse", "HEAD").strip()
+            before = len(self.calls)
+            result = runner.tick()
+            self.assertEqual(result["data"]["status"], "exception", result)
+            self.assertEqual(self.case.progress()["delivery"]["cleanup_step"], 1)
+            self.assertEqual(self.git(self.case.repository, "rev-parse", "HEAD").strip(), head)
+            self.assertTrue(self.case.worktree.exists())
+            self.assertFalse(any("merge" in call for call in self.calls[before:]))
+
     def publication(self, *, acr=True):
         self.case.document["publication"] = {"tessl": {"workspace": "fixture", "plugin": "package"},
                                              "acr": acr, "workflow": "publish.yml"}
