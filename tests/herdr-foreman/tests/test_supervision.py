@@ -330,6 +330,26 @@ class SupervisionTest(unittest.TestCase):
         self.assertEqual(self.stop()["decision"], "block")
         self.assertEqual(self.stop({**self.payload, "stop_hook_active": True})["decision"], "block")
 
+    def test_expected_resolution_receipts_preserve_changed_evidence_and_the_open_member(self):
+        self.member()
+        delivery = self.root / "delivery.json"
+        original = b'{"found":true}\n'
+        delivery.write_bytes(original)
+        paths = [str(self.evidence), str(delivery)]
+        expected = [{key: row[key] for key in ("path", "sha256")} for row in store.evidence(paths)]
+        request = {"id": "dispatch-a", "outcome": "Closed original report and delivery bytes.", "evidence": paths}
+        before = store.load(self.path)
+        delivery.write_bytes(b"Changed after the original close intent.\n")
+        with self.assertRaisesRegex(UsageError, "differs from the original intent"):
+            store.resolve(self.path, request, AT, expected_evidence=expected)
+        self.assertEqual(store.load(self.path), before)
+        self.assertEqual(delivery.read_bytes(), b"Changed after the original close intent.\n")
+        delivery.write_bytes(original)
+        result = store.resolve(self.path, request, AT, expected_evidence=expected)
+        self.assertFalse(result["active"])
+        self.assertEqual([{key: row[key] for key in ("path", "sha256")}
+                          for row in result["resolution"]["evidence"]], expected)
+
     def test_worker_and_unrelated_session_do_not_inherit_lead_gate(self):
         self.member()
         self.assertIsNone(self.stop({**self.payload, "session_id": "worker-session"}))

@@ -338,10 +338,14 @@ def acknowledge(state_path, record, at):
     return transaction(state_path, mutate)
 
 
-def resolve(state_path, record, at):
+def resolve(state_path, record, at, *, expected_evidence=None):
+    """Retain the actual receipts; an intent may also require exact path/hash bytes."""
     if not isinstance(record, dict) or set(record) != {"id", "outcome", "evidence"}:
         raise UsageError("Resolution requires enrollment id, foreman outcome, and saved evidence paths.", {})
     result = {"schema_version": 1, "at": at, "outcome": text(record["outcome"], "outcome"), "evidence": evidence(record["evidence"])}
+    if expected_evidence is not None and [{key: row[key] for key in ("path", "sha256")}
+                                          for row in result["evidence"]] != expected_evidence:
+        raise UsageError("Resolution evidence differs from the original intent; preserve its changed bytes and original owner receipts.", {})
     timestamp(at)
     def mutate(data):
         member = next((row for row in data["members"] if row["id"] == record["id"]), None)

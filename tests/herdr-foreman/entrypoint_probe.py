@@ -42,7 +42,8 @@ def main():
                 runpy.run_path(str(path), run_name="__main__")
             status = 0
         except SystemExit as error:
-            status = error.code if type(error.code) is int else 0 if error.code is None else 2
+            code = error.code
+            status = int(code) if isinstance(code, int) else 0 if code is None else 2
         except (ImportError, OSError, SyntaxError):
             print("entrypoint-probe: cannot import the script; restore its path, imports and syntax and retry", file=sys.stderr)
         if _selected_count is None:
