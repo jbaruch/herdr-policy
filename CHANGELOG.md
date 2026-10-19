@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 — 2026-10-19
+
+- Add measurement-summary schema 2 and input schema 2 with explicit completed, pending and unmeasured queue states; retain schema-1 input support. Report known pending ages with bounded oldest lists and explicit exclusions. Merge overlapping known waits within each task and queue, retain blocked work and report holds separately. These calculations create no additional owner history and do not establish observed ROI.
+- Package the measurement command and its schema reference for both channels. Bound printed output with the current-context budget; save larger complete comparisons only to an explicitly requested private report, with byte provenance and an idempotent bounded receipt. Exercise installed summary and report commands across Codex, Claude Code and Cursor profiles in CI.
+- Keep measurement imports free of bytecode writes and reject reports inside recognized Tessl/native/manifest-owned code trees. Isolate the local calculator namespace so frozen evidence readers can keep their selected older runtime.
+
 ## 0.6.1 — 2026-10-19
 
 - Refuse delivery-format migration or initial creation when any unfinished service in the owner file still requires a different admitted policy. Preserve compatible bytes and identify the blocked task and policy, including in read-only previews, so an upgrade cannot strand another task on an older reader.

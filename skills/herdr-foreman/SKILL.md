@@ -8,8 +8,8 @@ description: >
   measure Herdr worker capacity, recover refused dispatches, restart or relaunch
   idle workers, collect reports, run or retrieve retrospectives,
   catch up on outstanding user attention, curate team lessons, save and resume
-  foreman handoffs, run explicitly admitted native task workflows or prepared dispatch chains, or report a task's cost or resource use through acceptance.
-  Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention and cost reports work
+  foreman handoffs, run explicitly admitted native task workflows or prepared dispatch chains, summarize sanitized coordination measurements, or report a task's cost or resource use through acceptance.
+  Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention, measurements and cost reports work
   offline. Other standalone tasks skip this skill.
 ---
 
@@ -133,12 +133,20 @@ user-attention blocker naming `foreman migrate-home` (`skills/herdr-foreman/stat
 Migration), and run nothing else until the operator has stopped every foreman
 and run it.
 
-Four request kinds are answered offline, need no live Herdr, and finish here
+Five request kinds are answered offline, need no live Herdr, and finish here
 after the requested operation. Each reference carries its own owner commands and
 their contracts. Use the recorded state override or default, report any non-zero
 diagnostic, and never fabricate missing history. They grant no new task
 authority.
 
+- **Sanitized coordination measurements** — read the command and schema contract:
+
+  ```text
+  skills/herdr-foreman/references/coordination-metrics.md
+  ```
+
+  Return the bounded summary or private-report receipt and finish here. Report
+  any non-zero diagnostic and finish here without starting a live round.
 - **Catch-up or saved attention** — `skills/herdr-foreman/references/attention.md`. Read all
   attention pages before claiming completeness.
 - **Lesson curation, saved foreman context, or a foreman handoff** —

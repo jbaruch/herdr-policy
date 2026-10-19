@@ -2,7 +2,7 @@
 """Export sanitized measurements from frozen owner/supervision evidence.
 
 argv: owner and supervision JSON, explicit window, trusted Herdr source checkout,
-and a private provenance-output path. stdout: schema-1 baseline snapshot only.
+and a private provenance-output path. stdout: schema-2 baseline snapshot only.
 stderr: actionable setup failures; exit 0 success, 2 unusable input or output.
 Reads native sources and saved ledgers; never calls workers or mutates owners.
 """
@@ -281,7 +281,8 @@ def export(owner, supervision, start, end, native, assessment, *, closure):
     assignments = []
     for dispatch in selected:
         row = {"id": opaque(dispatch["id"], "assignment-"), "task_id": opaque(dispatch["task"], "task-"),
-               "dispatched_at": instant(dispatch["at"]).isoformat(), "native_match": "unknown"}
+               "dispatched_at": instant(dispatch["at"]).isoformat(), "native_match": "unknown",
+               "assessment_state": "unmeasured", "resolution_state": "unmeasured"}
         member = members.get(dispatch["id"]) if dispatch["enrollment_usable"] else None
         if member:
             assignment = member["assignment"]
@@ -298,9 +299,15 @@ def export(owner, supervision, start, end, native, assessment, *, closure):
             resolution = member.get("resolution")
             if resolution and instant(resolution["at"]) <= end:
                 row["resolved_at"] = instant(resolution["at"]).isoformat()
+                row["resolution_state"] = "completed"
+            elif resolution or member.get("active") is True:
+                row["resolution_state"] = "pending"
             assessed = assessment(member, supervision["state_path"], end)
             if assessed is not None:
+                if instant(assessed) > end:
+                    raise ValueError("assessment reader returned evidence after the observation boundary")
                 row["assessed_at"] = assessed
+                row["assessment_state"] = "completed"
             reports = [event for event in supervision["events"] if event["member"] == member["id"]
                        and event["kind"] == "report_observed" and instant(event["at"]) <= end]
             if reports and reports[-1]["data"].get("present"):
@@ -316,7 +323,7 @@ def export(owner, supervision, start, end, native, assessment, *, closure):
                                 for item in hold["dispositions"])
                          and instant(hold["at"]) < end
                          and (not hold.get("resumed_at") or instant(hold["resumed_at"]) > start)]
-    return {"schema": 1, "window": {"start": start.isoformat(), "end": end.isoformat()},
+    return {"schema": 2, "window": {"start": start.isoformat(), "end": end.isoformat()},
             "tasks": task_rows, "assignments": assignments}
 
 

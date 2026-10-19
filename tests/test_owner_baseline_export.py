@@ -7,6 +7,8 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -61,6 +63,60 @@ def transport_event(kind, at, **data):
 
 
 class OwnerExportTest(unittest.TestCase):
+    def test_export_cli_keeps_a_selected_reader_without_the_new_calculator(self):
+        from foreman.state import empty_state
+        from foreman.supervision import empty
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            older = root / "older-reader"
+            runtime = older / "skills/herdr-foreman/foreman"
+            shutil.copytree(ROOT / "skills/herdr-foreman/foreman", runtime,
+                            ignore=shutil.ignore_patterns("coordination_metrics.py", "__pycache__", "*.pyc", "*.pyo"))
+            owner, supervised, provenance = root / "owner.json", root / "supervision.json", root / "provenance.json"
+            owner.write_text(json.dumps(empty_state()))
+            supervised.write_text(json.dumps(empty(owner)))
+            code = """
+import sys
+from pathlib import Path
+from scripts.export_owner_baseline import EvidenceReader, main
+EvidenceReader(Path(sys.argv[1]))
+selected = sys.modules['foreman']
+sys.argv = ['export-owner-baseline', *sys.argv[2:]]
+status = main()
+assert sys.modules['foreman'] is selected
+assert not hasattr(selected, 'coordination_metrics')
+raise SystemExit(status)
+"""
+            result = subprocess.run([sys.executable, "-c", code, str(older), "--owner", str(owner),
+                "--supervision", str(supervised), "--start", START.isoformat(), "--end", END.isoformat(),
+                "--herdr-source", str(older), "--provenance-output", str(provenance)],
+                cwd=ROOT, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            snapshot = json.loads(result.stdout)
+            self.assertEqual((snapshot["schema"], snapshot["tasks"], snapshot["assignments"]), (2, [], []))
+            self.assertNotIn("coordination_metrics.py", json.loads(provenance.read_text())["reader_source_sha256"])
+
+    def test_missing_assessment_evidence_is_unmeasured_for_a_resolved_assignment(self):
+        owner, supervision = inputs()
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(result["schema"], 2)
+        self.assertEqual(result["assignments"][0]["assessment_state"], "unmeasured")
+        self.assertEqual(result["assignments"][0]["resolution_state"], "completed")
+        queue = summarize(result)["waiting"]["assessment"]
+        self.assertEqual(queue["pending_age_seconds"]["n"], 0)
+        self.assertEqual(queue["covered_tasks"], 0)
+        self.assertEqual(queue["excluded"], {"unmeasured_endpoint": 1})
+
+    def test_open_canonical_resolution_is_explicitly_pending(self):
+        owner, supervision = inputs()
+        supervision["members"][0].update(active=True, resolution=None)
+        result = export(owner, supervision, START, END, native, lambda *_: None)
+        self.assertEqual(result["assignments"][0]["resolution_state"], "pending")
+        self.assertEqual(result["assignments"][0]["assessment_state"], "unmeasured")
+        queues = summarize(result)["waiting"]
+        self.assertEqual(queues["resolution"]["pending_age_seconds"]["n"], 1)
+        self.assertEqual(queues["assessment"]["pending_age_seconds"]["n"], 0)
+
     def test_new_authority_schema_is_read_only_and_does_not_expose_its_private_grant(self):
         owner, supervision = inputs()
         owner["recovery"]["schema_version"] = 19
