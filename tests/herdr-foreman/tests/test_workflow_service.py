@@ -12,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 
 from datetime import datetime, timedelta, timezone
 import json
+import os
 import subprocess
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -21,7 +23,8 @@ from tests import test_progression_owner as owner_fixture
 from tests.test_workflow_contract import contract as declaration
 from foreman import config, policy_paths, progression_owner as authority, recovery, report_delivery, report_gates, supervision, tiers
 from foreman import workflow_dispatch, workflow_planning, workflow_service
-from foreman.errors import HerdrError
+from foreman.errors import ForemanError, HerdrError
+from foreman.herdr import HerdrClient
 from foreman.workflow_workspace import inspect as inspect_workspace
 from foreman.errors import UsageError
 from foreman.state import add_snapshot, save_state, state_lock
@@ -32,8 +35,9 @@ ROOT = owner_fixture.ROOT
 
 class WorkflowNativeFixture(FreshOwnerNative):
     """A fixture transport, instrumented at every fake mutating boundary."""
-    def __init__(self):
+    def __init__(self, foreman=None):
         super().__init__()
+        self.foreman = foreman
         self.capability = None
         self.reject_prompt = False
 
@@ -42,6 +46,11 @@ class WorkflowNativeFixture(FreshOwnerNative):
         assert self.capability._prepared is not None
         self.capability.lease.require_current()
         self.capability._prepared["before_effect"]()
+
+    def pane_get(self, pane_id):
+        if pane_id == "fixture-pane" and self.foreman is not None:
+            return self.foreman.pane_get(pane_id)
+        return super().pane_get(pane_id)
 
     def workspace_create(self, **options):
         self.effect()
@@ -126,7 +135,7 @@ class WorkflowServiceTest(unittest.TestCase):
             name: {"kind": name, "state": "idle", "headroom_pct": 90.0}
             for name in ("claude", "codex", "grok")}, "failed_agents": [], "skipped_agents": []})
         save_state(self.path, state)
-        self.native = WorkflowNativeFixture()
+        self.native = WorkflowNativeFixture(self.owner.client)
         self.change = 0
         self.wait_fault = None
 
@@ -216,6 +225,74 @@ class WorkflowServiceTest(unittest.TestCase):
         verdict = "VERDICT: {}\n".format("approved" if selected == "verified" else "blocking") if reviewing else ""
         Path(job["report"]).write_text(verdict + "WORKFLOW: " + json.dumps(claim) + "\n")
         return claim
+
+    def test_remote_owner_cannot_admit_a_schema_two_task(self):
+        self.owner.contract.write_text(json.dumps(self.document))
+        remote = SimpleNamespace(context=SimpleNamespace(mode="attested-remote"))
+        before = self.path.read_bytes()
+        with state_lock(self.path), patch("foreman.progression_owner.verify_foreman", return_value=supervision.load(self.path)), self.assertRaisesRegex(UsageError, "verified native foreman"):
+            authority.handoff(self.path, self.owner.data, self.now(), remote, ROOT)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(Path(self.document["artifact_directory"]).exists())
+
+    def test_foreign_pane_and_wrong_cwd_cannot_start_the_executor(self):
+        self.admit()
+        before = self.path.read_bytes()
+        with self.owner.session() as capability:
+            with patch.dict(os.environ, {"HERDR_PANE_ID": "foreign-managed-pane"}), self.assertRaises(ForemanError):
+                self.runner(capability)
+            with patch("foreman.progression_owner.Path.cwd", return_value=self.root), self.assertRaises(ForemanError):
+                self.runner(capability)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.owner.state()["assignments"], [])
+
+    def test_changed_foreman_identity_cannot_advance_or_mutate_the_task(self):
+        self.admit()
+        with self.owner.session() as capability:
+            runner = self.runner(capability)
+            runner.tick()
+            before = self.path.read_bytes()
+            self.owner.native["value"] = "replacement-foreman-session"
+            with self.assertRaises(ForemanError):
+                runner.tick()
+            self.assertEqual(self.path.read_bytes(), before)
+            self.assertEqual(self.owner.state()["assignments"], [])
+
+    def test_actual_transport_guard_rechecks_the_live_native_foreman(self):
+        self.admit()
+        effects = []
+        def forbidden(argv):
+            effects.append(argv)
+            raise AssertionError("An unverified actor reached native effects")
+        client = HerdrClient(runner=forbidden)
+        client.pane_get = self.owner.client.pane_get
+        with self.owner.session() as capability:
+            self.runner(capability).tick()
+            # Use the actual transport fence, without the fixture's normal
+            # authorized_client override for method-based native emulation.
+            with state_lock(self.path), capability.workflow_operation(self.owner.state(), "apply", before_effect=lambda: effects.append("intent")):
+                guarded = authority.ServiceCapability.authorized_client(capability, client)
+                self.owner.native["value"] = "replacement-foreman-session"
+                with self.assertRaises(ForemanError):
+                    guarded.pane_close("unused-fixture-target")
+        self.assertEqual(effects, [])
+
+    def test_missing_startup_identity_still_runs_the_canonical_stall_checkpoint(self):
+        original = self.native.agent_start
+        def unidentified(name, *args, **options):
+            result = original(name, *args, **options)
+            self.native.agents[name]["agent_session"] = None
+            result["agent"]["agent_session"] = None
+            return result
+        self.admit()
+        with self.owner.session() as capability, patch.object(self.native, "agent_start", side_effect=unidentified):
+            runner = self.runner(capability)
+            self.advance(runner, lambda: bool(self.progress()["jobs"]))
+            self.assertIsNone(self.active()[0]["native_session"])
+            self.wait_fault = "idle_without_report"
+            result = runner.tick()
+        self.assertTrue(result["wake_agent"])
+        self.assertEqual(result["data"]["reason"], "native_delivery_exception")
 
     def test_foreground_contention_waits_without_mutating_or_repeating_a_dispatch(self):
         self.admit()

@@ -156,6 +156,10 @@ all authors and review states included. Use the co-shipped
 reading credit or approval. Report the artifact receipt and digest in the
 delivered native claim. Later comments never retroactively manufacture a
 pre-merge read, and advisory-only feedback creates no repair round.
+Every review/inline row needs its positive unique ID, complete body and author;
+review rows also need their canonical review state. Those fields bind into
+the digest. An unidentified author or missing/unsupported state is an
+evidence exception, never an inferred completed reading.
 
 The publication claim has schema 1, `baseline`, `baseline_at`, `publisher_run`,
 `tag` and `tessl_version`. Report actual canonical-helper results. A Tessl

@@ -43,6 +43,7 @@ class WorkflowService:
         self.native, self.planner, self.release = native, planner, release
         state = authority._load(capability.state_path)
         capability.require_current(capability.state_path, state, capability.task)
+        authority.verify_foreman(capability.state_path, client, native_only=True)
         grant = authority.current_grant(state, capability.task)
         assert grant is not None
         captured, self.document = capture_contract(grant["contract"]["path"])
@@ -82,6 +83,8 @@ class WorkflowService:
         return state, task, progress
 
     def _save(self, state):
+        self.capability.lease.require_current()
+        authority.verify_foreman(self.path, self.client, native_only=True)
         schema.validate_current(state["recovery"]["tasks"][self.capability.task]["progression"], self.document)
         save_state(self.path, state)
 
@@ -391,6 +394,7 @@ class WorkflowService:
         return self._view(progress, "advanced")
 
     def tick(self):
+        authority.verify_foreman(self.path, self.client, native_only=True)
         try:
             return self._tick()
         except TransactionBusy:

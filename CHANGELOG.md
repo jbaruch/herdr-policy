@@ -2,6 +2,8 @@
 
 ## 0.4.0 — 2026-10-19
 
+- Require the exact live native foreman pane/session/cwd at task startup, state writes, liveness and native effects; reject remote schema-2 admission. Bind every review/inline author's identity and each review state into the complete review digest, rejecting incomplete evidence.
+- Keep operator holds binding through acceptance, run canonical stall checks while startup identity is missing, and replay a completed no-send reconciliation without retiring its replacement. Document the public ACR realization check's dependency-fetch requirement for fresh native readers.
 - Migrate and persist accepted schema-1 grants through the existing state owner. Preserve their original prepared-chain authority, generations and pending obligations without reopening historical contracts; read-only previews refuse until the owner migration completes.
 - Wait observationally on foreground transaction contention, reserve fresh artifact directories exclusively, and bind resume authorization to each exception occurrence. Verify the actual peeled ACR tag source and hold report gates through acceptance. Retain the per-adapter native ownership boundary for installation identity.
 - Require a successful publisher conclusion, matching observed native/helper Tessl versions and artifact-bound moderation; reject unselected publication claims. Preserve foreign push targets, replacement native sessions and out-of-scope rename sources. Retry transient heartbeat contention within its existing grace and retain Stop obligations when the primary task owner is missing. Exercise the shipped review-reader CLI's bounded success/failure contracts.

@@ -194,9 +194,13 @@ class WorkflowReleaseAdapter:
     def commit(self, service, state, task, progress, observed):
         if observed["state"] != "published":
             return self._commit(service, state, task, progress, observed)
-        with report_gates.holding(service.path):
+        with report_gates.holding(service.path), supervision.effect_boundary(service.path) as supervised:
+            grant = authority.current_grant(state, task["task"])
+            if (grant is None or authority._binding(supervised) != grant["binding"]
+                    or authority._unresumed_hold(supervised)):
+                raise UsageError("The current operator hold or foreman binding prevents task acceptance; preserve the unaccepted delivery and resume through its recorded owner.", {})
+            authority.verify_foreman(service.path, service.client, native_only=True, supervised=supervised)
             report_gates.require_no_verdict_gate(service.path, task["task"], state["recovery"]["dispatches"])
-            supervised = supervision.load(service.path)
             for identifier in progress["jobs"].values():
                 job = workflow_dispatch.current_job(state, supervised, identifier)
                 report_gates.require_clear(service.path, job["report"], True)

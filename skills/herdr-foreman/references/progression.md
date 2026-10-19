@@ -17,6 +17,10 @@ dispatch authority. A missing, changed or ambiguous installation refuses
 startup. Remote/attested task execution is not enabled by these adapters.
 The native reader currently supports per-adapter owned skill targets;
 coordinator-owned shared-skill layouts are not enabled by this adapter.
+ACR's full public realization check can fetch locked dependencies into temporary
+storage. Its metadata cache is process-local, so fresh native Stop readers also
+need verification access; a failed check refuses continuation. Source/Tessl
+identity checks use their local installed bytes.
 
 ## Admit one task
 
@@ -118,6 +122,11 @@ other kinds remain explicit exceptions until their actual evidence owner acts.
 claims the existing grant and dedicated kernel lease. `--once` performs one
 tick. The native adapter uses the actual inherited Herdr connection; never
 construct `HERDR_ENV`, a pane or a session identity from saved records.
+The actual `HERDR_PANE_ID`, live native foreman session and current working
+directory must match the bound foreman. Startup, task writes, liveness and
+native transport verify that caller; another managed pane has no authority
+from knowing the task, generation or service ID. Schema-2 admission also
+requires this native caller; verified remote admission remains schema 1 only.
 Retain the process's actual execution handle; a background command submission
 alone proves neither a running executor nor continuation at Stop.
 

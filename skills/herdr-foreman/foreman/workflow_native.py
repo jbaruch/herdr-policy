@@ -115,8 +115,6 @@ class NativeWorkflowAdapter:
         """Canonical --once report wait; terminal stalls are never ordinary waits."""
         worker = config.assignment_worker(template, job["agent"])
         native = self._identity(job, worker)
-        if native is None:
-            return {"state": "waiting", "reason": "native_session_unconfirmed", "native_session": None}
         binary = self.client.context.executable
         environment = {**os.environ, "HERDR_BIN": binary, "FOREMAN_HERDR_BIN": binary}
         def run(argv, **kwargs):
@@ -137,6 +135,8 @@ class NativeWorkflowAdapter:
         if self._identity(job, worker) != native:
             raise UsageError("Native identity changed during delivery observation; another session cannot settle this job.", {})
         if code == 0:
+            if native is None:
+                return {"state": "exception", "reason": "native_session_unconfirmed", "wait": waited}
             if waited["found"] is not True:
                 raise StateError("A successful report check did not prove delivery; preserve its unknown outcome for owner recovery.", {})
             evidence, body = capture(job["report"], limit=REPORT_LIMIT)

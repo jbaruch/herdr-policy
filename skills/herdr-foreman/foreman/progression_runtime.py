@@ -75,6 +75,7 @@ def pulse(capability, at, *, stopped=False, reason=None, probe=supervision_runti
             executor = capability._workflow_executor
             if not isinstance(executor, WorkflowService) or executor.capability is not capability:
                 raise UsageError("Initialize the actual admitted task executor before publishing its continuation; a lease or passive monitor alone is insufficient.", {})
+            authority.verify_foreman(capability.state_path, executor.client, native_only=True)
         row = {"schema_version": SCHEMA_VERSION,
                "id": "executor-" + supervision.digest([capability.task, capability.generation]),
                "at": at, "heartbeat": at,

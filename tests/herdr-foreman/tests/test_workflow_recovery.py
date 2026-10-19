@@ -170,6 +170,10 @@ class WorkflowRecoveryTest(unittest.TestCase):
         self.assertNotEqual(current["pending"]["job"]["agent"], original["job"]["agent"])
         self.assertEqual(current["round"], 0)
         self.assertEqual([row["status"] for row in self.case.owner.state()["recovery"]["dispatches"]], ["not_sent", "reserved"])
+        before = self.case.path.read_bytes()
+        with state_lock(self.case.path):
+            self.assertTrue(authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)["replayed"])
+        self.assertEqual(self.case.path.read_bytes(), before)
 
     def test_confirmed_native_apply_resumes_by_readback_without_another_launch(self):
         with self.case.owner.session() as capability:

@@ -124,9 +124,11 @@ def _binding(data):
     return {"generation": binding["generation"], "digest": supervision.digest(binding["identity"])}
 
 
-def verify_foreman(state_path, client):
+def verify_foreman(state_path, client, *, native_only=False, supervised=None):
     """Read the actual native caller or the existing verified remote owner."""
-    data = supervision.load(state_path)
+    if native_only and getattr(getattr(client, "context", None), "mode", None) != "native":
+        raise UsageError("This task workflow requires the exact verified native foreman; attested-remote admission/execution is not enabled.", {})
+    data = supervision.load(state_path) if supervised is None else supervised
     if getattr(getattr(client, "context", None), "mode", None) == "attested-remote":
         client.remote_preflight(state_path)
         expected = supervision.remote_identity(client.context.attestation, client._remote_authority.plugin_root,
@@ -202,6 +204,9 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
             raise UsageError("Admit an explicitly supported prepared-chain or task-workflow contract; unknown types grant no continuation.", {})
         grant["contract_schema"] = _document["schema_version"]
         if isinstance(_document, dict) and _document.get("schema_version") == 2:
+            if (getattr(getattr(client, "context", None), "mode", None) != "native"
+                    or supervised["binding"]["schema_version"] != 1):
+                raise UsageError("Admit schema-2 tasks only through the exact verified native foreman; remote/attested task admission is not enabled.", {})
             from . import workflow_contract, workflow_workspace
             workflow_contract.contract(_document, row)
             if any(item.get("task") == data["task"] and item.get("status") == "applied" for item in state["assignments"]):
@@ -382,6 +387,7 @@ class ServiceCapability:
                 if expected_policy != {"version": version, "digest": digest}:
                     raise UsageError("The executing policy changed before native transport; preserve the original intent and obtain the current owner's explicit policy handoff.", {})
                 if self._prepared is not None and self._prepared.get("kind") == "workflow":
+                    verify_foreman(self.state_path, client, native_only=True, supervised=current)
                     from .herdr import REMOTE_READS
                     operation = tuple(argv[len(client.context.argv()):][:2])
                     if operation not in REMOTE_READS:
@@ -519,12 +525,12 @@ def reconcile_intent(state_path, data, at, client):
         raise UsageError("Read the current service grant and reconcile its actual generation; do not replace task authority.", {})
     supervised = verify_foreman(state_path, client)
     progress = row.get("progression")
+    replay = any(event["kind"] == "progression_intent_reconciled" and event["task"] == data["task"]
+                 and event["details"] == data for event in state["recovery"]["events"])
+    if replay:
+        return {"task": data["task"], "intent": data["intent"], "outcome": "not_sent", "replayed": True,
+                "authorizes_dispatch": False}
     if not progress or progress["pending"] is None:
-        replay = any(event["kind"] == "progression_intent_reconciled" and event["task"] == data["task"]
-                     and event["details"] == data for event in state["recovery"]["events"])
-        if replay:
-            return {"task": data["task"], "intent": data["intent"], "outcome": "not_sent", "replayed": True,
-                    "authorizes_dispatch": False}
         raise UsageError("No matching pending intent exists; preserve the current cursor and inspect the current authority record.", {})
     captured, document = capture_contract(grant["contract"]["path"])
     if captured != grant["contract"]:

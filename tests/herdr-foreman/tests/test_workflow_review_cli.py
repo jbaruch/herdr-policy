@@ -18,8 +18,9 @@ class WorkflowReviewCliTest(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.path = Path(self.scratch.name) / "snapshot.json"
         self.snapshot = {"pr_number": 123, "head_sha": "a" * 40,
-            "review_bodies": [{"id": 1, "body": "Full policy body."}, {"id": 2, "body": "Full advisory body."}],
-            "inline_comment_bodies": [{"id": 3, "body": "Full inline body."}]}
+            "review_bodies": [{"id": 1, "body": "Full policy body.", "author": "policy", "state": "APPROVED"},
+                              {"id": 2, "body": "Full advisory body.", "author": "copilot", "state": "COMMENTED"}],
+            "inline_comment_bodies": [{"id": 3, "body": "Full inline body.", "author": "copilot"}]}
 
     def run_cli(self, *arguments):
         return subprocess.run([sys.executable, str(SCRIPT), *map(str, arguments)], capture_output=True,
@@ -66,6 +67,32 @@ class WorkflowReviewCliTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(result.stdout, "")
                 self.assertIn("usage:", result.stderr)
+
+    def test_missing_authors_and_review_states_never_produce_an_identity(self):
+        from copy import deepcopy
+        cases = []
+        for field in ("review_bodies", "inline_comment_bodies"):
+            for author in (None, "", " ", "bad\nauthor"):
+                value = deepcopy(self.snapshot)
+                if author is None:
+                    value[field][0].pop("author")
+                else:
+                    value[field][0]["author"] = author
+                cases.append(value)
+        for state in (None, "", "not-a-review-state"):
+            value = deepcopy(self.snapshot)
+            if state is None:
+                value["review_bodies"][0].pop("state")
+            else:
+                value["review_bodies"][0]["state"] = state
+            cases.append(value)
+        for value in cases:
+            with self.subTest(value=value):
+                self.path.write_text(json.dumps(value))
+                result = self.run_cli(self.path)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("author", result.stderr)
 
 
 if __name__ == "__main__":

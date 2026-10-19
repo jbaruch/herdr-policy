@@ -110,8 +110,8 @@ class WorkflowReleaseTest(unittest.TestCase):
             "head": {"sha": head, "ref": "feature/task", "repo": {"full_name": "fixture/repository"}},
             "base": {"ref": "main", "repo": {"full_name": "fixture/repository"}}}
         snapshot = {"pr_number": 123, "head_sha": head, "watch": {"result": "ready"},
-            "review_bodies": [{"id": 11, "body": "Private policy fixture: no blocking findings.", "author": "policy-fixture"},
-                              {"id": 12, "body": "Private advisory fixture.", "author": "copilot-fixture"}],
+            "review_bodies": [{"id": 11, "body": "Private policy fixture: no blocking findings.", "author": "policy-fixture", "state": "APPROVED"},
+                              {"id": 12, "body": "Private advisory fixture.", "author": "copilot-fixture", "state": "COMMENTED"}],
             "inline_comment_bodies": [{"id": 13, "body": "Private inline advice.", "author": "copilot-fixture"}]}
         review_path = Path(self.case.document["artifact_directory"]) / "reviews-0-release.json"
         review_path.write_text(json.dumps(snapshot))
@@ -223,6 +223,24 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertTrue(result["wake_agent"])
         self.assertFalse(self.case.progress()["delivery"]["accepted"])
         self.assertTrue(self.case.worktree.is_dir())
+
+    def test_a_hold_after_readback_cannot_race_task_acceptance(self):
+        self.case.admit()
+        with self.case.owner.session() as capability:
+            runner = self.runner(capability)
+            self.case.advance(runner, lambda: self.case.progress()["phase"] == "publish", delivery=self.deliver)
+            state = self.case.owner.state()
+            task = state["recovery"]["tasks"]["one"]
+            observed = self.adapter.observe(runner, state, task, task["progression"])
+            self.assertEqual(observed["state"], "published")
+            supervision.hold(self.path, {"id": "acceptance-hold", "kind": "waiting_for_user",
+                "resume_condition": "Explicit fixture operator resumes", "evidence": [str(self.case.common)],
+                "dispositions": []}, self.case.now())
+            before = self.path.read_bytes()
+            with state_lock(self.path), self.assertRaisesRegex(fixture.UsageError, "operator hold"):
+                self.adapter.commit(runner, state, task, task["progression"], observed)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(self.case.progress()["delivery"]["accepted"])
 
     def test_moderation_must_name_the_observed_landed_version(self):
         self.publication()
@@ -414,8 +432,8 @@ class WorkflowReleaseTest(unittest.TestCase):
 class ReviewIdentityTest(unittest.TestCase):
     def test_all_authors_and_inlines_bind_reading_but_watcher_timing_does_not(self):
         snapshot = {"pr_number": 1, "head_sha": "a" * 40, "review_bodies": [
-            {"id": 1, "body": "Policy body", "author": "policy"},
-            {"id": 2, "body": "Commented review with no inlines", "author": "other"}],
+            {"id": 1, "body": "Policy body", "author": "policy", "state": "APPROVED"},
+            {"id": 2, "body": "Commented review with no inlines", "author": "other", "state": "COMMENTED"}],
             "inline_comment_bodies": [{"id": 3, "body": "Advisory", "author": "copilot"}],
             "watch": {"result": "ready", "attempts": 1}}
         expected = workflow_review.identity(snapshot)
@@ -426,6 +444,13 @@ class ReviewIdentityTest(unittest.TestCase):
             changed = deepcopy(snapshot)
             changed[field][0]["body"] += " edited"
             self.assertNotEqual(workflow_review.identity(changed)["sha256"], expected["sha256"])
+        for field in ("review_bodies", "inline_comment_bodies"):
+            changed = deepcopy(snapshot)
+            changed[field][0]["author"] = "another-reviewer"
+            self.assertNotEqual(workflow_review.identity(changed)["sha256"], expected["sha256"])
+        changed = deepcopy(snapshot)
+        changed["review_bodies"][0]["state"] = "DISMISSED"
+        self.assertNotEqual(workflow_review.identity(changed)["sha256"], expected["sha256"])
 
 
 if __name__ == "__main__":

@@ -1227,6 +1227,10 @@ store requires recovery of its history before rebinding or writing.
   observed bytes, never infer that a prose claim is true or an action authorized.
 
 The native Stop reader performs local read-only checks for the exact bound foreman.
+ACR policy ownership additionally invokes its public read-only realization
+check, which can fetch locked dependencies in a fresh process. Unavailable
+verification refuses continuation; it never reclaims task authority. Source
+and Tessl policy identity use local bytes.
 It never migrates state, acknowledges events, clears attention, or marks task
 completion. Its normal no-binding result applies only to a session never bound
 as foreman; missing or unreadable bound-owner history cannot release obligations.

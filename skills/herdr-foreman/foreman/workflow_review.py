@@ -12,6 +12,9 @@ import re
 from .errors import UsageError
 
 
+REVIEW_STATES = frozenset({"APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING"})
+
+
 def identity(snapshot):
     if (not isinstance(snapshot, dict) or type(snapshot.get("pr_number")) is not int
             or snapshot["pr_number"] < 1 or not isinstance(snapshot.get("head_sha"), str)
@@ -24,8 +27,12 @@ def identity(snapshot):
         rows, seen = [], set()
         for row in snapshot[field]:
             if (not isinstance(row, dict) or type(row.get("id")) is not int
-                    or not isinstance(row.get("body"), str) or row["id"] in seen):
-                raise UsageError("Retain every complete uniquely identified review/inline body; truncated or duplicated evidence cannot bind a release reading.", {})
+                    or row["id"] < 1 or not isinstance(row.get("body"), str) or row["id"] in seen
+                    or not isinstance(row.get("author"), str) or not row["author"].strip()
+                    or len(row["author"].encode("utf-8")) > 256
+                    or any(ord(char) < 32 for char in row["author"])
+                    or field == "review_bodies" and (not isinstance(row.get("state"), str) or row["state"] not in REVIEW_STATES)):
+                raise UsageError("Retain each complete review/inline body with its unique ID and author, plus canonical state for review rows; missing or unsupported evidence cannot bind a release reading.", {})
             seen.add(row["id"])
             rows.append(row)
         bodies[field] = sorted(rows, key=lambda row: row["id"])
