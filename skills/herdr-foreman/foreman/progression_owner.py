@@ -401,7 +401,7 @@ def reconcile_intent(state_path, data, at, client):
         if replay:
             return {"task": data["task"], "intent": data["intent"], "outcome": "not_sent", "replayed": True,
                     "authorizes_dispatch": False}
-        raise UsageError("No matching pending intent exists; preserve the current cursor and inspect task authority.", {})
+        raise UsageError("No matching pending intent exists; preserve the current cursor and inspect the current authority record.", {})
     captured, document = capture_contract(grant["contract"]["path"])
     if captured != grant["contract"]:
         raise UsageError("Restore the admitted contract before reconciling its expected dispatch set.", {})
