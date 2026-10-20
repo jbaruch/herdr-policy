@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0 — 2026-10-20
+
+- Enforce an aggregate printed-byte allowance across repeated `load-set` decisions and evidence reads for unchanged task facts, with a second cap across the bound foreman session. Task progression does not refund the session charge. Keep one private capped counter document, without copying reports or appending history. Counter exhaustion preserves unresolved evidence and directs existing task-owner or verified foreman reset/resume recovery.
+- Add load-set view schema 3 with an aggregate allowance receipt. Charge exact formatted output before returning it, retain spent allowance across processes and state-path aliases, and preserve corrupt, linked or unsupported counter files. Refuse nonregular evidence without a blocking open while holding the owner lock. Other context APIs and actual pilot measurements remain separate work.
+
 ## 0.7.0 — 2026-10-19
 
 - Add measurement-summary schema 2 and input schema 2 with explicit completed, pending and unmeasured queue states; retain schema-1 input support. Report known pending ages with bounded oldest lists and explicit exclusions. Merge overlapping known waits within each task and queue, retain blocked work and report holds separately. These calculations create no additional owner history and do not establish observed ROI.

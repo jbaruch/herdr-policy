@@ -95,7 +95,7 @@ bash "$HS/foreman.sh" <command-and-arguments>
 | `load-set --decision diagnose --task <task>` | Step 13, diagnosis mode |
 | `cost-report --task <task>` | Offline cost lookup in Step 1 |
 
-`load-set` prints schema-2 JSON with a question-specific retrieval menu in `files`.
+`load-set` prints schema-3 JSON with a question-specific retrieval menu in `files`.
 Retrieve only the evidence needed for the pending question, within the command's
 budgets. Read every report fully when Team Operation requires it for gating.
 A file with `present: false` remains an unresolved gap. A non-zero exit names a

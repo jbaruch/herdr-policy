@@ -57,7 +57,7 @@ from .planner import plan as build_plan
 from .planner import ASSIGNMENT_PLAN_SCHEMA_VERSION, headroom_of
 from .tiers import (COORDINATION_ROUND, FOREMAN_ROLE, JUDGMENT_ROUNDS, MissingTierError,
                     parse_launch_args, parse_tiers, select_tier, worker_launch_args)
-from . import context_output, cost_report, selection, successors, tier_routing
+from . import context_output, cost_report, decision_budget, selection, successors, tier_routing
 from .launch import configured_running_tier, restart_worker, start_foreman, start_worker, verify_foreman, verify_running, require_empty_shell
 from .state import (
     add_assignment,
@@ -477,7 +477,7 @@ def build_parser():
     cost_parser = sub.add_parser("cost-report", parents=[common],
                                  help="Report each task's resource use through acceptance from the owner records. Read-only.")
     cost_parser.add_argument("--task", help="Report this task alone.")
-    load_parser = sub.add_parser("load-set", parents=[common], help="Return bounded current decision context without replaying task history.")
+    load_parser = sub.add_parser("load-set", parents=[common], help="Return current decision context and debit its aggregate read allowance without replaying task history.")
     load_parser.add_argument("--decision", required=True, choices=load_set.DECISIONS)
     load_target = load_parser.add_mutually_exclusive_group(required=True)
     load_target.add_argument("--task", help="Task identity for plan, brief, gate and diagnose.")
@@ -2412,8 +2412,11 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
             args.task, runnable.command("foreman-queue"), runnable.command("supervision-status --compact")), {})
     packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
                             exists=_file_present, supervision_view=supervision_view)
+    state_digest = decision_budget.generation(state, packet, supervision_document)
     if args.read_file is not None:
         packet = load_set.read_evidence(packet, args.read_file, args.question, args.offset)
+    packet = decision_budget.consume(state_path, packet, state_digest,
+                                     (supervision_document["binding"] or {}).get("identity"))
     return packet, None
 
 
@@ -3432,7 +3435,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             home.require_current(defaults)
             # Commands that may migrate or write state share its canonical lock.
             # Dry runs, probes, and retrospective reads remain read-only.
-            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "load-set", "foreman-queue", "cost-report", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
+            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "cost-report", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.

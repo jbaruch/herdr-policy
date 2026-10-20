@@ -1,6 +1,6 @@
 """Bounded current decision context, never a required historical reading list.
 
-Schema 2 is an ephemeral read-only view; it migrates no owner records.
+Schema 3 is an ephemeral view; it migrates no operational owner records.
 Plan returns queue/reservation facts. Brief, gate and diagnosis name the
 current round's evidence. Brief and diagnosis preserve unsuperseded blocking
 review references, including imported corrections. Diagnosis includes the
@@ -18,7 +18,9 @@ dispatch, acceptance or release authority.
 
 import codecs
 import json
+import os
 from pathlib import Path
+import stat
 import sys
 
 from . import runnable
@@ -29,7 +31,7 @@ from .foreman_queue import waiting
 from .errors import StateError, UsageError
 from .recovery import PENDING_STATUSES, active_plans, confirmed_fix, current_approach, developer_reservations, task_statuses
 
-LOAD_SET_SCHEMA_VERSION = 2
+LOAD_SET_SCHEMA_VERSION = 3
 READ_BYTES = 4_096
 DECISIONS = ("plan", "brief", "gate", "diagnose", "wake")
 OPEN_ATTENTION = frozenset({"open", "deferred"})
@@ -113,7 +115,10 @@ def read_evidence(packet, path, question, offset=0):
     if not any(row["path"] == path for row in packet["files"]):
         raise UsageError("Select one current evidence reference from this task's decision context; investigate GitHub history separately by question.", {})
     try:
-        with Path(path).open("rb") as stream:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise StateError("The selected evidence is not a regular file. Preserve the reference and restore its owner-written regular bytes before deciding.", {})
             stream.seek(offset)
             raw = stream.read(READ_BYTES + 1)
     except OSError:
