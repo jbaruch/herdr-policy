@@ -106,7 +106,7 @@ class WorkflowServiceTest(unittest.TestCase):
         # The release subprocess ABI and actual published installations have
         # separate coverage; these files are never executed as helper code.
         policy_root = self.repository / ".tessl/plugins/jbaruch/coding-policy/skills/release"
-        for relative in policy_paths.RELEASE_FILES:
+        for relative in (*policy_paths.RELEASE_FILES, *policy_paths.WORKFLOW_RELEASE_FILES):
             path = policy_root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("Private compatible policy lookup fixture.\n")
@@ -232,6 +232,15 @@ class WorkflowServiceTest(unittest.TestCase):
         verdict = "VERDICT: {}\n".format("approved" if selected == "verified" else "blocking") if reviewing else ""
         Path(job["report"]).write_text(verdict + "WORKFLOW: " + json.dumps(claim) + "\n")
         return claim
+
+    def test_missing_claude_review_bundle_refuses_admission_without_owner_changes(self):
+        helper = self.repository / ".tessl/plugins/jbaruch/coding-policy/skills/release/review-lanes.sh"
+        helper.unlink()
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "0.5.0"):
+            self.admit()
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(Path(self.document["artifact_directory"]).exists())
 
     def test_remote_owner_cannot_admit_a_schema_two_task(self):
         self.owner.contract.write_text(json.dumps(self.document))

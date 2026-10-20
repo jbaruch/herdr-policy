@@ -56,7 +56,7 @@ def current_inputs(state, state_path, task_name, supervised, policy_root, *, pol
     shared = Path(progress["delivery"]["base_checkout"]) if progress["delivery"] is not None else workspace.base_checkout(document)
     skill_root = Path(__file__).resolve().parents[1]
     selected = policy_paths.brief_inputs(skill_root, shared, Path.home() / ".tessl",
-        os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
+        os.environ.get("HERDR_CODING_POLICY_ROOT") or None, workflow=True)
     policy = {key: selected[key] for key in ("POLICY_INDEX", "RELEASE_SKILL")}
     policy.update(TASK_WORKFLOW=str(skill_root / "references/workflow-worker.md"),
                   WORKFLOW_REVIEW=str(skill_root / "workflow-review.py"))

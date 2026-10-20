@@ -28,7 +28,7 @@ def premerge_evidence(snapshot):
     counts = snapshot.get("inline_comments")
     if (not isinstance(ci, dict) or ci.get("status") not in ("success", "none")
             or not isinstance(ci.get("checks"), list)
-            or not isinstance(reviews, dict) or not {"codex", "copilot"}.issubset(reviews)
+            or not isinstance(reviews, dict) or not {"codex", "claude"}.issubset(reviews)
             or not isinstance(merge, dict) or not isinstance(merge.get("status"), str)
             or not merge["status"] or merge["status"] == "DIRTY" or merge.get("mergeable") != "MERGEABLE"
             or not isinstance(watch, dict) or watch.get("result") != "ready"
@@ -43,7 +43,7 @@ def premerge_evidence(snapshot):
             raise error
     fields = {"state", "submitted_at", "body", "commit_id", "stale", "requested"}
     for bot, states in (("codex", {"APPROVED", "COMMENTED", "RULED"}),
-                        ("copilot", {"APPROVED", "COMMENTED", "CHANGES_REQUESTED"})):
+                        ("claude", {"APPROVED", "COMMENTED"})):
         row = reviews[bot]
         if (not isinstance(row, dict) or not fields.issubset(row)
                 or not isinstance(row["state"], str) or row["state"] not in states

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0 — 2026-10-20
+
+- Migrate native task releases to the independent Codex policy and Claude code-quality verdicts. Require both on the reviewed head; either blocking verdict holds release. Retain all-author review reading and historical Copilot feedback without requiring a Copilot verdict.
+- Require the coding-policy 0.5.0 review ABI before new task admission, readiness or release verification. Refuse an incomplete selected bundle instead of borrowing helpers from another installation; preserve legacy cleanup lookup and existing owner/hold records.
+- Verify the supported pair with the published coding-policy 0.5.0 package in Tessl and all three ACR adapters. Update worker guidance and keep weighing scoped to policy findings.
+
 ## 0.12.1 — 2026-10-20
 
 - Interpret measured quota groups consistently with the canonical planner. Empty group IDs do not pool unrelated accounts; preserve the lowest known headroom for explicitly shared windows and explicit empty identities in tier-access evidence. Verify readiness and native fixture dispatch can select an available provider while another account is exhausted.

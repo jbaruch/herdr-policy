@@ -1154,8 +1154,7 @@ class ReviewIdentityTest(unittest.TestCase):
     def test_premerge_receipt_needs_complete_consistent_canonical_fields(self):
         snapshot = fixture.ready_snapshot("a" * 40)
         self.assertEqual(workflow_review.premerge_evidence(snapshot), workflow_review.identity(snapshot))
-        snapshot["reviews"]["copilot"]["state"] = "CHANGES_REQUESTED"
-        snapshot["review_bodies"][1]["state"] = "CHANGES_REQUESTED"
+        snapshot["reviews"]["copilot"] = {"state": "none", "requested": False}
         self.assertEqual(workflow_review.premerge_evidence(snapshot), workflow_review.identity(snapshot))
         cases = []
         for field in ("ci", "reviews", "merge_state", "inline_comments"):
@@ -1171,7 +1170,12 @@ class ReviewIdentityTest(unittest.TestCase):
                 (["reviews", "codex", "state"], []),
                 (["reviews", "codex", "commit_id"], "b" * 40),
                 (["reviews", "codex", "stale"], True),
-                (["reviews", "copilot", "requested"], True),
+                (["reviews", "claude", "requested"], True),
+                (["reviews", "claude", "state"], "CHANGES_REQUESTED"),
+                (["reviews", "claude", "state"], "RULED"),
+                (["reviews", "claude", "state"], "none"),
+                (["reviews", "claude", "commit_id"], "b" * 40),
+                (["reviews", "claude", "stale"], True),
                 (["merge_state", "mergeable"], "CONFLICTING"),
                 (["watch", "attempts"], 0), (["watch", "elapsed_seconds"], True)):
             value = deepcopy(snapshot)
@@ -1187,6 +1191,12 @@ class ReviewIdentityTest(unittest.TestCase):
         for number, value in enumerate(cases):
             with self.subTest(case=number), self.assertRaises(fixture.UsageError):
                 workflow_review.premerge_evidence(value)
+
+    def test_copilot_cannot_substitute_for_a_missing_claude_review(self):
+        snapshot = fixture.ready_snapshot("a" * 40)
+        snapshot["reviews"]["copilot"] = snapshot["reviews"].pop("claude")
+        with self.assertRaises(fixture.UsageError):
+            workflow_review.premerge_evidence(snapshot)
 
     def test_all_authors_and_inlines_bind_reading_but_watcher_timing_does_not(self):
         snapshot = {"pr_number": 1, "head_sha": "a" * 40, "review_bodies": [

@@ -217,7 +217,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
                 raise UsageError("A new outcome workflow starts at its registered clean base; existing implementation needs its recorded contributor and migration owner rather than assumed independence.", {})
             from . import policy_paths
             policy_paths.brief_inputs(Path(__file__).resolve().parents[1], workflow_workspace.base_checkout(_document),
-                Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
+                Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None, workflow=True)
             workflow = workflow_contract.initial_progress(generation + 1, at)
             artifact_directory = _document["artifact_directory"]
         grant.update(service_id=data["service_id"], lease_path=data["lease_path"], contract=captured,
