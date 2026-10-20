@@ -8,7 +8,7 @@ description: >
   measure Herdr worker capacity, recover refused dispatches, restart or relaunch
   idle workers, collect reports, run or retrieve retrospectives,
   catch up on outstanding user attention, curate team lessons, save and resume
-  foreman handoffs, run explicitly admitted native task workflows or prepared dispatch chains, summarize sanitized coordination measurements, or report a task's cost or resource use through acceptance.
+  foreman handoffs, run explicitly admitted native task workflows or prepared dispatch chains, inspect current workflow readiness, summarize sanitized coordination measurements, or report a task's cost or resource use through acceptance.
   Live rounds require native HERDR_ENV or a verified owner-attested remote context; saved memory, attention, measurements and cost reports work
   offline. Other standalone tasks skip this skill.
 ---
@@ -86,6 +86,7 @@ bash "$HS/foreman.sh" <command-and-arguments>
 | `load-set --decision gate --task <task>` | Step 12 |
 | `load-set --decision diagnose --task <task>` | Step 13, diagnosis mode |
 | `cost-report --task <task>` | Offline cost lookup in Step 1 |
+| `workflow-readiness --task <task>` | Current workflow readiness in Step 1 |
 
 `load-set` prints schema-3 JSON with a question-specific retrieval menu in `files`.
 Retrieve only the evidence needed for the pending question, within the command's
@@ -125,7 +126,7 @@ user-attention blocker naming `foreman migrate-home` (`skills/herdr-foreman/stat
 Migration), and run nothing else until the operator has stopped every foreman
 and run it.
 
-Five request kinds are answered offline, need no live Herdr, and finish here
+Six request kinds are answered offline, need no live Herdr, and finish here
 after the requested operation. Each reference carries its own owner commands and
 their contracts. Use the recorded state override or default, report any non-zero
 diagnostic, and never fabricate missing history. They grant no new task
@@ -139,6 +140,10 @@ authority.
 
   Return the bounded summary or private-report receipt and finish here. Report
   any non-zero diagnostic and finish here without starting a live round.
+- **Current workflow readiness** — read `skills/herdr-foreman/references/workflow-capacity.md`
+  Readiness view, invoke the table's `workflow-readiness` entry, and finish here.
+  Omit `--task` for a page of open canonical tasks. Preserve unmeasured values
+  and page coverage; the result grants no dispatch authority.
 - **Catch-up or saved attention** — `skills/herdr-foreman/references/attention.md`. Read all
   attention pages before claiming completeness.
 - **Lesson curation, saved foreman context, or a foreman handoff** —

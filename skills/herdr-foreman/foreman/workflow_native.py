@@ -14,7 +14,7 @@ from pathlib import Path
 import subprocess
 import time
 
-from . import assign, config, lifecycle, members, recovery, report_delivery, report_gates, supervision, workflow_dispatch
+from . import assign, config, lifecycle, members, recovery, report_delivery, report_gates, supervision, workflow_dispatch, workflow_planning
 from .errors import HerdrError, StateError, UsageError
 from .herdr import error_code
 from .launch import verify_running
@@ -67,6 +67,7 @@ class NativeWorkflowAdapter:
         if (job["status"] != "prepared" or prepared is None or prepared.get("kind") != "workflow"
                 or prepared.get("operation") != "apply"):
             raise UsageError("Reconcile this job's original native effect; it cannot be spawned again from a later state.", {})
+        workflow_planning.require_headroom(self.state, job["worker_kind"], self.clock())
         worker = config.assignment_worker(template, job["agent"])
         job["status"] = "starting"
         self.changed()

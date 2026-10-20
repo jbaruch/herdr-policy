@@ -12,18 +12,14 @@ from pathlib import Path
 import time
 from typing import Callable
 
-from . import cli, config, engagement, load_set, policy_paths, progression_owner as authority
+from . import cli, engagement, load_set, progression_owner as authority
 from . import progression_runtime, recovery, report_delivery, report_gates, supervision
 from . import workflow_contract as schema, workflow_dispatch as dispatch
-from . import workflow_capacity, workflow_planning, workflow_workspace as workspace
+from . import workflow_planning, workflow_readiness, workflow_workspace as workspace
 from . import workflow_artifacts, workflow_upgrade
 from .errors import ForemanError, UsageError
-from .progression_service import capture_contract
-from .state import TransactionBusy, latest_snapshot, save_state, state_lock
+from .state import TransactionBusy, save_state, state_lock
 from .workflow_native import NativeWorkflowAdapter
-
-
-MEASUREMENT_MAX_AGE = 900
 
 
 def encoded(value):
@@ -45,29 +41,11 @@ class WorkflowService:
         state = authority._load(capability.state_path)
         capability.require_current(capability.state_path, state, capability.task)
         authority.verify_foreman(capability.state_path, client, native_only=True)
-        grant = authority.current_grant(state, capability.task)
-        assert grant is not None
-        captured, self.document = capture_contract(grant["contract"]["path"])
-        if captured != grant["contract"]:
-            raise UsageError("Restore the admitted task workflow before running its owner.", {})
-        self.profile = schema.contract(self.document, state["recovery"]["tasks"][capability.task])
-        self.inputs = workspace.inputs(self.document)
-        progress = state["recovery"]["tasks"][capability.task]["progression"]
-        schema.validate_current(progress, self.document)
-        shared = Path(progress["delivery"]["base_checkout"]) if progress["delivery"] is not None else workspace.base_checkout(self.document)
-        policy = policy_paths.brief_inputs(Path(__file__).resolve().parents[1], shared,
-            Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
-        self.policy = {key: policy[key] for key in ("POLICY_INDEX", "RELEASE_SKILL")}
-        self.policy["TASK_WORKFLOW"] = str(Path(__file__).resolve().parents[1] / "references/task-workflow.md")
-        self.policy["WORKFLOW_REVIEW"] = str(Path(__file__).resolve().parents[1] / "workflow-review.py")
-        if not all(Path(self.policy[name]).is_file() for name in ("TASK_WORKFLOW", "WORKFLOW_REVIEW")):
-            raise UsageError("Restore the co-shipped admitted task-workflow contract before starting its executor.", {})
-        configuration = json.loads(self.inputs[self.document["config"]["path"]])
-        self.agents = config.parse_config(configuration)
-        self.backpressure = workflow_capacity.parse_policy(configuration)
-        self.by_kind = {agent.name: agent for agent in self.agents}
-        if not self.agents or any(not agent.assignment_scoped or not agent.tiers for agent in self.agents):
-            raise UsageError("Configure fresh assignment-scoped workers and their tier tables before starting unattended work.", {})
+        current = workflow_readiness.current_inputs(state, capability.state_path, capability.task,
+            supervision.load(capability.state_path), capability.plugin_root)
+        self.document, self.profile = current["document"], current["profile"]
+        self.inputs, self.policy = current["inputs"], current["policy"]
+        self.agents, self.backpressure, self.by_kind = current["agents"], current["backpressure"], current["by_kind"]
         capability._workflow_executor = self
 
     @property
@@ -107,19 +85,6 @@ class WorkflowService:
             result["data"]["capacity"] = capacity
         return load_set._bounded(result)
 
-    def _capacity_family(self, state, task):
-        grant = authority.current_grant(state, task)
-        if grant is not None and grant.get("contract_schema", 1) == 2:
-            try:
-                captured, document = capture_contract(grant["contract"]["path"])
-                if captured != grant["contract"]:
-                    return None
-                schema.contract(document, state["recovery"]["tasks"][task])
-                return document["repository"]["github"]
-            except ForemanError:
-                return None
-        return None
-
     def _exception(self, state, code, sources=(), actions=("inspect_current_evidence", "return_authority")):
         progress = state["recovery"]["tasks"][self.capability.task]["progression"]
         phase = progress["exception"]["phase"] if progress["phase"] == "exception" else progress["phase"]
@@ -153,34 +118,11 @@ class WorkflowService:
             self._save(state)
 
     def _roles(self, progress):
-        if progress["phase"] == "implement":
-            return ["developer"]
-        if progress["phase"] == "verify":
-            return ["reviewer"] + (["tester"] if self.profile["profile"] != "bounded" else [])
-        if progress["phase"] == "release":
-            return ["release"]
-        return []
+        return workflow_readiness.roles(self.profile, progress)
 
     def _brief(self, state, task, progress, role, report, identifier):
         template = self.inputs[self.document["briefs"][role]["path"]].decode("utf-8")
-        reports = []
-        if role in ("reviewer", "tester", "release"):
-            supervised = supervision.load(self.path)
-            for responsibility, prior_identifier in progress["jobs"].items():
-                if responsibility not in (("developer", "reviewer", "tester") if role == "release" else ("developer",)):
-                    continue
-                prior = dispatch.current_job(state, supervised, prior_identifier)
-                member = next(row for row in supervised["members"] if row["id"] == prior_identifier)
-                receipt, _ = workspace.capture(prior["report"], limit=workspace.REPORT_LIMIT)
-                if (prior["status"] != "closed" or member["resolution"] is None or not any(
-                        item["path"] == receipt["path"] and item["sha256"] == receipt["sha256"]
-                        for item in member["resolution"]["evidence"])):
-                    raise UsageError("Restore the prior responsibility's closed, byte-bound report before dispatching its dependent work.", {})
-                reports.append({"responsibility": responsibility, "report": receipt})
-        dependencies = [*progress["blockers"], *(row["report"] for row in reports)]
-        for expected in dependencies:
-            if workspace.capture(expected["path"], limit=workspace.REPORT_LIMIT)[0] != expected:
-                raise UsageError("Restore the current blocker and prerequisite report bytes before constructing their dependent assignment.", {})
+        reports, dependencies = workflow_readiness.dependencies(state, supervision.load(self.path), self.document, progress, role)
         context = {"schema_version": 1, "task": task["task"], "scope": task["scope"],
             "authorization": task["authorization"], "base_revision": task["base_revision"],
             "allowed_paths": task["allowed_paths"], "repository": self.document["repository"],
@@ -499,28 +441,25 @@ class WorkflowService:
             roles = self._roles(progress)
             missing = [role for role in roles if role not in progress["jobs"]]
             if missing:
-                capacity = None
-                if self.backpressure is not None:
-                    capacity = workflow_capacity.evaluate(state, supervision.load(self.path), task["task"],
-                        self.document["repository"]["github"], self.backpressure, self.clock(),
-                        family=lambda name: self._capacity_family(state, name))
-                    if not capacity["allowed"]:
-                        return self._view(progress, "waiting", capacity["reason"], capacity=capacity)
-                if progress["plan"] is None:
-                    snapshot = latest_snapshot(state)
-                    age = None if snapshot is None else (supervision.timestamp(self.clock()) -
-                        supervision.timestamp(snapshot["measured_at"])).total_seconds()
-                    if age is None or not 0 <= age <= MEASUREMENT_MAX_AGE:
-                        self._intent(progress, "measure", inputs=[self.document["config"]])
-                        self._save(state)
-                        return self._view(progress, "prepared", capacity=capacity)
-                    plan = self.planner(state, self.path, self.document, progress, roles, self.agents, self.clock())
-                    progress["plan"], _ = workspace.write_current(self.document["artifact_directory"], "plan.json", encoded(plan))
+                decision = workflow_readiness.preparation(state, supervision.load(self.path), self.path,
+                    self.document, progress, roles, self.agents, self.backpressure, self.clock(), planner=self.planner)
+                capacity = decision["capacity"]
+                if decision["state"] == "capacity_wait":
+                    assert capacity is not None
+                    return self._view(progress, "waiting", capacity["reason"], capacity=capacity)
+                if decision["state"] == "measurement_required":
+                    self._intent(progress, "measure", inputs=[self.document["config"]])
                     self._save(state)
-                captured, body = workspace.capture(progress["plan"]["path"])
-                if captured != progress["plan"]:
-                    return self._exception(state, "current_plan_changed", [captured["path"]])
-                self._make_job(state, task, progress, missing[0], json.loads(body))
+                    return self._view(progress, "prepared", capacity=capacity)
+                if decision["state"] == "plan_ready":
+                    progress["plan"], _ = workspace.write_current(self.document["artifact_directory"], "plan.json", encoded(decision["plan"]))
+                    self._save(state)
+                try:
+                    plan = workflow_readiness.read_plan(progress["plan"], missing, self.by_kind)
+                except ForemanError as exc:
+                    return self._exception(state, "current_plan_changed", [progress["plan"]["path"], exc.message])
+                workflow_planning.require_headroom(state, plan["worker_kinds"][missing[0]], self.clock())
+                self._make_job(state, task, progress, missing[0], plan)
                 return self._view(progress, "prepared", capacity=capacity)
             supervised = supervision.load(self.path)
             jobs = [dispatch.current_job(state, supervised, identifier) for identifier in progress["jobs"].values()]

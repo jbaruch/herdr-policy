@@ -51,6 +51,11 @@ Tessl uses `.tessl-plugin/plugin.json`; ACR uses `agent-plugin.yaml`. ACR v1 has
 
 Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR also realizes Cursor's canonical hook surface; installation and lifecycle behavior are covered by conformance checks. Grok uses the Claude-compatible settings contract; the reset and Stop subprocess regression tests preserve its shell-command form. Portable Tessl startup reports cache maintenance from a dry run and defers to the registered native startup hooks.
 
+Inspect current admitted-task readiness with the foreman skill's `workflow-readiness`
+command. Its bounded pages distinguish dispatchable work, exclusions and unmeasured
+proof. Read [the view contract](skills/herdr-foreman/references/workflow-capacity.md#readiness-view)
+before interpreting counts or selecting live work.
+
 Remote controllers retain their policy-digest, lease and owner-receipt contract in [remote-context.md](skills/herdr-foreman/references/remote-context.md). This extraction does not add receipt rotation: a policy upgrade requires an explicit verified reattachment, and existing remote deployment remains disabled until that authority is established. Do not erase owner stores to bypass a mismatch.
 
 Inspect the executing policy identity from this checkout with:
