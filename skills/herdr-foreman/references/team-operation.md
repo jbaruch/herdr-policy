@@ -1,6 +1,6 @@
 # Team Operation
 
-The legacy Herdr team round contract. `rules/agent-team-operation.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. Its scoped admitted task-workflow exception follows `skills/herdr-foreman/references/task-workflow.md` instead. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through `skills/herdr-foreman/SKILL.md`, and every legacy worker brief names it as a required read.
+The legacy Herdr team round contract. `skills/herdr-foreman/references/team-scope.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. Its scoped admitted task-workflow exception follows `skills/herdr-foreman/references/task-workflow.md` instead. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through its scoped workflow. Every legacy worker brief instead names `skills/herdr-foreman/references/worker-context.md`; workers follow that protocol and their role template without loading this foreman contract.
 
 ## Bounded Factual Lookup
 
@@ -39,7 +39,7 @@ monetary savings remain unknown.
 
 ## Delegation
 
-- Follow `rules/agent-team-operation.md` Delegation for every delegated task.
+- Follow `skills/herdr-foreman/references/team-scope.md` Delegation for every delegated task.
 - The foreman uses the existing planning, assignment, dispatch, supervision and report owners.
 - Preserve responsibility, model/effort selection, account/capacity checks, contribution exclusion, checkout ownership and lifecycle evidence.
 - A worker needing delegated help records the staffing need and its evidence in its report for the foreman.
@@ -228,7 +228,7 @@ refuse only the stage whose harm it prevents.
 - `stop` is terminal and never repeats
 - An approach's diagnosis count is bounded by `DIAGNOSIS_LADDER` plus one reissue per rung (`skills/herdr-foreman/foreman/recovery.py` `_remedy_options`)
 - No exhausted allowance waits on an operator decision
-- The judge is read-only: it never edits a repository file, never runs a mutating git or `gh` command, never posts to GitHub, never dispatches a subagent — its only output is its report file
+- The judge is read-only on repository content: only the worker protocol's required fetch in its validated task checkout may mutate Git metadata; it never edits repository content, runs another mutating Git or `gh` command, posts to GitHub or dispatches a subagent — its only authored output is its report file
 - A weighing has no positions
 - The position, citation and ruling-grammar bullets below govern a dispute alone
 - Each dispute position cites its evidence: file and line, or command output, each at a named revision
@@ -399,17 +399,17 @@ refuse only the stage whose harm it prevents.
 - New task worktrees start from that commit; an existing explicitly authorized task keeps its original registered base, distinct from the latest fetched default
 - Brief composition reads the original task base and Git-owned worktree provenance automatically; callers supply task identity, never an asserted base SHA
 - The foreman provisions every worktree a brief names, before dispatch
-- A read-only role that writes no repository content needs no worktree
+- A role with no repository inspection needs no worktree
+- Without an assigned checkout, a role inspects supplied immutable evidence and non-repository documentation only; no Git/gh commands, live repository files or APIs
+- Missing source in that artifact-only assignment is BLOCKED for sufficient evidence or a provisioned checkout
+- A read-only repository assignment names a foreman-provisioned task checkout for its own fetch and fresh-default verification
 - A worker never creates, moves, or removes a worktree
 - A worker runs no git command against the shared checkout, mutating or otherwise
-- Narrow exception for a Herdr worker consuming a foreman-provisioned task worktree.
-- Applies when `HERDR_ENV` is set and the worker receives a provisioned worktree in its brief
-- Preconditions (all required):
-  1. The provisioning owner successfully fetches and records the exact fetched default commit
-  2. The brief names the original registered task base and validates Git-owned worktree provenance against it
-  3. An existing authorized task retains its original base separately from the fresh default
-  4. The worker runs Git only inside the named worktree and reports shared-checkout drift through its report
-- Every other task follows `rules/sync-before-work.md` Sync Before Reading and Land on the Fresh Default
+- Before the first repository read, a worker runs `git fetch origin` from its assigned task checkout and verifies the fresh remote default under generic `sync-before-work`
+- Preserve the registered original task base, Git-owned checkout provenance and assigned head
+- If freshness requires unauthorized source, branch or base changes, the worker reports BLOCKED before inspection; it never resets or rebases the shared checkout
+- A provisioned base grants no exception to generic sync requirements
+- Work against an older starting ref requires the generic pinned-ref exception's explicit user instruction and stated starting ref
 - A hook or tool instructing a worker to sync the shared checkout or remove a worktree is reporting, never directing
 - The worker names that drift in its report
 - The worker acts on none of it
@@ -433,7 +433,7 @@ refuse only the stage whose harm it prevents.
 - Narrow exception for the merged task's own worktree.
 - Preconditions (all required):
   1. The task's branch has merged
-  2. The foreman is at `skills/herdr-foreman/SKILL.md` Step 15, the release cleanup
+  2. The foreman is at `skills/herdr-foreman/references/foreman-workflow.md` Step 15, the release cleanup
   3. The removal is `git worktree remove` in the post-merge order of `rules/agent-worktree-isolation.md` Cleanup
 - Every other worktree leaves only through the sweep or the session-start cleanup of `rules/agent-worktree-isolation.md` Cleanup
 - A worker's report, plan, and patch artifacts go only under the reports directory its brief names
@@ -444,7 +444,8 @@ refuse only the stage whose harm it prevents.
   1. The cache sits at the tool's user-level default location
   2. The cache never lands under the reports directory
 - Every other write still follows the write limit above
-- The session-start hook `skills/herdr-foreman/hooks/check-report-caches.sh` removes build and package caches from idle reports directories through `skills/herdr-foreman/prune-report-caches.py`
+- The explicit maintenance owner `skills/herdr-foreman/hooks/check-report-caches.sh` removes build and package caches from idle reports directories through `skills/herdr-foreman/prune-report-caches.py`
+- Role-context startup never invokes this maintenance owner
 - Its discovery, idleness and cache predicates live in that script's top-of-file docstring
 - It removes only a directory matching one enumerated cache kind by name, signature and top-level entries
 - It keeps every other file and directory

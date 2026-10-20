@@ -1,14 +1,11 @@
 {
   "name": "jbaruch/herdr-policy",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Herdr team coordination policy for AI coding agents",
   "private": false,
   "repository": "https://github.com/jbaruch/herdr-policy",
   "rules": [
-    "rules/herdr-scope.md",
-    "rules/agent-team-operation.md",
-    "rules/herdr-bootstrap.md",
-    "rules/coding-policy-integration.md"
+    "rules/herdr-scope.md"
   ],
   "skills": [
     "skills/herdr-foreman",
@@ -23,7 +20,8 @@
             "command": "bash",
             "args": [
               "${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh",
-              "session-start"
+              "session-start",
+              "portable"
             ]
           }
         ]
@@ -37,7 +35,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" session-start"
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" session-start claude-code"
             }
           ]
         }
@@ -69,7 +67,7 @@
           "hooks": [
             {
               "type": "command",
-              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" session-start"
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" session-start codex"
             }
           ]
         }

@@ -343,7 +343,7 @@ def all_met(record):
     """Whether a report-sourced record states no criterion `unmet`; a reviewer or tester record has none.
 
     Acceptance is contract completeness, whatever the `verdict`: a blocking
-    verdict gates the round at SKILL.md Step 12 and the round-flow Release Gate.
+    verdict gates the round at skills/herdr-foreman/references/foreman-workflow.md Step 12 and the round-flow Release Gate.
     """
     return record["source"] == "report" and all(row["state"] == "met" for row in record["acceptance"] or ())
 
@@ -369,7 +369,7 @@ def require_accepted(state, dispatch_id, report):
     needs a report-sourced record of this dispatch and report whose receipt
     matches the current bytes. A consultation's record must also state every
     `ACCEPTANCE` line `met`. Any other responsibility passes through. A
-    blocking verdict gates the round at SKILL.md Step 12, never acceptance.
+    blocking verdict gates the round at skills/herdr-foreman/references/foreman-workflow.md Step 12, never acceptance.
     """
     dispatch = next((row for row in state["recovery"]["dispatches"] if row["id"] == dispatch_id), None)
     if dispatch is None:

@@ -179,11 +179,44 @@ def record(path, branch, base_ref, base_revision, default_ref, default_revision)
     return saved
 
 
-def compose(values):
+PACKAGE_CHECKOUT_SCOPE = (
+    "Artifact-only inspection: no repository checkout is assigned. Read supplied immutable evidence "
+    "and non-repository documentation only. Run no Git/gh commands and open no live repository files "
+    "or APIs. Missing source is BLOCKED for a provisioned checkout or sufficient supplied evidence. "
+    "This scope grants no new task actions."
+)
+
+
+def _scope_inputs(values):
     if (not isinstance(values, dict) or not isinstance(values.get("shared"), dict)
             or not isinstance(values.get("roles"), dict)
             or any(not isinstance(row, dict) for row in values["roles"].values())):
         raise UsageError("Composition requires shared and role value objects.", {})
+    if "CHECKOUT_SCOPE" in values["shared"] or any("CHECKOUT_SCOPE" in row for row in values["roles"].values()):
+        raise UsageError("CHECKOUT_SCOPE is producer-derived; remove supplied scope text from shared and role values.", {})
+
+
+def artifact_compose(values):
+    """Pure custom-template rendering grants no repository provenance."""
+    _scope_inputs(values)
+    for inputs in values["roles"].values():
+        inputs["CHECKOUT_SCOPE"] = PACKAGE_CHECKOUT_SCOPE
+    return values
+
+
+def _package_tree(inputs, shared):
+    tree = inputs.get("TREE", shared.get("TREE"))
+    if not isinstance(tree, str) or not tree:
+        return
+    path = Path(tree).resolve()
+    shared_path = shared.get("SHARED_CHECKOUT")
+    if (any((parent / ".git").exists() for parent in (path, *path.parents))
+            or isinstance(shared_path, str) and path == Path(shared_path).resolve()):
+        raise UsageError("TREE names a live checkout without WORKTREE; provide its validated task WORKTREE or supply immutable evidence outside the checkout for artifact-only inspection.", {})
+
+
+def compose(values):
+    _scope_inputs(values)
     task = values.get("task")
     if not isinstance(task, str) or not task:
         raise UsageError("Packaged briefs require the existing registered task identity in top-level task; no caller-supplied base substitutes.", {})
@@ -200,7 +233,12 @@ def compose(values):
         if "BASE_REVISION" in inputs or "FETCHED_DEFAULT_REVISION" in inputs:
             raise UsageError("Brief provenance is owner-derived; remove per-role base values.", {})
         path = inputs.get("WORKTREE", shared.get("WORKTREE"))
-        if path is not None:
+        inputs["CHECKOUT_SCOPE"] = PACKAGE_CHECKOUT_SCOPE
+        if path is None:
+            _package_tree(inputs, shared)
+        else:
+            if not isinstance(path, str) or not path or not Path(path).is_absolute():
+                raise UsageError("WORKTREE must name an absolute foreman-provisioned task checkout.", {})
             saved = read(path)
             branch = inputs.get("BRANCH", shared.get("BRANCH"))
             if branch != saved["branch"]:
@@ -212,6 +250,16 @@ def compose(values):
                     saved["fetched_default_ref"], saved["fetched_default_revision"], base)
             if saved["base_revision"] != base:
                 raise UsageError("Worktree {} was provisioned from a different task base; preserve the registered original task base {}.".format(path, base), {})
+            tree = inputs.get("TREE", shared.get("TREE"))
+            if (role == "judge" or role.startswith("judge-")) and tree is not None:
+                if not isinstance(tree, str) or Path(tree).resolve() != Path(saved["path"]).resolve():
+                    raise UsageError("A repository-reading judge's TREE must be its validated WORKTREE; keep evidence artifacts in the named report inputs.", {})
+            inputs["CHECKOUT_SCOPE"] = (
+                "Repository inspection uses the foreman-provisioned task checkout (JSON path) "
+                + json.dumps(saved["path"]) + ". Perform the worker protocol's fetch/freshness checks here "
+                "before the first repository read; preserve the registered original base and assigned head. "
+                "Retain role/action limits and never use the shared checkout for Git."
+            )
     return values
 
 
@@ -219,12 +267,14 @@ def main():
     try:
         if sys.argv[1:] == ["compose"]:
             result = compose(json.load(sys.stdin))
+        elif sys.argv[1:] == ["artifact-compose"]:
+            result = artifact_compose(json.load(sys.stdin))
         elif len(sys.argv) == 8 and sys.argv[1] == "record":
             result = record(*sys.argv[2:])
         elif len(sys.argv) == 9 and sys.argv[1] == "prepare":
             result = prepare(*sys.argv[2:])
         else:
-            raise UsageError("Use provision compose, record PATH BRANCH BASE_REF BASE_SHA DEFAULT_REF DEFAULT_SHA, or prepare SHARED PATH BRANCH BASE_REF BASE_SHA DEFAULT_REF DEFAULT_SHA.", {})
+            raise UsageError("Use provision compose, artifact-compose, record PATH BRANCH BASE_REF BASE_SHA DEFAULT_REF DEFAULT_SHA, or prepare SHARED PATH BRANCH BASE_REF BASE_SHA DEFAULT_REF DEFAULT_SHA.", {})
         print(json.dumps(result))
         return 0
     except ForemanError as exc:

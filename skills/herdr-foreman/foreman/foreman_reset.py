@@ -140,7 +140,7 @@ RESUME_TEMPLATE = (
     "A context reset itself supplies no permission to clear holds. "
     "Do not continue while any hold condition is unsatisfied or supervision reconciliation is incomplete. "
     "Only after that reconciliation, run `{tl} foreman-queue {flags}`. "
-    "Then complete SKILL.md Step 17's Resume Route: Step 1, Step 2, "
+    "Then read `{workflow}` and complete Step 17's Resume Route: Step 1, Step 2, "
     "then the continuation step the stow's unresolved work names, in place of Step 5. "
     "Load each decision's records before making it, with "
     "`{tl} load-set {flags} --decision <plan|brief|gate|diagnose> --task <task>` or "
@@ -155,7 +155,8 @@ def resume_prompt(stow, state, *, config=None, herdr_bin=None):
         flags += " --config " + shlex.quote(config)
     if herdr_bin:
         flags += " --herdr-bin " + shlex.quote(herdr_bin)
-    return RESUME_TEMPLATE.format(tl="bash " + shlex.quote(launcher()), stow=shlex.quote(stow), flags=flags)
+    return RESUME_TEMPLATE.format(tl="bash " + shlex.quote(launcher()), stow=shlex.quote(stow), flags=flags,
+                                  workflow=str(Path(__file__).resolve().parents[1] / "references/foreman-workflow.md"))
 
 
 def guarded_resume(stow, state, native_session, processes, *, options=None):

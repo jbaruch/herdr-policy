@@ -1,7 +1,7 @@
 # Current task
 
 Use the executor's appended owner header and role-specific task data. Apply
-the named general policy and admitted task-workflow contract. Work only inside
+the named general policy and scoped admitted worker/report contract. Work only inside
 the authorized scope and role; ask for no routine foreman relay. A genuine
 block or uncertainty belongs in the delivered report.
 

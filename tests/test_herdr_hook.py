@@ -43,7 +43,7 @@ class HerdrHookTest(unittest.TestCase):
             (skill / "foreman" / (module + ".py")).write_text(
                 "import json,os,sys\n"
                 "print(json.dumps({'owner':'installed','module':" + repr(module) +
-                ",'input':sys.stdin.read(),'cwd':os.getcwd()}))\n")
+                ",'input':sys.stdin.read(),'cwd':os.getcwd(),'adapter':os.environ.get('HERDR_HOOK_ADAPTER')}))\n")
         return hook
 
     def run_hook(self, hook, event, *, relative=False, **extra):
@@ -56,7 +56,7 @@ class HerdrHookTest(unittest.TestCase):
     def test_standalone_skips_missing_runtime_and_python(self):
         hook = self.foreign / "native-hook.sh"
         hook.write_text(SOURCE.read_text())
-        for event in ("reset-input", "supervision-stop"):
+        for event in EVENTS:
             with self.subTest(event=event):
                 result = self.run_hook(hook, event, PATH=str(self.foreign / "no-tools"))
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
@@ -84,6 +84,7 @@ class HerdrHookTest(unittest.TestCase):
                     self.assertEqual(json.loads(result.stdout)["owner"], "installed")
                     self.assertEqual(json.loads(result.stdout)["module"], EVENTS[event])
                     self.assertEqual(json.loads(result.stdout)["cwd"], str(self.foreign))
+                    self.assertEqual(json.loads(result.stdout)["adapter"], {".codex": "codex", ".claude": "claude-code", ".cursor": "cursor"}[host])
 
     def test_missing_native_sibling_does_not_select_another_host_or_tessl_owner(self):
         self.install()

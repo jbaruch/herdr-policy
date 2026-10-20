@@ -22,7 +22,7 @@ does not infer succession from a prefix or classify prose by keywords.
    architectural or judgment round is implied by
    this factual lookup; actual specialist triggers retain their normal route.
 3. Prepare the report below. Run `capability-successor --record <report.json>`
-   through SKILL.md Step 2's installed-plugin command. Config must still name
+   through `skills/herdr-foreman/references/foreman-workflow.md` Step 2's installed-plugin command. Config must still name
    the predecessor. The owner rereads official sources with bounded HTTPS
    reads, refuses absent quotes or unverified directed mappings, and snapshots the
    authorized row and original qualification, including missing/unknown facts.
@@ -131,7 +131,7 @@ Artifact: `<selected-state>.capabilities.json`. Owner: `herdr-foreman`, through
 adds required `successors`, an array. Entry schema stays 1: upgrade does not
 rewrite or restamp model/effort/capability evidence. Read-only readers refuse
 schema 1 and leave it untouched, with an owner-upgrade
-diagnostic. SKILL.md Step 2 runs `capability-migrate` before preflight; the owner
+diagnostic. `skills/herdr-foreman/references/foreman-workflow.md` Step 2 runs `capability-migrate` before preflight; the owner
 rewrites the older envelope on read, preserving all entries and refresh time.
 Both record commands perform that owner migration under their table lock too.
 Missing/newer, unreadable,

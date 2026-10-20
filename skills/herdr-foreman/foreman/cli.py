@@ -481,6 +481,8 @@ def build_parser():
     readiness_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
     readiness_parser.add_argument("--offset", type=int, default=0)
     readiness_parser.add_argument("--now", metavar="ISO8601")
+    sub.add_parser("role-context", parents=[common],
+        help="Select a bounded Herdr role capsule from current native or attested owner evidence without changing authority.")
     cost_parser = sub.add_parser("cost-report", parents=[common],
                                  help="Report each task's resource use through acceptance from the owner records. Read-only.")
     cost_parser.add_argument("--task", help="Report this task alone.")
@@ -2079,9 +2081,12 @@ def _apply(args, client, warn, trace, hold_gates):
                     })
                 owned = {}
                 try:
+                    from .role_context import startup_environment
                     pane = lifecycle.spawn(
                         client, agents_by_name[name], tier,
                         history=state["assignments"], before_start=preflight_start, owned=owned,
+                        workspace_env=(startup_environment(state_path, _config_path(args))
+                                       if getattr(getattr(client, "context", None), "mode", "native") == "native" else ()),
                     )
                 except HerdrError as exc:
                     if exc.details.get("failure_kind") in (TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND):
@@ -2207,7 +2212,7 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
     # (stow readiness, supervision work); reading the stow and supervision and
     # checking the caller's pane still come first (see foreman_reset.replay).
     # A pane id alone can be set by any process; a Herdr pane also carries HERDR_ENV.
-    # rules/agent-team-operation.md Two Modes: a team round is HERDR_ENV set, any value.
+    # skills/herdr-foreman/references/team-scope.md Two Modes: a team round is HERDR_ENV set, any value.
     caller = os.environ.get("HERDR_PANE_ID") if "HERDR_ENV" in os.environ else None
     if bound_pane and caller != bound_pane:
         raise UsageError("foreman-reset runs from the bound foreman's own pane ({}); this call came from {}.".format(
@@ -2395,6 +2400,16 @@ def cmd_cost_report(args, client=None, warn=None, trace=None):
         raise StateError("State file {} is unusable, so no task's resource use can be derived; repair or migrate it with `{}` first.".format(
             state_path, runnable.command("state")), {"path": str(state_path)})
     return cost_report.report(state, args.task), None
+
+
+def cmd_role_context(args, client=None, warn=None, trace=None):
+    from . import role_context
+    environment = dict(os.environ)
+    if getattr(args, "herdr_bin", None):
+        environment["HERDR_BIN"] = args.herdr_bin
+    return role_context.select(Path(__file__).resolve().parents[1], client=client,
+                               state_path=getattr(args, "state", None), config_path=getattr(args, "config", None),
+                               environment=environment), None
 
 
 def cmd_workflow_readiness(args, client=None, warn=None, trace=None):
@@ -3028,7 +3043,7 @@ def cmd_verify_foreman(args, client=None, warn=None, trace=None):
         return {"configured": True, "agent": seat.agent}, None
     pane = args.pane
     if not pane:
-        # rules/agent-team-operation.md Two Modes: a team round is HERDR_ENV set, any value.
+        # skills/herdr-foreman/references/team-scope.md Two Modes: a team round is HERDR_ENV set, any value.
         pane = os.environ.get("HERDR_PANE_ID") if "HERDR_ENV" in os.environ else None
     if not pane:
         raise UsageError("verify-foreman reads the foreman's own pane; run it from the foreman's Herdr pane or pass "
@@ -3392,6 +3407,7 @@ COMMANDS = {
     "status": cmd_status,
     "foreman-queue": cmd_foreman_queue,
     "workflow-readiness": cmd_workflow_readiness,
+    "role-context": cmd_role_context,
     "cost-report": cmd_cost_report,
     "foreman-reset": cmd_foreman_reset,
     "foreman-reset-deliver": cmd_foreman_reset_deliver,
@@ -3447,7 +3463,18 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
         if args.command == "foreman-reset" and not args.explicit_reset:
             raise UsageError("Automatic foreman context resets are disabled. Keep the current context, active goal and foreground supervision; checkpoint and continue at the saved step. Use --explicit-reset only for an existing explicit operator-requested maintenance reset.",
                              {"reason": "automatic_foreman_reset_disabled"})
-        if client is not None and getattr(getattr(client, "context", None), "mode", None) == "attested-remote":
+        remote_context = getattr(getattr(client, "context", None), "mode", None) == "attested-remote"
+        if args.command == "role-context":
+            if not remote_context and "HERDR_ENV" in os.environ:
+                from .role_context import selected_paths
+                selected = selected_paths(os.environ, state_path=getattr(args, "state", None),
+                                          config_path=getattr(args, "config", None))
+                for field, attribute in (("state_path", "state"), ("config_path", "config")):
+                    if selected[field] is not None:
+                        setattr(args, attribute, str(selected[field]))
+        # Role selection owns its preflight and recovery capsule. Other remote
+        # commands still require the generic preflight before their handlers.
+        if remote_context and client is not None and args.command != "role-context":
             client.remote_preflight(_state_path(args), allow_indeterminate=True)
             if args.command in {"start-foreman", "foreman-reset", "foreman-reset-deliver", "foreman-reset-reconcile", "migrate-home"}:
                 from .command_context import refuse
@@ -3471,14 +3498,15 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
         # blocks them.
         # A command that reads no state or config uses no home, so it neither
         # takes the guard nor refuses on a home awaiting migration.
-        defaults = set() if args.command in HOME_FREE_COMMANDS else {
+        standalone_role = args.command == "role-context" and ("HERDR_ENV" not in os.environ or remote_context)
+        defaults = set() if args.command in HOME_FREE_COMMANDS or standalone_role else {
             kind for kind, given in (("state", getattr(args, "state", None)),
                                      ("config", getattr(args, "config", None))) if not given}
         with home.guard(False) if defaults else nullcontext():
             home.require_current(defaults)
             # Commands that may migrate or write state share its canonical lock.
             # Dry runs, probes, and retrospective reads remain read-only.
-            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "cost-report", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
+            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.

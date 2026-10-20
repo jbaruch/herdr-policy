@@ -117,13 +117,13 @@ class PolicyPathsTest(unittest.TestCase):
             with self.subTest(host=host):
                 skill = self.shared / host / NATIVE_FOREMAN
                 (skill / "references").mkdir(parents=True)
-                (skill / "references/team-operation.md").write_text("executing team contract\n")
+                (skill / "references/worker-context.md").write_text("executing team contract\n")
                 release = self.bundle(skill.parent / NATIVE_RELEASE)
                 (release / "POLICY.md").write_text("package-native policy routing\n")
                 (self.shared / "AGENTS.md").write_text("unrelated user instructions\n")
                 result = brief_inputs(skill, self.shared, self.global_tessl)
                 self.assertEqual(result["POLICY_INDEX"], str(release / "POLICY.md"))
-                self.assertEqual(result["TEAM_OPERATION"], str((skill / "references/team-operation.md").resolve()))
+                self.assertEqual(result["TEAM_OPERATION"], str((skill / "references/worker-context.md").resolve()))
                 (release / "POLICY.md").unlink()
                 with self.assertRaises(UsageError):
                     brief_inputs(skill, self.shared, self.global_tessl)

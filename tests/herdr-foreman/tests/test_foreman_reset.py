@@ -467,6 +467,7 @@ class DeliverTest(unittest.TestCase):
     def test_the_resume_prompt_routes_to_the_stow_continuation_step(self):
         prompt = foreman_reset.resume_prompt("round-7", "/s.json")
         self.assertIn("Step 17's Resume Route", prompt)
+        self.assertIn(str(Path(foreman_reset.__file__).resolve().parents[1] / "references/foreman-workflow.md"), prompt)
         self.assertIn("continuation step the stow's unresolved work names", prompt)
         self.assertLess(prompt.index("foreman-queue"), prompt.index("Resume Route"))
         self.assertLess(prompt.index("Follow returned cursors"), prompt.index("foreman-queue"))
@@ -1517,7 +1518,7 @@ class ResetCommandTest(CliCase):
         self.assertNotIn("secret", seen[0])
 
     def test_any_herdr_marker_value_counts_as_inside_herdr(self):
-        # rules/agent-team-operation.md Two Modes: HERDR_ENV set, any value, is a team round.
+        # skills/herdr-foreman/references/team-scope.md Two Modes: HERDR_ENV set, any value, is a team round.
         for marker in ("", "0", "fixture"):
             with self.subTest(marker=marker), \
                  patch("foreman.cli.memory.show", return_value={"record": READY}), \

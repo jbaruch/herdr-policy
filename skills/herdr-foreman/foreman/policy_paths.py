@@ -103,7 +103,7 @@ def coding_release(skill_dir, shared, global_tessl, explicit_root=None):
 
 
 def brief_inputs(skill_dir, shared, global_tessl, explicit_root=None):
-    """Resolve the executing team contract and the selected general policy."""
+    """Resolve the scoped worker contract and the selected general policy."""
     skill_dir, shared = Path(skill_dir).resolve(), Path(shared).resolve()
     release = coding_release(skill_dir, shared, global_tessl, explicit_root)
     indexes = [shared / ".tessl/RULES.md", Path(global_tessl) / "RULES.md"]
@@ -113,7 +113,7 @@ def brief_inputs(skill_dir, shared, global_tessl, explicit_root=None):
         # those. Use the selected general package's authored native router.
         indexes = [release / "POLICY.md"]
     policy = next((path.resolve() for path in indexes if path.is_file() and path.stat().st_size), None)
-    team = skill_dir / "references/team-operation.md"
+    team = skill_dir / "references/worker-context.md"
     if policy is None or not team.is_file() or not team.stat().st_size:
         raise UsageError("Policy inputs are missing — repair the selected coding-policy and herdr-policy "
                          "installations before composing briefs", {"indexes": [str(p) for p in indexes],

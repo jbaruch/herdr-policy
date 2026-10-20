@@ -217,7 +217,7 @@ never seats the foreman on a worker: `plan --roles foreman` is refused.
 
 Start the foreman from any shell, naming an empty Herdr shell pane. This is a
 synopsis; the runnable command, through `bash` and the resolved plugin root,
-is `skills/herdr-foreman/SKILL.md` Step 2:
+is `skills/herdr-foreman/references/foreman-workflow.md` Step 2:
 
 ```text
 foreman start-foreman --pane <pane-id>
@@ -309,7 +309,7 @@ Which shapes qualify is the decision contract of
 
 The licence holds only if the comparison runs. Before a mechanical round is
 accepted, `verify-oracle` compares its whole result against the oracle the plan
-declared (SKILL.md Step 12). The result is the pushed diff for a `patch` oracle
+declared (`skills/herdr-foreman/references/foreman-workflow.md` Step 12). The result is the pushed diff for a `patch` oracle
 and the produced output otherwise. `plan` pins each `patch` or `fixture`
 file's sha256 in the plan's `oracle_pins`; an oracle file edited after planning
 is refused rather than compared. `apply` binds the oracle and its pin into the
@@ -462,7 +462,7 @@ are `SOURCE_KINDS` and `SUPPORTING_SOURCES` in
 
 Staleness is silent — a retired entry keeps routing work with no error and no
 failing check — so the table comes due on a cadence. The round preflight
-reports it under `due`, and SKILL.md Step 2 carries the refresh commands:
+reports it under `due`, and `skills/herdr-foreman/references/foreman-workflow.md` Step 2 carries the refresh commands:
 `capability-check` (read-only, whether a refresh is due), `capability-record`
 and `capability-show`. A table never refreshed comes due as
 soon as the ledger holds any work, and a fleet that dispatched nothing never

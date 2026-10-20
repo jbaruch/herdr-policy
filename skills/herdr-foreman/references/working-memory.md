@@ -75,7 +75,7 @@ claiming that recalled context proves present competence or independence.
 
 ## Stow before replacing the foreman
 
-Stow at every round boundary (SKILL.md Step 17), then continue in the same
+Stow at every round boundary (`skills/herdr-foreman/references/foreman-workflow.md` Step 17), then continue in the same
 context with the active goal intact. A checkpoint never schedules a reset or
 permits stopping supervision. Only an explicit operator-requested maintenance
 reset uses `foreman foreman-reset --explicit-reset`; it refuses unless the stow is
@@ -90,7 +90,7 @@ Record a stow containing:
 - A substantive capture of the remaining context the next foreman needs.
 - Unresolved work, including where each item is now recorded or what the replacement must recover.
 - The active goal's objective, status, remaining work and remaining budget, if any, in the capture and unresolved work. Saving a stow never pauses or completes the goal.
-- The continuation step, in the unresolved work: the SKILL.md step the replacement continues at under Step 17's Resume Route.
+- The continuation step, in the unresolved work: the `skills/herdr-foreman/references/foreman-workflow.md` step the replacement continues at under Step 17's Resume Route.
 - Explicit gaps, including missing evidence and work the foreman could not persist. Use an empty list only after checking for gaps. Each gap is `{"missing", "task", "recovery"}`: what is missing, the task it affects, and exactly one recovery — `{"reread": "/absolute/path"}`, `{"ask": "<question for the operator>"}` or `{"accept": "<why the loss is safe>"}`. A gap without a recovery is refused, and so is a new gap naming the task `unrecorded`, which is reserved for migrated version-1 gaps.
 - Ordered, absolute source references for the current unresolved questions. Use actual files, not directories or a workspace scan. Retrieve owner facts through their bounded commands; do not copy owner-state dumps, GitHub history or complete policy files into a handoff.
 
