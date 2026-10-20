@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from foreman import decision_budget as budget
 from foreman.errors import StateError, UsageError
-from foreman.load_set import build
+from foreman.load_set import build, read_evidence
 from foreman.recovery import register_task
 from foreman.state import TransactionBusy, add_assignment, empty_state, save_state, state_lock
 
@@ -108,6 +108,38 @@ class BudgetTest(unittest.TestCase):
         self.consume()
         result = self.consume(identity={"kind": "id", "value": "first"})
         self.assertGreater(result["aggregate_budget"]["foreman_previously_returned_bytes"], 0)
+
+    def test_remote_lease_and_policy_metadata_do_not_refund_the_context(self):
+        from dataclasses import replace
+        from foreman.command_context import RemoteForemanAttestation
+        from foreman.supervision import remote_identity
+        receipt = RemoteForemanAttestation("controller", "principal", "machine", "remote-session", "workspace",
+                                           "pane", "terminal", 1, "0.7.0", "a" * 64)
+        first = remote_identity(receipt, self.state.parent, owner_store_path=self.state.parent / "remote.json")
+        self.consume(identity=first)
+        refreshed = remote_identity(replace(receipt, lease_epoch=2, policy_version="0.8.0", policy_digest="b" * 64),
+                                    self.state.parent, owner_store_path=self.state.parent / "remote.json")
+        result = self.consume(identity=refreshed)
+        self.assertGreater(result["aggregate_budget"]["foreman_previously_returned_bytes"], 0)
+
+    def test_receipt_overhead_preserves_utf8_pagination_and_charges_final_output(self):
+        source = self.state.with_name("report.md")
+        original = "\U0001f600" * 1024
+        source.write_text(original)
+        packet = {"schema_version": 3, "decision": "diagnose", "task": "t" * 512,
+                  "enrollment": None, "round_start": None, "budget": {"output_bytes": budget.OUTPUT_BYTES},
+                  "files": [{"path": str(source)}]}
+        question = "\u0001" * 512
+        first_chunk = read_evidence(packet, str(source), question)
+        first = self.consume(first_chunk)
+        self.assertLess(first["evidence"]["bytes"], first_chunk["evidence"]["bytes"])
+        self.assertEqual(first["evidence"]["next_offset"], len(first["evidence"]["content"].encode()))
+        second = self.consume(read_evidence(packet, str(source), question, first["evidence"]["next_offset"]))
+        self.assertEqual(first["evidence"]["content"] + second["evidence"]["content"], original)
+        self.assertIsNone(second["evidence"]["next_offset"])
+        printed = [len((json.dumps(result, indent=2) + "\n").encode()) for result in (first, second)]
+        self.assertLessEqual(max(printed), budget.OUTPUT_BYTES)
+        self.assertEqual(self.document()["returned_bytes"], sum(printed))
 
     def test_storage_is_private_bounded_and_contains_only_current_counters(self):
         self.consume()
@@ -230,6 +262,17 @@ class BudgetTest(unittest.TestCase):
 
 
 class GenerationTest(unittest.TestCase):
+    def test_derived_event_boundary_does_not_refund_or_remove_unresumed_holds(self):
+        state = empty_state()
+        hold = {"id": "operator-hold", "resume_condition": "Recorded continuation", "evidence": ["/owner/hold.md"]}
+        packet = build(state, {}, {}, set(), "plan", task="t", exists=lambda path: True,
+                       supervision_view={"bound": True, "boundary_held": True, "unresumed_holds": [hold]})
+        supervision = {"members": []}
+        before = budget.generation(state, packet, supervision)
+        packet["supervision"]["boundary_held"] = False
+        self.assertEqual(budget.generation(state, packet, supervision), before)
+        self.assertEqual(packet["supervision"]["unresumed_holds"], [hold])
+
     def test_unrelated_tasks_and_query_changes_do_not_refresh_allowance_but_head_changes_do(self):
         state = empty_state()
         register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "fix it",

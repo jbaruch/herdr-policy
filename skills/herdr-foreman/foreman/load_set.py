@@ -132,14 +132,26 @@ def read_evidence(packet, path, question, offset=0):
     # Keep its current task binding and make the omitted decision context explicit.
     result = {key: packet[key] for key in ("schema_version", "decision", "task", "enrollment", "round_start", "budget")}
     result.update(kind="evidence_chunk", decision_context_included=False, authorizes_progression=False)
-    while True:
-        content = text.encode("utf-8")
-        more = len(raw) > len(content)
-        result["evidence"] = {"path": path, "question": question, "offset": offset, "bytes": len(content), "content": text,
-                              "next_offset": offset + len(content) if more else None, "excerpt": offset != 0 or more}
-        if len((json.dumps(result, indent=2) + "\n").encode("utf-8")) <= OUTPUT_BYTES or not text:
-            return _bounded(result)
+    content = text.encode("utf-8")
+    more = len(raw) > len(content)
+    result["evidence"] = {"path": path, "question": question, "offset": offset, "bytes": len(content), "content": text,
+                          "next_offset": offset + len(content) if more else None, "excerpt": offset != 0 or more}
+    return fit_evidence(result)
+
+
+def fit_evidence(packet):
+    """Fit the final envelope, including any receipt, with UTF-8-safe progress."""
+    result = {**packet, "evidence": dict(packet["evidence"])}
+    evidence = result["evidence"]
+    while len((json.dumps(result, indent=2) + "\n").encode("utf-8")) > OUTPUT_BYTES:
+        text = evidence["content"]
+        if len(text) <= 1:
+            raise UsageError("Evidence metadata cannot fit the response budget. Narrow the question or ask its owner for bounded evidence; keep unread bytes and gates unresolved.",
+                             {"reason": "context_budget_exceeded", "context_complete": False})
         text = text[:len(text) // 2]
+        size = len(text.encode("utf-8"))
+        evidence.update(content=text, bytes=size, next_offset=evidence["offset"] + size, excerpt=True)
+    return result
 
 
 def _historical(store, assignments, task, since=None):

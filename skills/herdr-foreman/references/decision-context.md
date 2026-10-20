@@ -55,6 +55,13 @@ state rather than treating its allowance as unused.
 Evidence reads refuse nonregular files without waiting for FIFO writers or
 reading devices while the primary owner lock is held.
 
+Attested remote bindings use the validated remote owner identity, without
+inventing a native session value. Remote continuation follows the host-runtime
+contract in `skills/herdr-foreman/references/remote-context.md`; never reset its
+thin terminal anchor. This allowance adds no receipt-rotation or remote reset
+API. Preserve the counter and hold the controller when its existing host cannot
+prove the required planned continuation.
+
 ## Counter schema
 
 Owner and sole writer: `herdr-foreman`. Canonical location:

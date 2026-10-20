@@ -214,29 +214,17 @@ skills/herdr-foreman/references/round-preflight.md
 
 ## Step 3 — Verify Authority for the Repo
 
-Step 2 includes this check. For a standalone authority check, run the documented
-command and record namespace evidence. Non-owned repositories require explicit
+For an authority-only check, use Step 2's preflight reference and record namespace
+evidence. Non-owned repositories require explicit
 per-action permission; otherwise remain read-only or finish here. On non-zero,
 report the diagnostic and finish here. Proceed immediately to Step 4.
 
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-preflight.md
-```
-
 ## Step 4 — Measure Headroom
 
-Step 2 includes this measurement. For a re-measurement, run the documented owner
-command. Preserve failed measurements and unknown billing; recover required seats
+For a headroom-only check, use Step 2's preflight reference. Preserve failed
+measurements and unknown billing; recover required seats
 through their owner route. Proceed immediately to Step 5 when required readings
 are available.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-preflight.md
-```
 
 ## Step 5 — Plan the Roles
 

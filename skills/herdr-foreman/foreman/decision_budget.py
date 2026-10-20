@@ -38,6 +38,14 @@ def location(state_path):
 def _foreman(identity):
     if identity is None:
         return _digest(None)
+    if isinstance(identity, dict) and identity.get("kind") == "attested-remote":
+        from .supervision import normalize_identity
+        receipt = normalize_identity(identity, 2)["attestation"]
+        if not isinstance(receipt, dict):
+            raise StateError("The remote session binding has an unsupported receipt. Restore its owning supervision record before reading more context.", {})
+        return _digest({"kind": "attested-remote", "session": {key: receipt[key] for key in (
+            "controller_id", "service_principal", "machine_profile_id", "remote_session",
+            "workspace_id", "foreman_pane_id", "foreman_terminal_id")}})
     if not isinstance(identity, dict) or not all(isinstance(identity.get(key), str) and identity[key] for key in ("kind", "value")):
         raise StateError("The foreman session binding is unusable. Restore its supervision owner record before reading more context.", {})
     return _digest({key: identity[key] for key in ("kind", "value")})
@@ -54,7 +62,7 @@ def generation(state, packet, supervision):
         "assessments": [row for row in state["specialist_assessments"] if row.get("task") == task],
         "members": [{**row, "observed": {key: value for key, value in row["observed"].items() if key != "visible"}}
                     for row in supervision["members"] if row["assignment"].get("task") == task],
-        "supervision": packet["supervision"],
+        "supervision": {key: value for key, value in (packet["supervision"] or {}).items() if key != "boundary_held"},
     })
 
 
@@ -149,6 +157,9 @@ def consume(state_path, packet, state_sha256, identity):
             "foreman_limit_bytes": FOREMAN_BYTES, "foreman_previously_returned_bytes": document["returned_bytes"],
             "foreman_available_bytes_before_response": FOREMAN_BYTES - document["returned_bytes"],
         }}
+        if result.get("kind") == "evidence_chunk":
+            from .load_set import fit_evidence
+            result = fit_evidence(result)
         returned = len((json.dumps(result, indent=2) + "\n").encode())
         if returned > OUTPUT_BYTES or used + returned > DECISION_BYTES or document["returned_bytes"] + returned > FOREMAN_BYTES:
             scope = "response" if returned > OUTPUT_BYTES else "task_decision" if used + returned > DECISION_BYTES else "foreman_session"

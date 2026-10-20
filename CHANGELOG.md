@@ -2,6 +2,8 @@
 
 ## 0.8.0 — 2026-10-20
 
+- Support validated attested-remote decision reads without inventing a native session value or refunding charges on lease/policy metadata changes. Preserve task allowances across unrelated event-boundary changes, and fit the final receipt with UTF-8-safe evidence continuations before charging output.
+- Reuse the consolidated preflight reference for targeted authority/headroom rechecks, preserving stable resume steps and their explicit continuations. Identify the compatible coding-policy bundle as the provider of its release contract.
 - Enforce an aggregate printed-byte allowance across repeated `load-set` decisions and evidence reads for unchanged task facts, with a second cap across the bound foreman session. Task progression does not refund the session charge. Keep one private capped counter document, without copying reports or appending history. Counter exhaustion preserves unresolved evidence and directs existing task-owner or verified foreman reset/resume recovery.
 - Add load-set view schema 3 with an aggregate allowance receipt. Charge exact formatted output before returning it, retain spent allowance across processes and state-path aliases, and preserve corrupt, linked or unsupported counter files. Refuse nonregular evidence without a blocking open while holding the owner lock. Other context APIs and actual pilot measurements remain separate work.
 

@@ -369,7 +369,14 @@ for number, section in enumerate(sections[1:], 1):
     assert heading.startswith(f"## Step {number} — "), heading
     if number == 1:
         continue
-    routes = re.findall(r"```text\n(skills/herdr-foreman/references/[^\n]+\.md)\n```", section)
+    route_section = section
+    if number in (3, 4):
+        # These targeted rechecks reuse the same consolidated contract as the
+        # normal preflight. Retain their stable resume headings and validate
+        # that the shared file still owns each matching step below.
+        assert "use Step 2's preflight reference" in section, (number, "missing explicit shared route")
+        route_section = sections[2]
+    routes = re.findall(r"```text\n(skills/herdr-foreman/references/[^\n]+\.md)\n```", route_section)
     assert len(routes) == 1, (number, "needs one stage contract", routes)
     target = (root / routes[0]).resolve()
     assert target.is_relative_to(root.resolve()), routes[0]
