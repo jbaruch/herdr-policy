@@ -51,13 +51,13 @@ def ready_snapshot(head, pr=123):
                "body": "Private policy fixture: no blocking findings.", "author": "policy-fixture",
                "html_url": "https://github.com/fixture/repository/pull/123#pullrequestreview-11"},
               {"id": 12, "state": "COMMENTED", "submitted_at": at, "commit_id": head,
-               "body": "Private advisory fixture.", "author": "copilot-fixture",
+               "body": "Private code-quality advisory fixture.", "author": "claude-fixture",
                "html_url": "https://github.com/fixture/repository/pull/123#pullrequestreview-12"}]
     return {"pr_number": pr, "head_sha": head,
         "ci": {"status": "success", "checks": [{"bucket": "pass", "name": "private-fixture"}]},
         "reviews": {bot: {"state": row["state"], "submitted_at": at, "body": row["body"],
                            "commit_id": head, "stale": False, "requested": False}
-                    for bot, row in zip(("codex", "copilot"), bodies)},
+                    for bot, row in zip(("codex", "claude"), bodies)},
         "review_bodies": bodies, "inline_comments": {"codex": 0, "copilot": 1},
         "inline_comment_bodies": [{"id": 13, "in_reply_to_id": None, "path": "src/example.py", "line": 1,
             "body": "Private inline advice.", "author": "copilot-fixture",

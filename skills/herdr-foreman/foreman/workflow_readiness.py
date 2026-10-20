@@ -49,11 +49,14 @@ def current_inputs(state, state_path, task_name, supervised, policy_root, *, pol
     if progress["generation"] != grant["generation"]:
         raise UsageError("Restore the current task generation before resuming its workflow.",
                          {"reason": "generation_changed"})
+    if authority.has_unowned_enrollments(state, supervised, task_name):
+        raise UsageError("Reconcile this task's enrollment through its recorded dispatch owner before selecting more work.",
+                         {"reason": "enrollment_owner_unverified"})
     inputs = workspace.inputs(document)
     shared = Path(progress["delivery"]["base_checkout"]) if progress["delivery"] is not None else workspace.base_checkout(document)
     skill_root = Path(__file__).resolve().parents[1]
     selected = policy_paths.brief_inputs(skill_root, shared, Path.home() / ".tessl",
-        os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
+        os.environ.get("HERDR_CODING_POLICY_ROOT") or None, workflow=True)
     policy = {key: selected[key] for key in ("POLICY_INDEX", "RELEASE_SKILL")}
     policy.update(TASK_WORKFLOW=str(skill_root / "references/workflow-worker.md"),
                   WORKFLOW_REVIEW=str(skill_root / "workflow-review.py"))
@@ -191,7 +194,7 @@ def assess(state, state_path, supervised, task_name, at, policy_root, *, native_
     except ForemanError as exc:
         reason = exc.details.get("reason", "workflow_inputs_unverified")
         contradicted = reason in {"policy_changed", "binding_changed", "operator_hold",
-                                   "contract_changed", "generation_changed"}
+                                   "contract_changed", "generation_changed", "enrollment_owner_unverified"}
         return _item(task_name, False if contradicted else None, False if contradicted else None,
                      reason, error=exc.code)
     document, profile = current["document"], current["profile"]

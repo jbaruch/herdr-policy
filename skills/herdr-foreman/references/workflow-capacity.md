@@ -81,6 +81,8 @@ verified preparatory inputs. Capacity or known quota exhaustion can exclude
 otherwise ready work; missing measurement, native identity or executor proof
 leaves dispatchability null. Unadmitted tasks have unmeasured readiness. Current
 jobs, pending intents, holds and task exceptions are not spare dispatch slots.
+`enrollment_owner_unverified` identifies an excluded task; the canonical ownership
+check is `has_unowned_enrollments` in `skills/herdr-foreman/foreman/progression_owner.py`.
 Merge/publication/cleanup require their existing release readback; this view
 does not substitute for it or for the legacy foreman queue.
 

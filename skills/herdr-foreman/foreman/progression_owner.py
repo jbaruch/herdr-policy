@@ -217,7 +217,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
                 raise UsageError("A new outcome workflow starts at its registered clean base; existing implementation needs its recorded contributor and migration owner rather than assumed independence.", {})
             from . import policy_paths
             policy_paths.brief_inputs(Path(__file__).resolve().parents[1], workflow_workspace.base_checkout(_document),
-                Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
+                Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None, workflow=True)
             workflow = workflow_contract.initial_progress(generation + 1, at)
             artifact_directory = _document["artifact_directory"]
         grant.update(service_id=data["service_id"], lease_path=data["lease_path"], contract=captured,
@@ -255,6 +255,19 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     return supervision.transaction(state_path, commit)
 
 
+def has_unowned_enrollments(state, supervised, task):
+    """Check current enrollment ownership without granting task or effect authority."""
+    known = {item["id"] for item in state["recovery"]["dispatches"]
+             if item["task"] == task and item["status"] != "not_sent"}
+    progress = state["recovery"]["tasks"][task].get("progression", {})
+    if progress.get("schema_version") == 2:
+        pending = progress.get("pending")
+        if pending is not None and pending.get("job") is not None:
+            known.add(pending["job"]["id"])
+    return any(item["active"] and item["assignment"]["task"] == task and item["id"] not in known
+               for item in supervised["members"])
+
+
 class ServiceCapability:
     """Mint only while holding the admitted kernel lease; never serialize."""
 
@@ -283,15 +296,7 @@ class ServiceCapability:
         supervised = supervision.load(state_path)
         if _binding(supervised) != grant["binding"] or _unresumed_hold(supervised):
             raise UsageError("The supervision binding or operator hold prevents service effects; preserve pending deliveries and resume conditions.", {})
-        known = {item["id"] for item in state["recovery"]["dispatches"]
-                 if item["task"] == task and item["status"] != "not_sent"}
-        progress = state["recovery"]["tasks"][task].get("progression", {})
-        if progress.get("schema_version") == 2:
-            pending = progress.get("pending")
-            if pending is not None and pending.get("job") is not None:
-                known.add(pending["job"]["id"])
-        if any(item["active"] and item["assignment"]["task"] == task and item["id"] not in known
-               for item in supervised["members"]):
+        if has_unowned_enrollments(state, supervised, task):
             raise UsageError("This task has an enrollment without a confirmed dispatch owner; reconcile it before service effects.", {})
         version, digest = loaded_policy(self.plugin_root)
         if grant["policy"] != {"version": version, "digest": digest}:

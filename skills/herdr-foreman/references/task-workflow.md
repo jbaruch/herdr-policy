@@ -87,7 +87,8 @@ assignment does not reset any of them. Current blocking report receipts are
 the next attempt's context; historical paperwork is not regenerated.
 
 Advisories are acknowledged during the existing work. They add no repair,
-review or follow-up obligation. Copilot remains advisory. Disputed material
+review or follow-up obligation. External review gates follow the selected
+coding-policy release contract. Disputed material
 findings, unsettled causes, changed scope/effect plans, repeated defects,
 contradictions and non-convergence require a task-local decision. Reaching a
 correction limit never authorizes self-approval. The initial executor uses the
