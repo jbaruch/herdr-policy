@@ -475,6 +475,12 @@ def build_parser():
     queue_parser = sub.add_parser("foreman-queue", parents=[common], help="Page open tasks waiting for their next seat, oldest first, within a printed-byte budget.")
     queue_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
     queue_parser.add_argument("--offset", type=int, default=0)
+    readiness_parser = sub.add_parser("workflow-readiness", parents=[common],
+        help="Inspect a bounded page of native task readiness, dispatchability and named exclusions without claiming work.")
+    readiness_parser.add_argument("--task", help="Inspect one known open task instead of the current open-task page.")
+    readiness_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    readiness_parser.add_argument("--offset", type=int, default=0)
+    readiness_parser.add_argument("--now", metavar="ISO8601")
     cost_parser = sub.add_parser("cost-report", parents=[common],
                                  help="Report each task's resource use through acceptance from the owner records. Read-only.")
     cost_parser.add_argument("--task", help="Report this task alone.")
@@ -2391,6 +2397,29 @@ def cmd_cost_report(args, client=None, warn=None, trace=None):
     return cost_report.report(state, args.task), None
 
 
+def cmd_workflow_readiness(args, client=None, warn=None, trace=None):
+    from . import workflow_readiness
+    from .native_policy import executing_policy_root
+    if args.task is not None and len(args.task.encode("utf-8")) > 1_024:
+        raise UsageError("Select a canonical task identity of at most 1024 bytes.", {})
+    state_path = _state_path(args)
+    state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
+    if not usable:
+        raise StateError("Restore readable owner state before inspecting readiness; an unusable ledger is not an empty queue.",
+                         {"context_complete": False})
+    supervised = supervision.load(state_path)
+    verified, reason = False, "native_context_unavailable"
+    if "HERDR_ENV" in os.environ:
+        try:
+            selected_client = client if client is not None else _client(args, trace=trace)
+            progression_owner.verify_foreman(state_path, selected_client, native_only=True, supervised=supervised)
+            verified, reason = True, "verified"
+        except ForemanError as exc:
+            reason = "native_foreman_unverified:" + exc.code
+    return workflow_readiness.view(state, state_path, supervised, args.now or now_iso(), executing_policy_root(),
+        task=args.task, limit=args.limit, offset=args.offset, native_verified=verified, native_reason=reason), None
+
+
 def cmd_load_set(args, client=None, warn=None, trace=None):
     if any(value is not None and len(value.encode("utf-8")) > 1_024 for value in (args.task, args.enrollment)):
         raise UsageError("Select a recorded task or enrollment identity of at most 1024 bytes before requesting decision context.", {})
@@ -3362,6 +3391,7 @@ COMMANDS = {
     "state": cmd_state,
     "status": cmd_status,
     "foreman-queue": cmd_foreman_queue,
+    "workflow-readiness": cmd_workflow_readiness,
     "cost-report": cmd_cost_report,
     "foreman-reset": cmd_foreman_reset,
     "foreman-reset-deliver": cmd_foreman_reset_deliver,
@@ -3448,7 +3478,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             home.require_current(defaults)
             # Commands that may migrate or write state share its canonical lock.
             # Dry runs, probes, and retrospective reads remain read-only.
-            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "cost-report", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
+            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "cost-report", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.

@@ -82,6 +82,22 @@ def verify_runtime_payload(skill):
             ", ".join(misplaced)))
 
 
+def verify_workflow_readiness(project, skill, environment):
+    """Exercise the installed read-only CLI without creating task authority."""
+    owner = project / "readiness-owner.json"
+    raw = command("bash", str(skill / "foreman.sh"), "workflow-readiness", "--state", str(owner),
+                  "--config", str(project / "absent-readiness-config.json"),
+                  "--now", "2026-10-19T00:00:00Z", env=environment, cwd=project, check_behavior=True)
+    result = json.loads(raw)
+    if (len(raw.encode()) > 16_384 or result.get("schema_version") != 2
+            or result.get("counts_scope") != "returned_items" or result.get("items") != []
+            or result.get("pagination", {}).get("total") != 0
+            or result.get("counts", {}).get("dispatchable") != 0
+            or result.get("authorizes_dispatch") is not False
+            or result.get("authorizes_progression") is not False or owner.exists()):
+        raise BehaviorFailure("Installed workflow readiness failed its bounded read-only observation contract")
+
+
 def verify_skill_commands(project, host, package, variable, names, environment):
     """Run installed selectors alone; never execute their release/team operations."""
     roots = {(project / host / "skills" / ("acr__jbaruch__" + package + "__" + name)).resolve(): name for name in names}
@@ -241,6 +257,7 @@ raise SystemExit("Installed progression did not reach its policy-selection bound
                 input_text='{"session_id":"isolated-fixture","prompt":"Ordinary prompt"}\n')
     # Execute the installed owner with development trees physically absent.
     json.loads(command("bash", str(skill / "foreman.sh"), "state", env=environment, cwd=project, check_behavior=True))
+    verify_workflow_readiness(project, skill, environment)
     # Both runtime vendor envelopes remain decodable without calibration tools.
     for kind, payload in (("claude", [{"type": "result", "structured_output": {"fixture": "decoded"}}]),
                           ("grok", {"text": '{"fixture":"decoded"}'})):
@@ -275,7 +292,7 @@ raise SystemExit("Installed progression did not reach its policy-selection bound
         raise ValueError("{}: lifecycle modified user-owned content".format(agent))
     return {"agent": agent, "bootstrap_listed": before.get("ok") is True, "upgrade": "pass",
             "idempotence": "pass", "runtime": "pass", "envelope_decoders": "pass", "standalone_hooks": "pass",
-            "measurements": "pass", "private_measurement_report": "pass",
+            "measurements": "pass", "private_measurement_report": "pass", "workflow_readiness": "pass",
             "skill_commands": skill_commands,
             "removal": "pass", "user_content": "preserved"}
 

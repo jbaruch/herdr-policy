@@ -21,6 +21,25 @@ SPEC.loader.exec_module(CHECK)
 
 
 class InstallationErrorsTest(unittest.TestCase):
+    def test_installed_readiness_requires_bounded_readonly_owner_observation(self):
+        valid = {"schema_version": 2, "counts_scope": "returned_items", "items": [],
+                 "pagination": {"total": 0}, "counts": {"dispatchable": 0},
+                 "authorizes_dispatch": False, "authorizes_progression": False}
+        with tempfile.TemporaryDirectory() as scratch:
+            project = Path(scratch)
+            with patch.object(CHECK, "command", return_value=json.dumps(valid)):
+                CHECK.verify_workflow_readiness(project, project / "skill", {})
+            for change in ({"authorizes_dispatch": True}, {"items": [{"task": "foreign"}]},
+                           {"padding": "x" * 16_384}, {"counts_scope": "all_tasks"}):
+                with self.subTest(change=next(iter(change))):
+                    with patch.object(CHECK, "command", return_value=json.dumps({**valid, **change})):
+                        with self.assertRaises(CHECK.BehaviorFailure):
+                            CHECK.verify_workflow_readiness(project, project / "skill", {})
+            (project / "readiness-owner.json").write_text("Unexpected owner write")
+            with patch.object(CHECK, "command", return_value=json.dumps(valid)):
+                with self.assertRaises(CHECK.BehaviorFailure):
+                    CHECK.verify_workflow_readiness(project, project / "skill", {})
+
     def test_credentials_are_scoped_to_registry_install_not_candidate_execution(self):
         secret = "private fixture value"
         with patch.dict(os.environ, {"GH_TOKEN": secret, "TESSL_TOKEN": secret, "PATH": "/fixture/bin"}, clear=True):

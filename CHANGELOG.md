@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0 — 2026-10-20
+
+- Add bounded, read-only `workflow-readiness` pages over current canonical owners. Share native preparation checks and report ready, dispatchable, excluded and unmeasured items with counts scoped to the returned page. Missing identity, executor or quota evidence cannot become a positive dispatchability claim. This does not select or dispatch work, establish live adoption, or complete capacity calibration.
+- Exclude known exhausted worker kinds while retaining eligible alternatives; recheck known exhaustion before preparing a recorded plan's job and before native launch. Preserve unknown headroom as unmeasured in the view. Keep generated native aliases out of operator-exclusion validation against a worker-kind roster, preserving native assignment/session independence.
+
 ## 0.8.1 — 2026-10-20
 
 - Bound `state` and `status` stdout by exact formatted bytes, refusing oversized owner-history dumps without partial output. Add `status --task` for one canonical task while preserving small response schemas and the remaining owner records. Aggregate coverage of these commands remains separate work.
