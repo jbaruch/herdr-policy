@@ -212,6 +212,17 @@ class ContextAllowancesTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual([row["task"] for row in json.loads(out)["tasks"]], ["one"])
 
+    def test_malformed_task_argv_refuses_without_traceback_or_owner_change(self):
+        original = self.owners()
+        for command in ("cost-report", "status"):
+            with self.subTest(command=command):
+                code, out, err = self.call(command, "--task", "\udcff")
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn("valid UTF-8", json.loads(err)["message"])
+                self.assertNotIn("Traceback", err)
+                self.assertNotIn("\\udcff", err)
+                self.assertEqual(self.owners(), original)
+
     def test_cost_page_fitting_calculates_each_selected_task_at_most_once(self):
         state = empty_state()
         for index in range(50):

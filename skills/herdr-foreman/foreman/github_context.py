@@ -155,9 +155,9 @@ def _pages(headers, page, limit):
         match = re.fullmatch(r'\s*<([^>]+)>;\s*rel="([a-z]+)"\s*', part)
         if match is None:
             raise _unavailable()
-        url = urlsplit(match[1])
-        query = parse_qs(url.query)
         try:
+            url = urlsplit(match[1])
+            query = parse_qs(url.query)
             target, size = int(query["page"][0]), int(query["per_page"][0])
         except (KeyError, ValueError, IndexError):
             raise _unavailable() from None

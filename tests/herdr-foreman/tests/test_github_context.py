@@ -148,9 +148,12 @@ class GitHubContextTest(unittest.TestCase):
     def test_bad_pagination_never_becomes_an_empty_complete_page(self):
         for links in ("malformed", '<https://untrusted.invalid/items?page=2&per_page=10>; rel="next"',
                       '<https://api.github.com/items?page=3&per_page=10>; rel="next"',
-                      '<https://api.github.com/items?page=2&per_page=50>; rel="next"'):
-            with self.subTest(links=links), self.assertRaises(UsageError):
+                      '<https://api.github.com/items?page=2&per_page=50>; rel="next"',
+                      '<https://[PRIVATE-FIXTURE-HOST/items?page=2&per_page=10>; rel="next"',
+                      '<https://PRIVATE-FIXTURE-HOST\uff0f.invalid/items?page=2&per_page=10>; rel="next"'):
+            with self.subTest(links=links), self.assertRaises(UsageError) as caught:
                 self.read([], section="comments", links=links)
+            self.assertNotIn("PRIVATE-FIXTURE-HOST", str(caught.exception))
 
     def test_unavailable_upstream_never_echoes_private_diagnostics(self):
         secret = "Private fixture text that must stay outside diagnostics"

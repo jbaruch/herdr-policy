@@ -2209,9 +2209,19 @@ def cmd_state(args, client=None, warn=None, trace=None):
             runnable.command("status --task <task>"), runnable.command("load-set --decision diagnose --task <task>"))), None
 
 
+def _validate_context_task(task):
+    if task is None:
+        return
+    try:
+        valid = isinstance(task, str) and bool(task) and len(task.encode("utf-8")) <= 1_024
+    except UnicodeError:
+        valid = False
+    if not valid:
+        raise UsageError("Select a known canonical task identity encoded as valid UTF-8, at most 1024 bytes.", {})
+
+
 def cmd_status(args, client=None, warn=None, trace=None):
-    if args.task is not None and len(args.task.encode("utf-8")) > 1_024:
-        raise UsageError("Select a known canonical task identity of at most 1024 bytes.", {})
+    _validate_context_task(args.task)
     state, usable = load_state_checked(_state_path(args), warn=warn)
     if not usable:
         raise StateError("Task status is unavailable from this owner state. Restore the supported original owner before inspecting status; no unavailable task is complete.",
@@ -2418,8 +2428,7 @@ def cmd_foreman_queue(args, client=None, warn=None, trace=None):
 
 def cmd_cost_report(args, client=None, warn=None, trace=None):
     state_path = _state_path(args)
-    if args.task is not None and len(args.task.encode("utf-8")) > 1_024:
-        raise UsageError("Select a canonical task identity of at most 1024 bytes before inspecting cost.", {})
+    _validate_context_task(args.task)
     # An unusable ledger is not an empty one: reporting no tasks would read as
     # no resource spent.
     state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
