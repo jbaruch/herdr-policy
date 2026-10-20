@@ -2,6 +2,7 @@
 
 ## 0.8.0 — 2026-10-20
 
+- Detect a lost charged counter through a fixed private creation receipt instead of granting fresh allowance. Preserve charges through interrupted receipt creation, refuse unsupported receipts, and reject symlink evidence before reading its target.
 - Support validated attested-remote decision reads without inventing a native session value or refunding charges on lease/policy metadata changes. Preserve task allowances across unrelated event-boundary changes, and fit the final receipt with UTF-8-safe evidence continuations before charging output.
 - Keep a typed preflight contract at each stable authority/headroom resume step, remove the duplicate progression reference, and preserve explicit continuations. Identify the compatible coding-policy bundle as the provider of its release contract.
 - Enforce an aggregate printed-byte allowance across repeated `load-set` decisions and evidence reads for unchanged task facts, with a second cap across the bound foreman session. Task progression does not refund the session charge. Keep one private capped counter document, without copying reports or appending history. Counter exhaustion preserves unresolved evidence and directs existing task-owner or verified foreman reset/resume recovery.

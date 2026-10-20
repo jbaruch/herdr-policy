@@ -11,7 +11,8 @@ or pane-output changes do not refresh it.
 The allowance follows the selected task's owner-state binding within the
 supervision-bound foreman context. Its calculation belongs to `generation` and
 `consume` in `skills/herdr-foreman/foreman/decision_budget.py`. Limit constants
-are `DECISION_BYTES`, `FOREMAN_BYTES`, `MAX_TASKS` and `STORE_BYTES` in that module.
+are `DECISION_BYTES`, `FOREMAN_BYTES`, `MAX_TASKS`, `STORE_BYTES` and
+`PRESENCE_BYTES` in that module.
 
 ## Output and recovery
 
@@ -52,7 +53,7 @@ and commits the charge under the counter lock before emitting content. A busy
 transaction refuses; wait for that owner process rather than removing locks.
 A failed counter read or write refuses; preserve the file and repair its owner
 state rather than treating its allowance as unused.
-Evidence reads refuse nonregular files without waiting for FIFO writers or
+Evidence reads refuse symlinks and nonregular files without waiting for FIFO writers or
 reading devices while the primary owner lock is held.
 
 Attested remote bindings use the validated remote owner identity, without
@@ -86,15 +87,29 @@ The owner accepts that version. No older version has been published for migratio
 
 The file is a private regular mode-0600 file owned by the current user. Linked,
 foreign, corrupt, unsupported and oversized files refuse without being replaced.
-Missing first-run state starts an allowance; known lost or deleted counters are
-not evidence of unused allowance. Preserve this file during task artifact cleanup.
+Preserve it during task artifact cleanup.
 
-This store uses the `jbaruch/coding-policy` `stateful-artifacts` gate-store exception:
+The owner retains a separate fixed creation receipt at
+`<canonical-selected-state-path>.context-presence.json`. Its schema 1 contains
+`schema_version` and `state_path_sha256`, the canonical owner-location binding.
+It has the same private-file requirements and shares the counter lock. It is
+created after the charged counter commits and before any content is emitted;
+it never appends history or changes on a task/context refresh.
+
+A valid receipt with a missing counter refuses, preserving the receipt for
+recovery of the original charged state. Losing only the receipt never refunds
+an intact counter: the owner recreates the receipt after preserving its charges.
+An interrupted first receipt creation likewise retries from the charged counter.
+Corrupt, foreign or unsupported receipts refuse without replacement. Preserve
+both files during cleanup; never discard them to obtain fresh allowance.
+
+Both files use the `jbaruch/coding-policy` `stateful-artifacts` gate-store exception:
 unsupported readers refuse the context read with an update diagnostic. Other
 readers never migrate, edit or discard the store. It grants no operational task
 authority and changes no primary, recovery or supervision schema.
 
-Lifecycle: retain one capped document for the selected foreman context. Current
+Lifecycle: retain one capped counter and its fixed creation receipt for the
+selected owner location. Current
 task records replace their prior binding in place; there is no revision archive,
 timestamp series or report cache. A changed bound native foreman session replaces the prior session's counters.
 Session metadata changes do not refund charges. Loss of a previously recorded

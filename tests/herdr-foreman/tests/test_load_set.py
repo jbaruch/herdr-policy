@@ -274,6 +274,10 @@ class LoadSetCommandTest(CliCase):
     def test_nonregular_evidence_refuses_without_waiting_for_a_fifo_writer(self):
         fifo = self.tmp / "report.fifo"
         os.mkfifo(fifo, 0o600)
+        unrelated = self.tmp / "unrelated.txt"
+        unrelated.write_text("unrelated fixture must not enter decision context")
+        linked = self.tmp / "linked-report.md"
+        linked.symlink_to(unrelated)
         program = '''import json,sys
 from foreman.load_set import read_evidence
 from foreman.errors import StateError
@@ -288,11 +292,12 @@ else:
 '''
         environ = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
                    "PYTHONPATH": str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman")}
-        for path in (fifo, self.tmp):
+        for path in (fifo, self.tmp, linked):
             result = subprocess.run([sys.executable, "-c", program, str(path)], env=environ,
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["error"], "state_error")
+            self.assertNotIn("unrelated fixture", result.stdout)
 
     def test_cli_retains_the_actual_supervision_hold_as_an_observation(self):
         from foreman import supervision
@@ -368,7 +373,7 @@ else:
                 self.assertEqual(code, 1)
                 self.assertIn(message, err)
 
-    def test_the_command_debits_only_the_private_context_counter_without_changing_owner_facts(self):
+    def test_the_command_debits_context_without_changing_operational_owner_facts(self):
         from foreman.decision_budget import location
         state = empty_state()
         register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "fix it",

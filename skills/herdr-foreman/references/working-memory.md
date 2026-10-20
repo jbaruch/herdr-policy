@@ -220,7 +220,7 @@ foreman load-set --decision diagnose --task <task> --read-file <listed-reference
 
 Schema 3 retains `budget`, `history_included: false` and
 `authorizes_progression: false`, and adds `aggregate_budget`. The command debits
-one bounded private context-counter document; operational owner schemas remain
+one bounded private context counter and retains its fixed creation receipt; operational owner schemas remain
 unchanged. It retains task/budget facts, task-local and global open attention,
 unknown deliveries of every role, and current-round references.
 The supervision view retains unresumed hold references even when an event changes

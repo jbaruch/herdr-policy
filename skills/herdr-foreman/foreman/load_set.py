@@ -115,7 +115,7 @@ def read_evidence(packet, path, question, offset=0):
     if not any(row["path"] == path for row in packet["files"]):
         raise UsageError("Select one current evidence reference from this task's decision context; investigate GitHub history separately by question.", {})
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         with os.fdopen(descriptor, "rb") as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 raise StateError("The selected evidence is not a regular file. Preserve the reference and restore its owner-written regular bytes before deciding.", {})

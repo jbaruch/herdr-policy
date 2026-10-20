@@ -51,6 +51,56 @@ class BudgetTest(unittest.TestCase):
         self.assertFalse(second["authorizes_progression"])
         self.assertEqual(self.state.read_text(), "original operational state\n")
 
+    def test_lost_counter_refuses_instead_of_granting_an_unused_allowance(self):
+        self.consume()
+        receipt = budget.presence_location(self.state)
+        before = receipt.read_bytes()
+        self.path.unlink()
+        with self.assertRaisesRegex(StateError, "previously created context counter is missing"):
+            self.consume()
+        self.assertFalse(self.path.exists())
+        self.assertEqual(receipt.read_bytes(), before)
+
+    def test_lost_creation_receipt_rebuilds_only_from_existing_charged_state(self):
+        self.consume()
+        receipt = budget.presence_location(self.state)
+        receipt.unlink()
+        result = self.consume()
+        self.assertGreater(result["aggregate_budget"]["previously_returned_bytes"], 0)
+        self.assertTrue(receipt.is_file())
+        self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+        self.assertLessEqual(receipt.stat().st_size, budget.PRESENCE_BYTES)
+
+    def test_receipt_failure_preserves_committed_charges_for_retry(self):
+        with patch("foreman.decision_budget._remember", side_effect=StateError("Restore receipt storage.", {})):
+            with self.assertRaisesRegex(StateError, "Restore receipt storage"):
+                self.consume()
+        charged = self.document()["returned_bytes"]
+        self.assertGreater(charged, 0)
+        self.assertFalse(budget.presence_location(self.state).exists())
+        result = self.consume()
+        self.assertEqual(result["aggregate_budget"]["previously_returned_bytes"], charged)
+
+    def test_unsupported_foreign_oversized_or_linked_creation_receipts_refuse(self):
+        self.consume()
+        receipt = budget.presence_location(self.state)
+        counter_before = self.path.read_bytes()
+        valid = json.loads(receipt.read_text())
+        for raw in (b"{", b"x" * (budget.PRESENCE_BYTES + 1),
+                    json.dumps({**valid, "schema_version": 2}).encode(),
+                    json.dumps({**valid, "state_path_sha256": "b" * 64}).encode()):
+            receipt.write_bytes(raw)
+            with self.assertRaises(StateError):
+                self.consume()
+            self.assertEqual(receipt.read_bytes(), raw)
+            self.assertEqual(self.path.read_bytes(), counter_before)
+        other = receipt.with_name("saved-presence.json")
+        receipt.rename(other)
+        receipt.symlink_to(other)
+        with self.assertRaises(StateError):
+            self.consume()
+        self.assertEqual(self.path.read_bytes(), counter_before)
+
     def test_repeated_reads_eventually_refuse_without_resetting_or_overwriting_counters(self):
         count = 0
         for _ in range(100):
