@@ -54,7 +54,7 @@ from .measure import (
     measure,
 )
 from .planner import plan as build_plan
-from .planner import ASSIGNMENT_PLAN_SCHEMA_VERSION, headroom_of, _window_groups
+from .planner import ASSIGNMENT_PLAN_SCHEMA_VERSION, headroom_of
 from .tiers import (COORDINATION_ROUND, FOREMAN_ROLE, JUDGMENT_ROUNDS, MissingTierError,
                     parse_launch_args, parse_tiers, select_tier, worker_launch_args)
 from . import context_output, cost_report, decision_budget, github_context, selection, successors, tier_routing
@@ -932,7 +932,8 @@ def _snapshot_groups(snapshot):
     agents = snapshot.get("agents") if isinstance(snapshot, dict) else None
     if not isinstance(agents, dict):
         return {}
-    return _window_groups(agents)
+    return {name: record.get("window_group") for name, record in agents.items()
+            if isinstance(record, dict)}
 
 
 def _build_plan_with_refusals(build, refusals, *args, **kwargs):
