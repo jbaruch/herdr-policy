@@ -30,6 +30,15 @@ def printed_json(value):
     return json.dumps(value, indent=2) + "\n"
 
 
+def utf8_size(value: str, label: str):
+    """Measure semantic context text without exposing malformed input bytes."""
+    try:
+        return len(value.encode("utf-8"))
+    except UnicodeError:
+        raise UsageError("Use valid UTF-8 for {} before requesting context. Preserve the original owner and unread evidence while correcting the text.".format(label),
+                         {"context_complete": False}) from None
+
+
 def error_text(error, diagnostics=""):
     """Retain complete JSON errors; never cut an oversized diagnostic in half."""
     result = diagnostics + printed_json(error.to_dict())

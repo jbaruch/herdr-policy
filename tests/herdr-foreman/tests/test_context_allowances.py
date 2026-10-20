@@ -214,11 +214,18 @@ class ContextAllowancesTest(unittest.TestCase):
 
     def test_malformed_task_argv_refuses_without_traceback_or_owner_change(self):
         original = self.owners()
-        for command in ("cost-report", "status"):
-            with self.subTest(command=command):
-                code, out, err = self.call(command, "--task", "\udcff")
+        invalid = "\udcff"
+        cases: list[tuple[str, ...]] = [(command, "--task", invalid) for command in ("cost-report", "status", "workflow-readiness")]
+        cases.extend([("load-set", "--decision", "brief", "--task", invalid),
+                      ("load-set", "--decision", "wake", "--enrollment", invalid),
+                      ("load-set", "--decision", "brief", "--task", "one", "--read-file", str(self.root / "report.md"),
+                       "--question", invalid),
+                      ("github-context", "--reference", REFERENCE, "--question", invalid)])
+        for command, *arguments in cases:
+            with self.subTest(command=command, arguments=arguments):
+                code, out, err = self.call(command, *arguments)
                 self.assertEqual((code, out), (1, ""))
-                self.assertIn("valid UTF-8", json.loads(err)["message"])
+                self.assertIn("UTF-8", json.loads(err)["message"])
                 self.assertNotIn("Traceback", err)
                 self.assertNotIn("\\udcff", err)
                 self.assertEqual(self.owners(), original)

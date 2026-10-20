@@ -2209,19 +2209,16 @@ def cmd_state(args, client=None, warn=None, trace=None):
             runnable.command("status --task <task>"), runnable.command("load-set --decision diagnose --task <task>"))), None
 
 
-def _validate_context_task(task):
-    if task is None:
+def _validate_context_selector(value):
+    if value is None:
         return
-    try:
-        valid = isinstance(task, str) and bool(task) and len(task.encode("utf-8")) <= 1_024
-    except UnicodeError:
-        valid = False
-    if not valid:
-        raise UsageError("Select a known canonical task identity encoded as valid UTF-8, at most 1024 bytes.", {})
+    if (not isinstance(value, str) or not value
+            or context_output.utf8_size(value, "the task/enrollment identity") > 1_024):
+        raise UsageError("Select a recorded task or enrollment identity encoded as valid UTF-8, at most 1024 bytes.", {})
 
 
 def cmd_status(args, client=None, warn=None, trace=None):
-    _validate_context_task(args.task)
+    _validate_context_selector(args.task)
     state, usable = load_state_checked(_state_path(args), warn=warn)
     if not usable:
         raise StateError("Task status is unavailable from this owner state. Restore the supported original owner before inspecting status; no unavailable task is complete.",
@@ -2428,7 +2425,7 @@ def cmd_foreman_queue(args, client=None, warn=None, trace=None):
 
 def cmd_cost_report(args, client=None, warn=None, trace=None):
     state_path = _state_path(args)
-    _validate_context_task(args.task)
+    _validate_context_selector(args.task)
     # An unusable ledger is not an empty one: reporting no tasks would read as
     # no resource spent.
     state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
@@ -2456,8 +2453,7 @@ def cmd_github_context(args, client=None, warn=None, trace=None):
 def cmd_workflow_readiness(args, client=None, warn=None, trace=None):
     from . import workflow_readiness
     from .native_policy import executing_policy_root
-    if args.task is not None and len(args.task.encode("utf-8")) > 1_024:
-        raise UsageError("Select a canonical task identity of at most 1024 bytes.", {})
+    _validate_context_selector(args.task)
     state_path = _state_path(args)
     state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
     if not usable:
@@ -2477,8 +2473,10 @@ def cmd_workflow_readiness(args, client=None, warn=None, trace=None):
 
 
 def cmd_load_set(args, client=None, warn=None, trace=None):
-    if any(value is not None and len(value.encode("utf-8")) > 1_024 for value in (args.task, args.enrollment)):
-        raise UsageError("Select a recorded task or enrollment identity of at most 1024 bytes before requesting decision context.", {})
+    for value in (args.task, args.enrollment):
+        _validate_context_selector(value)
+    if args.question is not None:
+        context_output.utf8_size(args.question, "the evidence question")
     if (args.decision == "wake") != (args.enrollment is not None):
         raise UsageError("Pass --enrollment for wake and --task for every other decision.", {"decision": args.decision})
     if args.read_file is None and (args.question is not None or args.offset != 0):
