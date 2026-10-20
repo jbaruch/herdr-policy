@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — 2026-10-20
+
+- Bound `state` and `status` stdout by exact formatted bytes, refusing oversized owner-history dumps without partial output. Add `status --task` for one canonical task while preserving small response schemas and the remaining owner records. Aggregate coverage of these commands remains separate work.
+
 ## 0.8.0 — 2026-10-20
 
 - Rebind the context creation receipt during the existing legacy home migration. Preserve charged counters and task-state hashes; interrupted moves remain held and finish idempotently on retry.

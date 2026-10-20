@@ -52,15 +52,21 @@ def sequence_page(rows, through, after, limit, key):
             "items": selected}
 
 
+def enforce_budget(result, recovery):
+    """Check exact stdout bytes without changing an existing document schema."""
+    if len((json.dumps(result, indent=2) + "\n").encode("utf-8")) > OUTPUT_BYTES:
+        raise UsageError(
+            recovery,
+            {"reason": "context_budget_exceeded", "budget_bytes": OUTPUT_BYTES, "context_complete": False})
+    return result
+
+
 def bounded(result):
     result["schema_version"] = VIEW_SCHEMA_VERSION
     result["authorizes_progression"] = False
     result["budget"] = {"output_bytes": OUTPUT_BYTES}
-    if len((json.dumps(result, indent=2) + "\n").encode("utf-8")) > OUTPUT_BYTES:
-        raise UsageError(
-            "Current context exceeds its printed output budget. Keep unexamined obligations unresolved; select a narrower task, --section where available, or evidence question instead of dumping history.",
-            {"reason": "context_budget_exceeded", "budget_bytes": OUTPUT_BYTES, "context_complete": False})
-    return result
+    return enforce_budget(result,
+                          "Current context exceeds its printed output budget. Keep unexamined obligations unresolved; select a narrower task, --section where available, or evidence question instead of dumping history.")
 
 
 def fit_pages(builder, limit, offset):
