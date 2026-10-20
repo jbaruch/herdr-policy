@@ -179,7 +179,6 @@ class EvidenceReader:
                 self.exclusions["native_source_missing_or_ambiguous"] += 1
                 return {}
             body = self.read_evidence(path, MAX_NATIVE_BYTES)
-            self.source_digests.add(hashlib.sha256(body).hexdigest())
             text = body.decode("utf-8")
             kind, session = identity["agent"], identity["value"]
             final = self.native_reader.source_final(text, kind, session)
@@ -197,6 +196,7 @@ class EvidenceReader:
             result = {"native_completed_at": completed.isoformat()}
             if started is not None and dispatched <= started <= completed:
                 result["native_started_at"] = started.isoformat()
+            self.source_digests.add(hashlib.sha256(body).hexdigest())
             return result
         except EvidenceBudgetExceeded:
             self.exclusions["native_source_exceeds_budget"] += 1

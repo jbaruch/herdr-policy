@@ -31,22 +31,21 @@ only supported versions. Existing reports and source evidence are never migrated
 The snapshot can be passed to the existing calculator after extracting it from
 the private report.
 
-The collector reads the two selected regular files, resolves assigned native
-identities through the canonical delivery reader and verifies captured assessment
-ledger prefixes. Native completion needs the report-bound final message; missing
-or unusable evidence remains unmeasured with exclusions. It does not infer
-integration, deployment, acceptance, direct foreman effort or activity samples.
-The cohort includes tasks registered or dispatch-attempted inside the window;
-pre-window in-flight work is outside this selection. No recurring model turn,
-worker call, owner migration, state write or history ledger is created.
+The producer's `EvidenceReader` and `export` in
+`skills/herdr-foreman/foreman/measurement_capture.py` own source verification and
+cohort selection. Missing evidence remains unmeasured with collection exclusions.
+Integration, deployment, acceptance, direct foreman effort and activity samples
+remain unmeasured. Collection creates no recurring model turn, worker call,
+owner migration, state write or history ledger.
 
-`foreman/measurement_capture.py` owns `MAX_OWNER_BYTES` per owner/supervision
+`skills/herdr-foreman/foreman/measurement_capture.py` owns `MAX_OWNER_BYTES` per owner/supervision
 file, `MAX_NATIVE_BYTES` per transcript, `MAX_LEDGER_BYTES` per captured prefix
 and `MAX_EVIDENCE_BYTES` across transcript/prefix reads in one invocation.
 `MAX_SNAPSHOT_BYTES` in the calculator bounds the sanitized export. Nonregular,
 linked, malformed or oversized owner inputs refuse. Native/ledger read failures
 leave named exclusions, including exhausted evidence budgets. Preserve originals
-and the full cohort; adjust a trusted producer's budgets explicitly if needed.
+and the full cohort; report the diagnostic or exclusions and finish here.
+Producer changes require a separately authorized implementation task.
 
 Provenance retains normalized window, Python version, owner/supervision digests,
 actual producer digest, canonical reader file digests, verified evidence digests

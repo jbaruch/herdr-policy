@@ -186,6 +186,22 @@ class MeasurementCaptureTest(unittest.TestCase):
             self.assertEqual(reader.native(IDENTITY, "/private/worker-report.md", START, END), {})
             self.assertEqual(reader.exclusions, {"native_source_exceeds_budget": 2})
 
+    def test_unusable_unbound_and_out_of_window_native_digests_are_not_verified_provenance(self):
+        original = self.native.read_bytes()
+        for case, body in (("unusable", b"\xff"),
+                           ("unbound", original.replace(b"/private/worker-report.md", b"/another/report.md")),
+                           ("outside", original.replace(b"2026-10-10T00:07:00Z", b"2026-10-10T02:00:00Z"))):
+            with self.subTest(case=case):
+                self.native.write_bytes(body)
+                output = self.output.with_name(case + ".json")
+                status, stdout, stderr = self.collect("--output", output)
+                self.assertEqual((status, stderr), (0, ""))
+                report = json.loads(output.read_bytes())
+                self.assertEqual(report["summary"]["coverage"]["native_match"], {"unknown": 1})
+                self.assertNotIn(hashlib.sha256(body).hexdigest(), report["provenance"]["evidence_sha256"])
+                self.assertEqual(report["provenance"]["evidence_sha256"], [hashlib.sha256(self.ledger.read_bytes()).hexdigest()])
+                self.assertEqual(sum(json.loads(stdout)["exclusions"].values()), 1)
+
     def test_large_summary_uses_one_private_report_without_dropping_held_cohort(self):
         self.source_supervision["holds"] *= 1000
         self.save_inputs()
