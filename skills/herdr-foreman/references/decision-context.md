@@ -102,6 +102,10 @@ an intact counter: the owner recreates the receipt after preserving its charges.
 An interrupted first receipt creation likewise retries from the charged counter.
 Corrupt, foreign or unsupported receipts refuse without replacement. Preserve
 both files during cleanup; never discard them to obtain fresh allowance.
+The existing `migrate-home` owner rebinds both the counter's location and the
+receipt's location hash under its home guard and owner locks, preserving all
+charges. An interrupted move refuses inconsistent reads; rerun that same
+migration to finish its atomic identity rewrites without discarding either file.
 
 Both files use the `jbaruch/coding-policy` `stateful-artifacts` gate-store exception:
 unsupported readers refuse the context read with an update diagnostic. Other
