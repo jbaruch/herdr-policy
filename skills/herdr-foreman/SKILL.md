@@ -26,8 +26,9 @@ skills/herdr-foreman/references/progression.md
 ```
 
 That scoped contract owns ordinary progression, report handling, context floor
-and continuation. When selecting config-schema-9 native capacity limits, read
-this reference before admission:
+and continuation. Retain current supervision, assessment and Stop obligations;
+this adapter supplies no release approval. When selecting config-schema-9 native
+capacity limits, read this reference before admission:
 
 ```text
 skills/herdr-foreman/references/workflow-capacity.md
@@ -59,15 +60,6 @@ resolved through `select_tier` and checked against the capability table
 Each command resolves `HS` to its installed Herdr skill or that skill in a
 herdr-policy clone. Repeat the resolver in every call. Prose `skills/...`
 paths are relative to the package root.
-
-Explicitly admitted task progression follows:
-
-```text
-skills/herdr-foreman/references/progression.md
-```
-
-Retain the current supervision, assessment and Stop obligations; this adapter
-supplies no release approval.
 
 Read the lookup rule before running these command blocks:
 
@@ -214,17 +206,23 @@ skills/herdr-foreman/references/round-preflight.md
 
 ## Step 3 — Verify Authority for the Repo
 
-For an authority-only check, use Step 2's preflight reference and record namespace
-evidence. Non-owned repositories require explicit
-per-action permission; otherwise remain read-only or finish here. On non-zero,
+For an authority-only check, record namespace evidence. Non-owned repositories
+require explicit per-action permission; otherwise remain read-only or finish here. On non-zero,
 report the diagnostic and finish here. Proceed immediately to Step 4.
+
+```text
+skills/herdr-foreman/references/round-preflight.md
+```
 
 ## Step 4 — Measure Headroom
 
-For a headroom-only check, use Step 2's preflight reference. Preserve failed
-measurements and unknown billing; recover required seats
-through their owner route. Proceed immediately to Step 5 when required readings
+For a headroom-only check, preserve failed measurements and unknown billing;
+recover required seats through their owner route. Proceed immediately to Step 5 when required readings
 are available.
+
+```text
+skills/herdr-foreman/references/round-preflight.md
+```
 
 ## Step 5 — Plan the Roles
 
