@@ -4,6 +4,7 @@
 
 - Package the existing frozen-evidence producer for both channels. Add explicit `measurements.py collect` with report-bound native timing, verified assessment receipts, bounded summaries and optional private reports containing the sanitized snapshot, provenance and summary. Preserve the development export command and selection of older trusted readers.
 - Bound regular-file input and native/ledger reads, retain named exclusions, refuse raw-source diagnostics and leave owner/hold evidence unchanged. Collection adds no runtime history ledger or recurring model turn; direct foreman effort and independent deployment/acceptance measurements remain unmeasured.
+- Reserve evidence allowance only when a bounded read starts. Missing, linked, nonregular and oversized sources cannot exhaust the budget without reading bytes; failed reads still retain their reservation.
 - Exercise installed collection and private reporting through Codex, Claude Code and Cursor adapters, including renamed ACR skill directories and immutable payloads.
 
 ## 0.11.1 — 2026-10-20

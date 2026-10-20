@@ -174,17 +174,62 @@ class MeasurementCaptureTest(unittest.TestCase):
             self.assertEqual(result["exclusions"], {"ledger_receipt_exceeds_budget": 1})
             self.assertEqual(result["summary"]["waiting"]["assessment"]["excluded"], {"unmeasured_endpoint": 1})
 
-    def test_rejected_native_read_consumes_allowance_before_subsequent_attempts(self):
+    def test_rejected_native_preflight_preserves_allowance_for_subsequent_reads(self):
         original = self.native.read_bytes()
         with patch.object(producer, "MAX_NATIVE_BYTES", len(original)), \
                 patch.object(producer, "MAX_EVIDENCE_BYTES", 2 * len(original)):
             reader = producer.EvidenceReader(ROOT)
             self.native.write_bytes(original + b" ")
             self.assertEqual(reader.native(IDENTITY, "/private/worker-report.md", START, END), {})
+            self.assertEqual(reader.evidence_bytes_remaining, 2 * len(original))
             self.native.write_bytes(original)
+            self.assertIn("native_completed_at", reader.native(IDENTITY, "/private/worker-report.md", START, END))
             self.assertIn("native_completed_at", reader.native(IDENTITY, "/private/worker-report.md", START, END))
             self.assertEqual(reader.native(IDENTITY, "/private/worker-report.md", START, END), {})
             self.assertEqual(reader.exclusions, {"native_source_exceeds_budget": 2})
+
+    def test_missing_or_nonregular_sources_cannot_exhaust_the_evidence_budget(self):
+        missing, fifo, linked = (self.root / name for name in ("missing", "fifo", "linked"))
+        os.mkfifo(fifo)
+        linked.symlink_to(self.native)
+        with patch.object(producer, "MAX_EVIDENCE_BYTES", 64):
+            reader = producer.EvidenceReader(ROOT)
+        for path in (missing, fifo, linked, self.root):
+            with self.subTest(path=path.name), self.assertRaises((OSError, ValueError)):
+                reader.read_evidence(path, 64)
+            self.assertEqual(reader.evidence_bytes_remaining, 64)
+        good = self.root / "valid-source"
+        good.write_bytes(b"valid")
+        self.assertEqual(reader.read_evidence(good, 64), b"valid")
+        self.assertEqual(reader.evidence_bytes_remaining, 59)
+
+    def test_a_read_error_after_consumption_keeps_its_reserved_allowance(self):
+        source = self.root / "source"
+        source.write_bytes(b"data")
+        original = os.fdopen
+        observed = []
+
+        @contextmanager
+        def failed_read(descriptor, mode):
+            with original(descriptor, mode) as stream:
+                class FailingReader:
+                    def fileno(self):
+                        return stream.fileno()
+
+                    def read(self, size):
+                        observed.append(len(stream.read(size)))
+                        raise OSError("fixture stream failure after consuming bytes")
+                yield FailingReader()
+
+        with patch.object(producer, "MAX_EVIDENCE_BYTES", 4):
+            reader = producer.EvidenceReader(ROOT)
+        with patch.object(producer.os, "fdopen", side_effect=failed_read):
+            with self.assertRaises(OSError):
+                reader.read_evidence(source, 4)
+        self.assertEqual(reader.evidence_bytes_remaining, 0)
+        with self.assertRaises(producer.EvidenceBudgetExceeded):
+            reader.read_evidence(source, 4)
+        self.assertEqual(observed, [4])
 
     def test_successful_and_rejected_reads_stay_within_the_exact_invocation_byte_bound(self):
         good, oversized = self.root / "small-source", self.root / "large-source"

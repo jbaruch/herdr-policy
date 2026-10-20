@@ -31,7 +31,7 @@ class EvidenceBudgetExceeded(ValueError):
     """Selected evidence exceeds a finite read budget."""
 
 
-def read_regular(path, limit, *, prefix=None):
+def read_regular(path, limit, *, prefix=None, before_read=None):
     """Read a bounded regular file, or an exactly identified ledger prefix."""
     if prefix is not None and prefix > limit:
         raise EvidenceBudgetExceeded("preserve the receipt; its prefix exceeds the evidence budget")
@@ -42,6 +42,8 @@ def read_regular(path, limit, *, prefix=None):
             raise ValueError("select a frozen regular evidence file")
         if prefix is None and info.st_size > limit:
             raise EvidenceBudgetExceeded("preserve the selected evidence; it exceeds the read budget")
+        if before_read is not None:
+            before_read()
         body = stream.read(limit if prefix is None else prefix)
         if prefix is None and os.fstat(stream.fileno()).st_size > limit:
             raise EvidenceBudgetExceeded("preserve the selected evidence; it grew beyond the read budget")
@@ -153,10 +155,13 @@ class EvidenceReader:
 
     def read_evidence(self, path, limit, *, prefix=None):
         allowance = min(limit, self.evidence_bytes_remaining)
-        # Reserve before I/O. A rejected read may have consumed its entire
-        # allowance; only a successful bounded read returns unused bytes.
-        self.evidence_bytes_remaining -= allowance
-        body = read_regular(path, allowance, prefix=prefix)
+
+        def reserve():
+            # Preflight failures read nothing. Once reading starts, retain the
+            # reservation on failure; a partial failed read has unknown size.
+            self.evidence_bytes_remaining -= allowance
+
+        body = read_regular(path, allowance, prefix=prefix, before_read=reserve)
         self.evidence_bytes_remaining += allowance - len(body)
         return body
 
