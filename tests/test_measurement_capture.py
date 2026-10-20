@@ -1,6 +1,6 @@
 """Installed collection preserves evidence, unknowns, privacy and bounded output."""
 
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import hashlib
 import io
 import json
@@ -185,6 +185,62 @@ class MeasurementCaptureTest(unittest.TestCase):
             self.assertIn("native_completed_at", reader.native(IDENTITY, "/private/worker-report.md", START, END))
             self.assertEqual(reader.native(IDENTITY, "/private/worker-report.md", START, END), {})
             self.assertEqual(reader.exclusions, {"native_source_exceeds_budget": 2})
+
+    def test_successful_and_rejected_reads_stay_within_the_exact_invocation_byte_bound(self):
+        good, oversized = self.root / "small-source", self.root / "large-source"
+        good.write_bytes(b"ok")
+        oversized.write_bytes(b"excess")
+        observed = []
+        original = os.fdopen
+
+        @contextmanager
+        def tracked(descriptor, mode):
+            with original(descriptor, mode) as stream:
+                class TrackedReader:
+                    def fileno(self):
+                        return stream.fileno()
+
+                    def read(self, size):
+                        body = stream.read(size)
+                        observed.append(len(body))
+                        return body
+                yield TrackedReader()
+
+        with patch.object(producer, "MAX_EVIDENCE_BYTES", 5):
+            reader = producer.EvidenceReader(ROOT)
+        with patch.object(producer.os, "fdopen", side_effect=tracked):
+            self.assertEqual(reader.read_evidence(good, 2), b"ok")
+            for _ in range(2):
+                with self.assertRaises(producer.EvidenceBudgetExceeded):
+                    reader.read_evidence(oversized, 2)
+        self.assertGreater(sum(observed), 0)
+        self.assertLessEqual(sum(observed), 5)
+
+    def test_file_growth_refuses_without_reading_beyond_the_selected_bound(self):
+        source = self.root / "growing-source"
+        source.write_bytes(b"abc")
+        observed = []
+        original = os.fdopen
+
+        @contextmanager
+        def growing(descriptor, mode):
+            with original(descriptor, mode) as stream:
+                class GrowingReader:
+                    def fileno(self):
+                        return stream.fileno()
+
+                    def read(self, size):
+                        body = stream.read(size)
+                        observed.append(len(body))
+                        with source.open("ab") as writer:
+                            writer.write(b"+")
+                        return body
+                yield GrowingReader()
+
+        with patch.object(producer.os, "fdopen", side_effect=growing):
+            with self.assertRaises(producer.EvidenceBudgetExceeded):
+                producer.read_regular(source, 3)
+        self.assertEqual(sum(observed), 3)
 
     def test_unusable_unbound_and_out_of_window_native_digests_are_not_verified_provenance(self):
         original = self.native.read_bytes()

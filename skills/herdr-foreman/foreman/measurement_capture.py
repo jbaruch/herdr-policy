@@ -37,11 +37,14 @@ def read_regular(path, limit, *, prefix=None):
         raise EvidenceBudgetExceeded("preserve the receipt; its prefix exceeds the evidence budget")
     descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
     with os.fdopen(descriptor, "rb") as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode):
             raise ValueError("select a frozen regular evidence file")
-        body = stream.read(limit + 1 if prefix is None else prefix)
-    if len(body) > limit:
-        raise EvidenceBudgetExceeded("preserve the selected evidence; it exceeds the read budget")
+        if prefix is None and info.st_size > limit:
+            raise EvidenceBudgetExceeded("preserve the selected evidence; it exceeds the read budget")
+        body = stream.read(limit if prefix is None else prefix)
+        if prefix is None and os.fstat(stream.fileno()).st_size > limit:
+            raise EvidenceBudgetExceeded("preserve the selected evidence; it grew beyond the read budget")
     return body
 
 
