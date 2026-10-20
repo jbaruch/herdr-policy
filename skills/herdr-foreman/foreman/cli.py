@@ -2214,7 +2214,7 @@ def _validate_context_selector(value):
         return
     if (not isinstance(value, str) or not value
             or context_output.utf8_size(value, "the task/enrollment identity") > 1_024):
-        raise UsageError("Select a recorded task or enrollment identity encoded as valid UTF-8, at most 1024 bytes.", {})
+        raise UsageError("Select a recorded canonical task or enrollment identity encoded as valid UTF-8, at most 1024 bytes.", {})
 
 
 def cmd_status(args, client=None, warn=None, trace=None):
