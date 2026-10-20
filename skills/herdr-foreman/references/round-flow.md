@@ -560,7 +560,7 @@ and no degraded ruling.
 
 ## Dispatch Results
 
-Step 10 of `skills/herdr-foreman/SKILL.md` follows these outcomes. Before a
+Step 10 of `skills/herdr-foreman/references/foreman-workflow.md` follows these outcomes. Before a
 finish, apply the whole-fleet pause/handoff contract in `references/supervision.md`.
 
 - **Exit 0** — proceed to Step 11.

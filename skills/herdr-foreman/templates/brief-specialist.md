@@ -4,6 +4,8 @@ Your responsibility is **{{RESPONSIBILITY}}**, using **{{SPECIALTY}}** expertise
 Read the team protocol in full before this file. Your title grants no additional
 task authority.
 
+{{CHECKOUT_SCOPE}}
+
 You do not dispatch subagents. You are read-only on repository content. Write
 only the report and draft artifacts this brief permits; do not edit source,
 create a branch or worktree, push, merge, or post to GitHub. Proposed repository

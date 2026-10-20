@@ -12,14 +12,15 @@ unrelated report archive. Missing or contradictory evidence stays explicit.
 
 ## Authority and isolation
 
-- Before any repository read, run `git fetch origin` from the assigned task
-  checkout, never the shared checkout. Verify the fresh remote default under
-  general `sync-before-work`; preserve the original registered task base and
-  assigned head. If reconciling them needs unauthorized source, branch or base
-  changes, report `## BLOCKED` before inspection; never reset or rebase on a guess.
-- An older starting ref needs the general pinned-ref exception's explicit user
-  instruction and stated starting ref. A foreman's provisioned base alone
-  waives no generic fetch or freshness requirement.
+- No assigned checkout means artifact-only: supplied immutable evidence and
+  non-repository documentation; no Git/gh, live repo files or APIs. Missing
+  source is `## BLOCKED` for evidence or a checkout.
+- Before repository inspection, `git fetch origin` in the assigned task
+  checkout and verify the fresh remote default under general `sync-before-work`.
+  Preserve the registered base and assigned head. Unauthorized freshness
+  changes are `## BLOCKED`; never guess a reset/rebase. An older starting ref
+  needs the generic pinned-ref exception's explicit user instruction and ref;
+  a provisioned base alone waives no fetch or freshness requirement.
 
 - Start no child agent or native delegation. Report a staffing need to the
   existing foreman; continue only authorized work. An unavailable Herdr route

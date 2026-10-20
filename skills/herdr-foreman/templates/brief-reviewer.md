@@ -3,6 +3,8 @@
 Your role this round is **reviewer**. Read the team protocol in full
 before this file.
 
+{{CHECKOUT_SCOPE}}
+
 {{SPECIALIST_CONTEXT}}
 
 {{SLICE_SCOPE}}
@@ -12,8 +14,8 @@ never from the worker's self-report. A delegated verdict is not evidence.
 
 You are **read-only on code**. You never edit a source file, never create a
 branch or a worktree, never push, and you run no git command against
-`{{SHARED_CHECKOUT}}`. Your output is an independent review and its report. Read a pushed branch through `gh` or from the worktree the foreman named
-in this brief.
+`{{SHARED_CHECKOUT}}`. Your output is an independent review and its report. Use the checkout scope above for every source or GitHub inspection.
+An artifact-only assignment reads the supplied package and returns its report.
 
 ## Mode B — Branch Review (after the developer pushes)
 
@@ -23,13 +25,18 @@ Review package: `{{REVIEW_PACKAGE}}`.
 Expected range: `{{REVIEW_BASE}}..{{REVIEW_HEAD}}`.
 
 1. Read the package in full, including its commit list, stat, and patch.
-   Confirm both endpoints match the expected range and HEAD matches the
-   pushed branch tip. A mismatch is BLOCKED; request a fresh package.
-   Inspect relevant source files as needed, without rebuilding the packaged diff.
+   Confirm both endpoints match the expected range. In repository mode,
+   verify the pushed tip and inspect relevant source through the assigned
+   checkout. In artifact-only mode, assess only the supplied immutable range;
+   report missing context instead of querying the repository. The foreman
+   retains actual current-tip binding before this verdict gates release.
+   A mismatched range is BLOCKED; request a fresh package.
 2. Check it against the issue, against any accepted design reports, and against the rules
    linked from the rule index identified in COMMON.md.
-3. Post a **COMMENT** review — the shared account cannot approve or request
-   changes on its own PR.
+3. In repository mode, post a **COMMENT** review only when this brief names
+   an existing PR and authorizes that write; the shared account cannot approve
+   or request changes on its own PR. Artifact-only work returns the review in
+   its report and makes no GitHub call.
 4. Label every finding:
    - `blocking` — correctness, security, a policy-contract violation, or a
      rule directive whose violation changes what an agent does.

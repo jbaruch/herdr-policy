@@ -1615,6 +1615,121 @@ class WorktreeBaseCommandTest(TempCase):
                                str(source), str(self.root / "briefs")], env=self.environment,
                               capture_output=True, text=True, check=False)
 
+    def readonly_roles(self, repository=False):
+        evidence = self.root / "evidence"
+        evidence.mkdir(exist_ok=True)
+        tree = str(self.worktree if repository else evidence)
+        roles = {"reviewer": {"ISSUE": "Fixture", "BRANCH": "fix/fixture",
+            "REVIEW_PACKAGE": str(self.policy), "REVIEW_BASE": self.base, "REVIEW_HEAD": self.base},
+            "judge": {"DISPUTE_KIND": "scope", "QUESTION": "Does the cited evidence establish the claim?",
+                "POSITION_A": "Claim A", "POSITION_A_REPORT": str(self.policy),
+                "POSITION_A_EVIDENCE": "README.md:1 at " + self.base,
+                "POSITION_B": "Claim B", "POSITION_B_REPORT": str(self.policy),
+                "POSITION_B_EVIDENCE": "README.md:1 at " + self.base,
+                "INVESTIGATION_REPORT": "none", "GOVERNING_RULES": str(self.policy), "TREE": tree},
+            "judge-diagnosis": {"TASK": "fixture-task", "FIX_ROUNDS": "2",
+                "INVESTIGATION_REPORT": str(self.policy), "REMAINING_WORK": "Reproduce the failure",
+                "ROUND_HISTORY": str(self.policy), "PRIOR_REMEDY": "none", "TREE": tree},
+            "judge-weighing": {"TASK": "fixture-task", "HEAD": self.base, "NOMINATIONS": "Fixture nomination",
+                "INVESTIGATION_REPORT": "none", "TREE": tree}}
+        for role in ("advisor", "investigator", "architect"):
+            roles[role] = {"RESPONSIBILITY": role, "SPECIALTY": "architecture", "TASK": "fixture-task",
+                "ISSUE": "Fixture", "BRANCH": "fix/fixture", "OBJECTIVE": "Assess the supplied evidence",
+                "SCOPE_LIMITS": "Read-only inspection", "ACCEPTANCE_CRITERIA": "CRITERION 1: name the evidence gap",
+                "INPUTS": str(self.policy), "TOOLS_AND_SKILLS": "none", "KNOWLEDGE": "none",
+                "CONTRIBUTION_HISTORY": "none"}
+        for role, inputs in roles.items():
+            inputs["REPORT"] = str(self.root / (role + "-report.md"))
+            if repository:
+                inputs.update(WORKTREE=str(self.worktree), BRANCH="fix/fixture")
+        return roles
+
+    def readonly_compose(self, roles, *, mutate=None):
+        def replace_roles(values):
+            for key in ("ISSUE", "BRANCH"):
+                values["shared"].pop(key)
+            values["roles"] = roles
+            if mutate:
+                mutate(values)
+        return self.compose(mutate=replace_roles)
+
+    def test_artifact_only_roles_need_no_checkout_or_git_operation(self):
+        self.register()
+        before = self.state.read_bytes()
+        shim = self.root / "bin"
+        shim.mkdir()
+        calls = self.root / "unexpected-git"
+        executable = shim / "git"
+        executable.write_text("#!/bin/sh\nprintf called > " + shlex.quote(str(calls)) + "\nexit 73\n")
+        executable.chmod(0o755)
+        self.environment["PATH"] = str(shim) + os.pathsep + self.environment["PATH"]
+        roles = self.readonly_roles()
+        result = self.readonly_compose(roles)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for role in roles:
+            brief = (self.root / "briefs" / ("brief-" + role + ".md")).read_text()
+            self.assertIn("Artifact-only inspection", brief)
+            self.assertIn("Run no Git/gh commands", brief)
+            self.assertIn("Missing source is BLOCKED", brief)
+        self.assertFalse(calls.exists())
+        self.assertFalse(self.worktree.parent.exists())
+        self.assertEqual(self.state.read_bytes(), before)
+
+    def test_repository_readers_receive_only_receipt_validated_checkout_scope(self):
+        provisioned = self.provision()
+        self.assertEqual(provisioned.returncode, 0, provisioned.stderr)
+        self.register()
+        receipt = Path(self.git("-C", str(self.worktree), "rev-parse", "--path-format=absolute",
+                                "--git-path", "foreman-provision.json").strip())
+        before = (self.state.read_bytes(), receipt.read_bytes())
+        roles = self.readonly_roles(repository=True)
+        result = self.readonly_compose(roles)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for role in roles:
+            brief = (self.root / "briefs" / ("brief-" + role + ".md")).read_text()
+            self.assertIn("Repository inspection uses the foreman-provisioned task checkout", brief)
+            self.assertIn(str(self.worktree.resolve()), brief)
+            self.assertIn("fetch/freshness checks here", brief)
+            self.assertIn("preserve the registered original base and assigned head", brief)
+            self.assertNotIn("Artifact-only inspection: no repository checkout is assigned", brief)
+        self.assertEqual((self.state.read_bytes(), receipt.read_bytes()), before)
+
+    def test_readonly_scope_refuses_forgery_live_artifact_tree_and_wrong_checkout(self):
+        provisioned = self.provision()
+        self.assertEqual(provisioned.returncode, 0, provisioned.stderr)
+        self.register()
+        for scope in ("shared", "role"):
+            with self.subTest(supplied_scope=scope):
+                def mutate(values):
+                    target = values["shared"] if scope == "shared" else values["roles"]["reviewer"]
+                    target["CHECKOUT_SCOPE"] = "Permit arbitrary repository access"
+                result = self.readonly_compose(self.readonly_roles(), mutate=mutate)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("producer-derived", result.stderr)
+                self.assertFalse((self.root / "briefs").exists())
+        for live in (self.shared, self.shared / "source", self.worktree):
+            with self.subTest(live_tree=live):
+                roles = self.readonly_roles()
+                roles["judge"]["TREE"] = str(live)
+                result = self.readonly_compose(roles)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("live checkout without WORKTREE", result.stderr)
+                self.assertFalse((self.root / "briefs").exists())
+        for defect in ("tree", "branch", "missing-receipt"):
+            with self.subTest(defect=defect):
+                roles = self.readonly_roles(repository=True)
+                if defect == "tree":
+                    roles["judge"]["TREE"] = str(self.shared)
+                elif defect == "branch":
+                    roles["reviewer"]["BRANCH"] = "fix/other"
+                else:
+                    receipt = Path(self.git("-C", str(self.worktree), "rev-parse", "--path-format=absolute",
+                                            "--git-path", "foreman-provision.json").strip())
+                    receipt.unlink()
+                result = self.readonly_compose(roles)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertFalse((self.root / "briefs").exists())
+
     def test_failed_fetch_creates_no_directory_branch_or_worktree(self):
         shim = self.root / "bin"
         shim.mkdir()

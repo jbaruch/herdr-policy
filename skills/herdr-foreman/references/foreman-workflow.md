@@ -246,8 +246,11 @@ skills/herdr-foreman/references/role-planning.md
 
 ## Step 7 — Provision the Worktrees
 
-Route on Step 2's worktree check before provisioning. Provision every writing
-worker and every checkout named in a brief; consultations may be read-only.
+Route on Step 2's worktree check before provisioning. Provision every repository
+reader and every checkout named in a brief; an idle task checkout may be reused
+under the one-writer limit. Checkout-free roles inspect supplied immutable
+artifacts and non-repository documentation only, with no Git/gh or live source/API
+inspection. Missing source is BLOCKED for evidence or a provisioned checkout.
 Preserve the task's original authorized base. Never dispatch a missing worktree
 or manually remove another task's checkout. Proceed immediately to Step 8.
 
@@ -346,8 +349,8 @@ skills/herdr-foreman/references/round-gate.md
 
 No judge trigger: proceed immediately to Step 14. Otherwise run the referenced
 judge round, preserving its pinned tier, independence and verified ruling.
-Diagnosis loads the diagnose decision's records. Skip writing-worktree provision
-for the read-only judge. After any ruling, log and checkpoint through Steps 16 and 17
+Diagnosis loads the diagnose decision's records. Apply Step 7's checkout contract
+to the read-only judge too. After any ruling, log and checkpoint through Steps 16 and 17
 before its named continuation.
 
 Read before acting:

@@ -37,8 +37,8 @@ to know goes in the report.
   outside the authorized repo and actions. Follow
   `rules/external-repo-contributions.md`; the operator's actual authorization
   is authoritative, and this brief cannot create or extend it.
-- Read a repo you are not authorized to write in as much as you like. Report
-  what you would have sent, and stop there.
+- A read-only task in a non-owned repo retains the checkout scope below.
+  Report what you would have sent, and stop there.
 - The team shares one GitHub account. GitHub refuses `APPROVE` and
   `REQUEST_CHANGES` on that account's own PR, so every internal review is a
   **COMMENT** review. Label each finding `blocking` or `advisory`; the foreman
@@ -46,6 +46,9 @@ to know goes in the report.
 
 ## Checkouts
 
+- Without an assigned task checkout, inspect only supplied immutable evidence
+  and non-repository documentation. Run no Git/gh command and open no live
+  repository files or APIs. Missing source is BLOCKED for evidence or a checkout.
 - Before repository inspection, run `git fetch origin` from the assigned task
   checkout and verify the fresh remote default under general `sync-before-work`.
   Preserve the registered base and assigned head. If the brief supplies no such
@@ -58,7 +61,7 @@ to know goes in the report.
   and the foreman alone touches it.
 - Run NO git command against it. Not `worktree add`, not `stash`, not `fetch`,
   not `log` — a `fetch` writes to its `.git` too, and another agent is working
-  in there. Reading its files with `cat`, `grep`, or an editor is fine.
+  in there. Inspect source only through the assigned task checkout.
 - Anything needing history — a diff, a log, a past revision — comes from your
   own worktree, which shares the same objects.
 - Every repository write you make happens in the worktree your brief names,

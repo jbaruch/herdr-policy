@@ -400,6 +400,8 @@ refuse only the stage whose harm it prevents.
 - Brief composition reads the original task base and Git-owned worktree provenance automatically; callers supply task identity, never an asserted base SHA
 - The foreman provisions every worktree a brief names, before dispatch
 - A role with no repository inspection needs no worktree
+- Without an assigned checkout, a role inspects supplied immutable evidence and non-repository documentation only; no Git/gh commands, live repository files or APIs
+- Missing source in that artifact-only assignment is BLOCKED for sufficient evidence or a provisioned checkout
 - A read-only repository assignment names a foreman-provisioned task checkout for its own fetch and fresh-default verification
 - A worker never creates, moves, or removes a worktree
 - A worker runs no git command against the shared checkout, mutating or otherwise

@@ -2,7 +2,7 @@
 
 Read this contract when the execution plan reaches one of its steps. Execute
 only the current step and the continuation it names. Step numbers refer to
-`skills/herdr-foreman/SKILL.md`.
+`skills/herdr-foreman/references/foreman-workflow.md`.
 
 ## Step 11 — Observe the Fleet
 

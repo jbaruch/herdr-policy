@@ -2,7 +2,7 @@
 
 Read this contract when the execution plan reaches one of its steps. Execute
 only the current step and the continuation it names. Step numbers refer to
-`skills/herdr-foreman/SKILL.md`.
+`skills/herdr-foreman/references/foreman-workflow.md`.
 
 ## Step 7 — Provision the Worktrees
 
@@ -47,7 +47,9 @@ script's top-of-file contract.
 The removal predicates live in `skills/release/lib/prune-worktrees.sh`
 (top-of-file docstring).
 
-Then run once per writing worker and every worktree named in a brief:
+Then provision every repository-reading role, including reviewer, specialist
+and judge, and every worktree named in a brief. An idle, already-provisioned
+task checkout may be reused under the one-writer limit. Run for each checkout:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
@@ -60,7 +62,9 @@ Emits path, branch, exact base and fetched-default commits, and
 Fetch failure stops before worktree creation. Pass an existing task's original
 authorized base as `base-ref`; never refresh that task base for a correction. On any
 non-zero exit, fix the diagnostic and retry. Never dispatch a missing
-worktree. Read-only consultations need none. Clean up after merge per
+worktree. Checkout-free work is artifact-only: supplied immutable evidence and
+non-repository documentation, no Git/gh commands, live repository files or APIs.
+Missing source is BLOCKED for evidence or a provisioned checkout. Clean up after merge per
 `rules/agent-worktree-isolation.md`. Proceed immediately to Step 8.
 
 ## Step 8 — Compose the Briefs
@@ -81,6 +85,10 @@ bash "$HS/compose-briefs.sh" \
 Emits common and role-brief paths. On non-zero, fix the diagnostic before
 dispatch. Validates composition inputs and review evidence before writing.
 Use a fresh absolute report path per role and attempt.
+For repository inspection, supply that role's provisioned `WORKTREE` and matching
+`BRANCH`; composition validates the existing receipt and derives `CHECKOUT_SCOPE`.
+Without `WORKTREE`, the derived scope permits artifact-only inspection. Never
+supply scope text or use a live checkout as an artifact-only judge's `TREE`.
 
 Follow `skills/herdr-foreman/references/round-setup.md` Step 8 for shared and role-specific values,
 authority, review evidence and brief completeness.

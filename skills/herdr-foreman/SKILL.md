@@ -1,16 +1,22 @@
 ---
 name: herdr-foreman
 description: >
-  Route explicit Herdr requests to dispatch, supervise, recover or release team
-  work, inspect workflow readiness, or retrieve saved attention, handoffs,
-  retrospectives, measurements and task cost. Live coordination requires a
-  verified foreman. Workers retain their assigned role; ordinary coding skips
-  this skill.
+  Assign and delegate Herdr work, supervise workers, recover interrupted
+  assignments, release verified changes and inspect dispatch readiness. Retrieve
+  saved follow-ups, handoffs, retrospectives, task cost and coordination
+  measurements. Use when the user asks the Herdr foreman to assign an issue,
+  delegate a task, supervise the crew, recover a worker, release a change,
+  check ready work or retrieve those saved records. Live coordination requires
+  the verified foreman; workers retain their assignment. Standups use
+  herdr-standup; ordinary coding skips this skill.
 ---
 
 # Herdr Foreman Skill
 
 Process steps in order. Do not skip ahead.
+
+Prose paths below are relative to the verified plugin root. Script paths use
+the selected `HS` skill directory from that same installation.
 
 ## Step 1 — Select the Context
 
@@ -75,6 +81,12 @@ Use the recorded state/config overrides when the owner selected them.
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
 bash "$HS/foreman.sh" role-context
 ```
+
+The command returns read-only JSON with `role`, `verified`, `reason`, `context`
+and the selected owner path. If lookup or execution fails, report its exact
+diagnostic, preserve the existing owner, holds and unknown deliveries, and
+finish this skill here. Retain separate supervision obligations; choose no
+replacement installation or store to obtain a role.
 
 - Verified `foreman`: follow the returned operating context and proceed immediately to Step 2.
 - Verified `worker`: follow the returned worker context and the delivered assignment; finish this skill here.

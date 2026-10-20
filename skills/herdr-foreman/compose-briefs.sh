@@ -11,6 +11,9 @@
 #   values: packaged templates also take top-level task (existing owner task id)
 #           and optional state (non-default ledger path). Exact base values are
 #           derived automatically, never supplied as SHA approval assertions.
+#           CHECKOUT_SCOPE is derived too: absent WORKTREE means artifact-only;
+#           a supplied WORKTREE/BRANCH is checked against its provisioning receipt.
+#           Custom rendering has no provenance and derives artifact-only scope.
 #           {"shared": {"KEY": "value", ...},
 #            "roles":  {"<role>": {"KEY": "value", ...}, ...}}
 #           `shared` fills COMMON.md and every brief; a role's own values win
@@ -289,13 +292,22 @@ main() {
 
   # Packaged provenance comes from the already-registered task and Git-owned
   # worktree receipts. Custom templates remain a pure rendering interface.
-  local provenance_keys=""
+  local provenance_keys="" provenance_mode=artifact-compose
   if [[ -r "${templates}/COMMON.md" ]]; then
     provenance_keys="$(placeholders_in "${templates}/COMMON.md")" || return 3
     if [[ $'\n'"$provenance_keys"$'\n' == *$'\nBASE_REVISION\n'* ]]; then
-      values="$(printf '%s' "$values" | PYTHONPATH="${SKILL_DIR}${PYTHONPATH:+:${PYTHONPATH}}" python3 -m foreman.provision compose)" || return 2
+      provenance_mode=compose
     fi
   fi
+  local derived_values provenance_rc=0
+  derived_values="$(printf '%s' "$values" | PYTHONPATH="${SKILL_DIR}${PYTHONPATH:+:${PYTHONPATH}}" python3 -m foreman.provision "$provenance_mode")" || provenance_rc=$?
+  if (( provenance_rc == 2 )); then return 2; fi
+  if (( provenance_rc != 0 )) || ! printf '%s' "$derived_values" | jq -e \
+      'type == "object" and (.shared | type == "object") and (.roles | type == "object")' >/dev/null; then
+    warn "the checkout/provenance check failed (exit ${provenance_rc}) — confirm python3 runs and ${SKILL_DIR}/foreman/provision.py is installed, then retry without dispatching"
+    return 3
+  fi
+  values="$derived_values"
 
   local shared
   shared="$(printf '%s' "$values" | jq -c '.shared // {}')"
@@ -416,6 +428,17 @@ main() {
     merged="$(printf '%s' "$merged" | jq -c 'del(.SLICE_PATHS, .SLICE_DIGEST)')" || return 2
     validate_values "$merged" "the values for role '${role}'" || return 2
     known="$(placeholders_in "$role_tpl")" || return 3
+    if [[ $'\n'"${known}"$'\n' == *$'\nCHECKOUT_SCOPE\n'* ]]; then
+      # These inputs were consumed by the provenance owner, even when their
+      # facts appear inside CHECKOUT_SCOPE rather than separate placeholders.
+      if [[ "$provenance_mode" == compose ]] && printf '%s' "$merged" | jq -e 'has("WORKTREE")' >/dev/null; then
+        known+=$'\nWORKTREE\nBRANCH'
+      fi
+    else
+      # A producer-derived field is optional for custom and writing templates;
+      # caller-supplied scope text was refused before this point.
+      merged="$(printf '%s' "$merged" | jq -c 'del(.CHECKOUT_SCOPE)')" || return 2
+    fi
     if [[ $'\n'"${known}"$'\n' == *$'\nSPECIALIST_CONTEXT\n'* ]]; then
       merged="$(printf '%s' "$merged" | jq -c '{SPECIALIST_CONTEXT:""} * .')" || return 2
     fi

@@ -1,7 +1,8 @@
 # Round Setup Reference
 
-Detailed setup contracts and examples for Steps 2–9 of `skills/herdr-foreman/SKILL.md`.
-The skill retains the execution order and continuation gates.
+Detailed setup contracts and examples for Steps 2–9 of
+`skills/herdr-foreman/references/foreman-workflow.md`, which retains execution
+order and continuation gates.
 
 Step 8's brief-completeness requirements apply to every composed brief: identify
 every issue, finding, file, and prior report in full. Phase 2 names the pushed
@@ -256,8 +257,9 @@ Proceed immediately to Step 7 with the printed path as `REVIEW_PACKAGE`.
 
 ## Step 7 — Provision the Worktrees
 
-Run the sweep in the skill's Step 7 first, every round. Then one call per
-worker that writes anything:
+Run Step 7's sweep first, every round. Provision every repository-reading role
+and checkout named in a brief; an idle task checkout may be reused within the
+one-writer limit. Run for each checkout:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
@@ -278,8 +280,9 @@ contract; see the header of
 
 The foreman provisions every worktree a brief names, so a worker never runs git
 against the shared checkout (`skills/herdr-foreman/references/team-operation.md` Writers and
-Checkouts). A consultation inspecting artifacts without git needs none. Provision
-a read-only checkout if its evidence work requires git. Remove worktrees per
+Checkouts). Checkout-free work inspects supplied immutable artifacts and
+non-repository documentation only: no Git/gh commands, live repository files or
+APIs. Missing source is BLOCKED for evidence or a checkout. Remove worktrees per
 `rules/agent-worktree-isolation.md` Cleanup once the branch lands.
 
 On a non-zero exit, follow its diagnostic and re-run this step after the named
@@ -326,8 +329,14 @@ bash "$HS/compose-briefs.sh" \
 The packaged values file is `{"task":"<existing registered task id>", "state":"<owner state path when non-default>", "shared": {...}, "roles": {"<role>": {...}}}`;
 composition reads the original registered task base and Git-owned provisioning
 receipt automatically. Omit caller-supplied BASE_REVISION or BASE_PROVENANCE.
-A first read-only consultation has no WORKTREE and needs no provisioning receipt; a role's
-own value beats the shared one. Emits
+A role's own value beats the shared one. A repository-reading reviewer,
+specialist or judge supplies `WORKTREE` and its matching `BRANCH`; composition
+validates their provisioning receipt against the registered task and derives
+`CHECKOUT_SCOPE`. Omit that derived field. Without `WORKTREE`, inspection is
+artifact-only and needs no provisioning receipt. A judge's `TREE` is then an
+immutable evidence directory outside any live checkout; in repository mode it
+must equal the validated `WORKTREE`. Artifact-only reviews assess the supplied
+range; the foreman retains actual current-tip binding before release. Emits
 `{"common":"<path>","briefs":{"<role>":"<path>"}}`. Exit 2 means validation
 failed and nothing was written — an absent or unreadable policy artifact or review package,
 an unfilled placeholder, a supplied key no template uses, a value that is not
@@ -345,7 +354,7 @@ script's contract; see the header of
 
 What you decide, and it is the whole of your job here:
 
-- `SHARED_CHECKOUT` — the checkout the workers read.
+- `SHARED_CHECKOUT` — the foreman's shared checkout, never a worker's Git target.
 - `POLICY_INDEX`, `RELEASE_SKILL` and `TEAM_OPERATION` — the resolver's
   absolute artifact paths.
 - `AUTHORITY_STATEMENT`, `TASK_AUTHORIZATION`, `AUTHORIZED_ACTIONS`, and

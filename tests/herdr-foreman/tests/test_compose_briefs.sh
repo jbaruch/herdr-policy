@@ -476,10 +476,17 @@ JSON
     rm -f "$sep_path" || die "could not remove the separator package"
   done
 
-  # 15c. A check that cannot run is exit 3, never an accepted path.
+  # 15c. A renderable check that cannot run is exit 3, never an accepted path.
+  # Scope derivation runs earlier; the shim fails only the intended checker.
   local pyshim="$TMP/pyshim"
   mkdir -p "$pyshim" || die "could not create the python3 shim dir"
-  printf '#!/usr/bin/env bash\nset -euo pipefail\nexit 7\n' > "$pyshim/python3" \
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    # The generated shim must read its own arguments.
+    # shellcheck disable=SC2016
+    printf 'if [[ "${1:-}" == -m && "${2:-}" == foreman.renderable ]]; then exit 7; fi\n'
+    printf 'exec %s "$@"\n' "$(command -v python3)"
+  } > "$pyshim/python3" \
     || die "could not write the python3 shim"
   chmod +x "$pyshim/python3" || die "could not make the python3 shim executable"
   RUN_SEQ=$((RUN_SEQ+1))
@@ -494,8 +501,13 @@ JSON
   #      a failed import) is a check that could not run, never a refusal.
   local crashshim="$TMP/crashshim"
   mkdir -p "$crashshim" || die "could not create the crash shim dir"
-  printf '#!/usr/bin/env bash\nset -euo pipefail\necho "ModuleNotFoundError: No module named foreman" >&2\nexit 1\n' \
-    > "$crashshim/python3" || die "could not write the crash shim"
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    # The generated shim must read its own arguments.
+    # shellcheck disable=SC2016
+    printf 'if [[ "${1:-}" == -m && "${2:-}" == foreman.renderable ]]; then echo "ModuleNotFoundError: No module named foreman" >&2; exit 1; fi\n'
+    printf 'exec %s "$@"\n' "$(command -v python3)"
+  } > "$crashshim/python3" || die "could not write the crash shim"
   chmod +x "$crashshim/python3" || die "could not make the crash shim executable"
   RUN_SEQ=$((RUN_SEQ+1))
   OUT="$(PATH="$crashshim:$PATH" bash "$SCRIPT" "$TPL" "$v1" "$TMP/out15d" 2>"$TMP/err.$RUN_SEQ")"
@@ -504,6 +516,20 @@ JSON
   if [[ $RC -eq 3 && -z "$OUT" && ! -e "$TMP/out15d" ]] \
      && printf '%s' "$ERRTEXT" | grep -q "renderable-text check failed"; then
     pass; else fail "crashed renderable check: expected exit 3 and nothing written, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+
+  # A broken scope owner is a tool failure too, with a visible recovery action.
+  local scope_status
+  for scope_status in 1 7; do
+    printf '#!/usr/bin/env bash\nexit %s\n' "$scope_status" > "$pyshim/python3" \
+      || die "could not write the unavailable scope-owner shim"
+    RUN_SEQ=$((RUN_SEQ+1))
+    OUT="$(PATH="$pyshim:$PATH" bash "$SCRIPT" "$TPL" "$v1" "$TMP/out-scope-$scope_status" 2>"$TMP/err.$RUN_SEQ")"
+    RC=$?
+    ERRTEXT="$(cat "$TMP/err.$RUN_SEQ")"
+    if [[ $RC -eq 3 && -z "$OUT" && ! -e "$TMP/out-scope-$scope_status" ]] \
+       && printf '%s' "$ERRTEXT" | grep -q 'checkout/provenance check failed'; then
+      pass; else fail "broken scope owner: expected exit 3 and no brief, got RC=$RC OUT=$OUT ERR=$ERRTEXT"; fi
+  done
 
   # 16. A review SEAT owes its role's review-package checks. The slice narrows
   #     what a reviewer reviews, never what its brief must carry (#434).

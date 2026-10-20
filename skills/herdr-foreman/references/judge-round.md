@@ -1,6 +1,6 @@
 # Judge Round Reference
 
-The seven steps of one judge round, run in order from `skills/herdr-foreman/SKILL.md`
+The seven steps of one judge round, run in order from `skills/herdr-foreman/references/foreman-workflow.md`
 Step 13. Modes, triggers and both report contracts are in
 `skills/herdr-foreman/references/round-flow.md` "The Judge".
 
@@ -58,7 +58,13 @@ and its evidence; policy findings come from the list-mode JSON in the release
 worker's report. `HEAD` is that head's full sha. Fill `INVESTIGATION_REPORT`
 after an `insufficient` weighing, otherwise "none".
 
-Skip `skills/herdr-foreman/references/foreman-workflow.md` Step 7 for the read-only judge. Proceed immediately to step 2.
+Before composition, apply `skills/herdr-foreman/references/foreman-workflow.md`
+Step 7 to a repository-reading judge: provide its provisioned task `WORKTREE`,
+matching `BRANCH` and the same path as `TREE`. Required fetch/freshness checks
+are allowed; source writes remain prohibited. Without a checkout, supply an
+immutable evidence `TREE` outside live repositories and constrain the judge to
+artifact-only inspection, with no Git/gh or live repository files/APIs. Missing
+evidence is BLOCKED for a checkout or adequate artifacts. Proceed immediately to step 2.
 
 ## 2 — Re-measure the Shared Window
 
