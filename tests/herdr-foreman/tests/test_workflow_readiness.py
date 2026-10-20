@@ -246,6 +246,21 @@ class WorkflowReadinessTest(unittest.TestCase):
             self.assertEqual([job["worker_kind"] for job in self.f.active()], ["codex"])
             self.assertTrue(self.f.native.events)
 
+    def test_unowned_enrollment_after_live_pulse_excludes_the_task_without_effects(self):
+        self.f.admit()
+        with self.f.owner.session() as capability:
+            runner = self.f.runner(capability, planner=workflow_planning.plan)
+            progression_runtime.pulse(capability, self.f.now())
+            self.f.foreign_enrollment(task="one")
+            before, events = self.files(), list(self.f.native.events)
+            with self.assertRaisesRegex(UsageError, "enrollment without a confirmed dispatch owner"):
+                runner.tick()
+            row = self.one(native_verified=True)
+            self.assertEqual((row["ready"], row["dispatchable"], row["reason"]),
+                             (False, False, "enrollment_owner_unverified"))
+            self.assertEqual(self.files(), before)
+            self.assertEqual(self.f.native.events, events)
+
     def test_shared_account_uses_its_lowest_known_headroom(self):
         self.f.admit()
         self.snapshot(0.0)
