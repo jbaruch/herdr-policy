@@ -119,7 +119,10 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
         authority = getattr(client, "_remote_authority", None)
         if authority is None:
             return _result("unverified", "remote_owner_unverified", skill)
-        selected = Path(state_path) if state_path is not None else authority.state_path
+        selected = Path(state_path).resolve() if state_path is not None else authority.state_path
+        if selected.resolve() != Path(authority.state_path).resolve():
+            from .command_context import refuse
+            raise refuse("remote_owner_state_path_changed")
         try:
             data = progression_owner.verify_foreman(selected, client)
             if any(row["resumed_at"] is None for row in data["holds"]):
@@ -199,6 +202,25 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
     except ContextBundleError:
         raise
     except ForemanError:
+        if not saved and incoming:
+            # An outage cannot verify a worker, but its current enrollment can
+            # retain recovery instructions. Read only the selected owner and
+            # use its refinements; no new discovery binding is created.
+            selected = Path(state_path) if state_path is not None else default_state_path()
+            data = supervision.load(selected)
+            matching = []
+            for member in data["members"]:
+                assignment = supervision.expected_assignment(member)
+                native = assignment["native_session"]
+                if (isinstance(native, dict) and native.get("agent") in ("claude", "codex", "grok")
+                        and native.get("source") == "herdr:" + native["agent"]
+                        and native.get("kind") in ("id", "path")
+                        and _worker_matches(member, environment["HERDR_PANE_ID"], native)
+                        and supervision.identity(native["value"], cwd, environment["HERDR_ENV"],
+                            kind=native["kind"], pane_id=environment["HERDR_PANE_ID"]) in incoming):
+                    matching.append(member)
+            if len(matching) == 1:
+                return _result("recovery", "enrolled_role_unavailable", skill, owner=selected)
         owners = {row["state_path"] for row in saved}
         return _result("recovery" if saved else "unverified",
                        "current_role_unavailable", skill,

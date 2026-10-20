@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Every deterministic check a round start owes, in one call.
 #
-# SKILL.md Steps 1-9 precede the first dispatch, and each one was a separate
+# Steps 1-9 of skills/herdr-foreman/references/foreman-workflow.md precede
+# the first dispatch, and each one was a separate
 # foreman turn that shipped the foreman's whole accumulated context to run a script
 # and read its exit code. The checks are deterministic -- Herdr reachable, the
 # roster measured, authority verified, a cadence due, worktrees swept -- so

@@ -228,7 +228,7 @@ refuse only the stage whose harm it prevents.
 - `stop` is terminal and never repeats
 - An approach's diagnosis count is bounded by `DIAGNOSIS_LADDER` plus one reissue per rung (`skills/herdr-foreman/foreman/recovery.py` `_remedy_options`)
 - No exhausted allowance waits on an operator decision
-- The judge is read-only: it never edits a repository file, never runs a mutating git or `gh` command, never posts to GitHub, never dispatches a subagent — its only output is its report file
+- The judge is read-only on repository content: only the worker protocol's required fetch in its validated task checkout may mutate Git metadata; it never edits repository content, runs another mutating Git or `gh` command, posts to GitHub or dispatches a subagent — its only authored output is its report file
 - A weighing has no positions
 - The position, citation and ruling-grammar bullets below govern a dispute alone
 - Each dispute position cites its evidence: file and line, or command output, each at a named revision

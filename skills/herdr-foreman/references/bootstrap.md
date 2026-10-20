@@ -31,8 +31,7 @@
 
 - `role-context` accepts the existing `--state`, `--config` and `--herdr-bin` overrides; use only the current owner's selected values.
 - Success returns schema 1 with `role`, `verified`, `reason`, `context`, `reference` and `state_path`; every authority field is false.
-- Foreman selection verifies the current native binding and discovery generation, or the configured first-launch seat and exact foreground argv. A trusted remote bound client instead uses its actual owner preflight.
-- Worker selection requires its exact active native enrollment; a role hint alone establishes none.
+- `skills/herdr-foreman/foreman/role_context.py` owns role selection and preflight. A role hint establishes no authority; an explicit foreign remote `--state` is refused.
 - Known outages, changed ownership and operator holds retain a recovery capsule. Unverified sessions receive no foreman contract.
 - Ordinary native sessions with `HERDR_ENV` unset read no owner or controller.
 - Each co-shipped capsule is at most 4096 UTF-8 bytes; structured stdout is at most 16 KiB. Missing, unreadable or oversized contracts fail visibly without partial instructions.

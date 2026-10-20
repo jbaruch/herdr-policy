@@ -3465,19 +3465,16 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
                              {"reason": "automatic_foreman_reset_disabled"})
         remote_context = getattr(getattr(client, "context", None), "mode", None) == "attested-remote"
         if args.command == "role-context":
-            if remote_context and not getattr(args, "state", None):
-                authority = getattr(client, "_remote_authority", None)
-                if authority is None:
-                    raise UsageError("Restore the attached remote owner before selecting its context.", {})
-                args.state = str(authority.state_path)
-            elif not remote_context and "HERDR_ENV" in os.environ:
+            if not remote_context and "HERDR_ENV" in os.environ:
                 from .role_context import selected_paths
                 selected = selected_paths(os.environ, state_path=getattr(args, "state", None),
                                           config_path=getattr(args, "config", None))
                 for field, attribute in (("state_path", "state"), ("config_path", "config")):
                     if selected[field] is not None:
                         setattr(args, attribute, str(selected[field]))
-        if remote_context and client is not None:
+        # Role selection owns its preflight and recovery capsule. Other remote
+        # commands still require the generic preflight before their handlers.
+        if remote_context and client is not None and args.command != "role-context":
             client.remote_preflight(_state_path(args), allow_indeterminate=True)
             if args.command in {"start-foreman", "foreman-reset", "foreman-reset-deliver", "foreman-reset-reconcile", "migrate-home"}:
                 from .command_context import refuse

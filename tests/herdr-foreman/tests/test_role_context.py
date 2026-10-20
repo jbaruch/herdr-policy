@@ -187,6 +187,44 @@ class RoleContextTest(unittest.TestCase):
             {**self.payload, "session_id": "refined-worker"}, context_reader=reader))
         self.assertEqual(self.files(), before)
 
+    def test_selected_enrolled_worker_outage_retains_recovery_without_verification(self):
+        worker = {"source": "herdr:codex", "agent": "codex", "kind": "id",
+                  "value": "refined-worker", "pane_id": "worker-pane"}
+        supervision.enroll(self.owner.path, {"id": "outage-worker", "agent": "private-worker", "task": "one",
+            "report": str(self.owner.root / "outage-report.md"), "pane_id": None, "native_session": None}, fixture.AT)
+        supervision.refine(self.owner.path, "outage-worker", "worker-pane", worker, fixture.AT)
+        client = SimpleNamespace(context=HerdrCommandContext("fixture-herdr"),
+            pane_get=lambda pane: self.fail("The patched controller must own this call"))
+        environment = {"HERDR_ENV": "fixture-only", "HERDR_PANE_ID": "worker-pane",
+                       "FOREMAN_CONTEXT_STATE": str(self.owner.path)}
+        payload = {**self.payload, "session_id": "refined-worker"}
+        for held in (False, True):
+            with self.subTest(held=held):
+                if held:
+                    pause = self.owner.root / "outage-pause.md"
+                    pause.write_text("Private worker hold during controller outage")
+                    supervision.hold(self.owner.path, {"id": "outage-pause", "kind": "waiting_for_user",
+                        "resume_condition": "Private explicit resume", "evidence": [str(pause)],
+                        "dispositions": [{"member": "outage-worker", "outcome": "Held in private fixture",
+                                          "evidence": [str(pause)]}]}, fixture.AT)
+                before = self.files()
+                reader = partial(role_context.select, client=client, binding_root=self.bindings)
+                with patch.object(client, "pane_get", side_effect=HerdrError("Private outage", {})):
+                    result = reader(self.skill, environment=environment, payload=payload)
+                    self.assertEqual((result["role"], result["verified"], result["reason"]),
+                                     ("recovery", False, "enrolled_role_unavailable"))
+                    self.assertEqual(result["state_path"], str(self.owner.path))
+                    hook = session_start_hook.collect(self.skill, environment, payload, context_reader=reader)
+                    assert hook is not None
+                    self.assertIn("unknown sends", hook["hookSpecificOutput"]["additionalContext"])
+                    self.assertNotIn("Herdr Worker Context", hook["hookSpecificOutput"]["additionalContext"])
+                    for wrong_environment, wrong_payload in (
+                            (environment, {**payload, "session_id": "foreign-session"}),
+                            ({**environment, "HERDR_PANE_ID": "foreign-pane"}, payload)):
+                        unknown = reader(self.skill, environment=wrong_environment, payload=wrong_payload)
+                        self.assertEqual((unknown["role"], unknown["context"]), ("unverified", ""))
+                self.assertEqual(self.files(), before)
+
     def test_routing_hint_cannot_redirect_a_bound_foreman_or_create_a_store(self):
         foreign = self.owner.root / "foreign-owner.json"
         environment = {**os.environ, "FOREMAN_CONTEXT_STATE": str(foreign)}
@@ -233,6 +271,11 @@ class RoleContextTest(unittest.TestCase):
             code = cli.main(["role-context"], client=remote.client, stdout=out, stderr=err)
             self.assertEqual((code, err.getvalue()), (0, ""))
             self.assertEqual(json.loads(out.getvalue())["state_path"], str(remote.owner.state_path))
+            alias_out, alias_err = io.StringIO(), io.StringIO()
+            code = cli.main(["role-context", "--state", os.path.relpath(remote.owner.state_path)],
+                            client=remote.client, stdout=alias_out, stderr=alias_err)
+            self.assertEqual((code, alias_err.getvalue()), (0, ""))
+            self.assertEqual(json.loads(alias_out.getvalue())["state_path"], str(remote.owner.state_path))
             wrong_out, wrong_err = io.StringIO(), io.StringIO()
             code = cli.main(["role-context", "--state", str(remote.root / "foreign-state.json")],
                             client=remote.client, stdout=wrong_out, stderr=wrong_err)
@@ -243,6 +286,37 @@ class RoleContextTest(unittest.TestCase):
             remote.current_receipt = replace(remote.receipt, lease_epoch=2)
             result = role_context.select(self.skill, client=remote.client)
             self.assertEqual((result["role"], result["verified"]), ("recovery", False))
+            stale_before = {str(path): path.read_bytes() for path in remote.root.rglob("*") if path.is_file()}
+            stale_out, stale_err = io.StringIO(), io.StringIO()
+            code = cli.main(["role-context"], client=remote.client, stdout=stale_out, stderr=stale_err)
+            self.assertEqual((code, stale_err.getvalue()), (0, ""))
+            stale = json.loads(stale_out.getvalue())
+            self.assertEqual((stale["role"], stale["verified"], stale["state_path"]),
+                             ("recovery", False, str(remote.owner.state_path)))
+            self.assertEqual({str(path): path.read_bytes() for path in remote.root.rglob("*") if path.is_file()}, stale_before)
+            self.assertEqual(remote.effects(), [])
+
+    def test_remote_cli_outage_reaches_selector_recovery_but_foreign_store_is_refused(self):
+        remote = remote_fixture.RemoteOwnerFixture()
+        with patch.dict(os.environ, {}, clear=True):
+            remote.setUp()
+            self.addCleanup(remote.doCleanups)
+            before = {str(path): path.read_bytes() for path in remote.root.rglob("*") if path.is_file()}
+            with patch.object(remote.client, "remote_preflight", side_effect=HerdrError("Private controller unavailable", {})):
+                out, err = io.StringIO(), io.StringIO()
+                code = cli.main(["role-context"], client=remote.client, stdout=out, stderr=err)
+                self.assertEqual((code, err.getvalue()), (0, ""))
+                recovered = json.loads(out.getvalue())
+                self.assertEqual((recovered["role"], recovered["verified"], recovered["state_path"]),
+                                 ("recovery", False, str(remote.owner.state_path)))
+                self.assertIn("operator holds", recovered["context"])
+                foreign_out, foreign_err = io.StringIO(), io.StringIO()
+                code = cli.main(["role-context", "--state", str(remote.root / "foreign.json")],
+                    client=remote.client, stdout=foreign_out, stderr=foreign_err)
+                self.assertNotEqual(code, 0)
+                self.assertIn("remote_owner_state_path_changed", foreign_err.getvalue())
+                self.assertEqual(foreign_out.getvalue(), "")
+            self.assertEqual({str(path): path.read_bytes() for path in remote.root.rglob("*") if path.is_file()}, before)
             self.assertEqual(remote.effects(), [])
 
     def test_initial_foreman_requires_configured_seat_and_exact_process_argv(self):
