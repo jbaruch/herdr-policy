@@ -71,7 +71,8 @@ class OwnerExportTest(unittest.TestCase):
             older = root / "older-reader"
             runtime = older / "skills/herdr-foreman/foreman"
             shutil.copytree(ROOT / "skills/herdr-foreman/foreman", runtime,
-                            ignore=shutil.ignore_patterns("coordination_metrics.py", "__pycache__", "*.pyc", "*.pyo"))
+                            ignore=shutil.ignore_patterns("coordination_metrics.py", "measurement_capture.py",
+                                                          "__pycache__", "*.pyc", "*.pyo"))
             owner, supervised, provenance = root / "owner.json", root / "supervision.json", root / "provenance.json"
             owner.write_text(json.dumps(empty_state()))
             supervised.write_text(json.dumps(empty(owner)))

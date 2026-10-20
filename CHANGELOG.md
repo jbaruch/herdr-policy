@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0 — 2026-10-20
+
+- Package the existing frozen-evidence producer for both channels. Add explicit `measurements.py collect` with report-bound native timing, verified assessment receipts, bounded summaries and optional private reports containing the sanitized snapshot, provenance and summary. Preserve the development export command and selection of older trusted readers.
+- Bound regular-file input and native/ledger reads, retain named exclusions, refuse raw-source diagnostics and leave owner/hold evidence unchanged. Collection adds no runtime history ledger or recurring model turn; direct foreman effort and independent deployment/acceptance measurements remain unmeasured.
+- Exercise installed collection and private reporting through Codex, Claude Code and Cursor adapters, including renamed ACR skill directories and immutable payloads.
+
 ## 0.11.0 — 2026-10-20
 
 - Charge current-context views against the existing shared exposure allowance before printing, including bounded diagnostics, without changing canonical state results or caching history. Keep task/foreman counters, holds and unresolved evidence across alternate APIs and pages.

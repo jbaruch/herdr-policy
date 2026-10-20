@@ -1,15 +1,48 @@
 #!/usr/bin/env python3
-"""Project sanitized measurements through canonical native and ledger readers."""
+"""Collect bounded measurements from explicitly selected frozen owner evidence.
 
+argv: --owner, --supervision, --start, --end, optional --output private report.
+stdout: bounded JSON summary or report receipt. stderr: actionable diagnostics.
+Exit 0 success, 2 unusable evidence/output. Never mutates owners or calls workers.
+"""
+
+import argparse
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import sys
 import tempfile
 
+from . import coordination_metrics as calculator
+
+
+MAX_OWNER_BYTES = 16_777_216
+MAX_NATIVE_BYTES = 67_108_864
+MAX_LEDGER_BYTES = 2_097_152
+MAX_EVIDENCE_BYTES = 268_435_456
+
+
+class EvidenceBudgetExceeded(ValueError):
+    """Selected evidence exceeds a finite read budget."""
+
+
+def read_regular(path, limit, *, prefix=None):
+    """Read a bounded regular file, or an exactly identified ledger prefix."""
+    if prefix is not None and prefix > limit:
+        raise EvidenceBudgetExceeded("preserve the receipt; its prefix exceeds the evidence budget")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError("select a frozen regular evidence file")
+        body = stream.read(limit + 1 if prefix is None else prefix)
+    if len(body) > limit:
+        raise EvidenceBudgetExceeded("preserve the selected evidence; it exceeds the read budget")
+    return body
 
 
 def instant(value):
@@ -97,8 +130,9 @@ def native_times(rows, kind, session, claude):
 class EvidenceReader:
     """Reuse the extracted owners' source/ledger parsers without state loading."""
 
-    def __init__(self, source):
-        skill = source.resolve() / "skills/herdr-foreman"
+    def __init__(self, source=None):
+        skill = (source.resolve() / "skills/herdr-foreman" if source is not None
+                 else Path(__file__).resolve().parents[1])
         if not (skill / "foreman/report_delivery.py").is_file():
             raise ValueError("select a trusted extracted Herdr source checkout with --herdr-source")
         sys.path.insert(0, str(skill))
@@ -112,6 +146,16 @@ class EvidenceReader:
         self.exclusions = Counter()
         self.source_digests = set()
         self.paths = {}
+        self.evidence_bytes_remaining = MAX_EVIDENCE_BYTES
+
+    def read_evidence(self, path, limit, *, prefix=None):
+        allowance = min(limit, self.evidence_bytes_remaining)
+        # Reserve before I/O. A rejected read may have consumed its entire
+        # allowance; only a successful bounded read returns unused bytes.
+        self.evidence_bytes_remaining -= allowance
+        body = read_regular(path, allowance, prefix=prefix)
+        self.evidence_bytes_remaining += allowance - len(body)
+        return body
 
     def closed(self, owner, task, end):
         """Use canonical closure chronology on evidence available at the boundary."""
@@ -126,13 +170,15 @@ class EvidenceReader:
     def native(self, identity, report, dispatched, end):
         key = tuple(identity[name] for name in ("source", "agent", "kind", "value"))
         try:
+            if self.evidence_bytes_remaining == 0:
+                raise EvidenceBudgetExceeded("preserve the cohort; the invocation evidence budget is exhausted")
             if key not in self.paths:
                 self.paths[key] = self.native_reader.source_path(identity)
             path = self.paths[key]
             if path is None:
                 self.exclusions["native_source_missing_or_ambiguous"] += 1
                 return {}
-            body = path.read_bytes()
+            body = self.read_evidence(path, MAX_NATIVE_BYTES)
             self.source_digests.add(hashlib.sha256(body).hexdigest())
             text = body.decode("utf-8")
             kind, session = identity["agent"], identity["value"]
@@ -152,7 +198,11 @@ class EvidenceReader:
             if started is not None and dispatched <= started <= completed:
                 result["native_started_at"] = started.isoformat()
             return result
-        except (OSError, OverflowError, UnicodeError, ValueError, KeyError, TypeError, self.source_error):
+        except EvidenceBudgetExceeded:
+            self.exclusions["native_source_exceeds_budget"] += 1
+            return {}
+        except (OSError, OverflowError, UnicodeError, ValueError, KeyError, TypeError,
+                AttributeError, RecursionError, self.source_error):
             self.exclusions["native_source_unusable"] += 1
             return {}
 
@@ -170,8 +220,7 @@ class EvidenceReader:
                 if type(size) is not int or size < 0 or not isinstance(expected, str):
                     self.exclusions["ledger_receipt_unusable"] += 1
                     continue
-                with path.open("rb") as stream:
-                    prefix = stream.read(size)
+                prefix = self.read_evidence(path, MAX_LEDGER_BYTES, prefix=size)
                 digest = hashlib.sha256(prefix).hexdigest()
                 if len(prefix) != size or digest != expected.lower():
                     self.exclusions["ledger_receipt_mismatch"] += 1
@@ -190,7 +239,10 @@ class EvidenceReader:
                              if row["subject"] == "assignment" and row["dispatch_id"] == assignment["id"]
                              and row["worker"] == assignment["agent"] and row["report"] == assignment["report"]
                              and row["decision"] in self.ledger_reader.ASSESSED and instant(row["at"]) <= end)
-            except (OSError, OverflowError, ValueError, KeyError, TypeError, self.source_error):
+            except EvidenceBudgetExceeded:
+                self.exclusions["ledger_receipt_exceeds_budget"] += 1
+            except (OSError, OverflowError, ValueError, KeyError, TypeError,
+                    AttributeError, RecursionError, self.source_error):
                 self.exclusions["ledger_reference_not_usable"] += 1
         return min(times).isoformat() if times else None
 
@@ -315,3 +367,82 @@ def export(owner, supervision, start, end, native, assessment, *, closure):
                          and (not hold.get("resumed_at") or instant(hold["resumed_at"]) > start)]
     return {"schema": 2, "window": {"start": start.isoformat(), "end": end.isoformat()},
             "tasks": task_rows, "assignments": assignments}
+
+
+def provenance(owner_bytes, supervision_bytes, snapshot, reader):
+    runtime = Path(__file__).resolve().parent
+    return {"schema_version": 3, "window": snapshot["window"],
+            "python_version": ".".join(str(part) for part in sys.version_info[:3]),
+            "owner_sha256": hashlib.sha256(owner_bytes).hexdigest(),
+            "supervision_sha256": hashlib.sha256(supervision_bytes).hexdigest(),
+            "exporter_sha256": hashlib.sha256(read_regular(Path(__file__), MAX_OWNER_BYTES)).hexdigest(),
+            "reader_source_sha256": {
+                str(path.relative_to(runtime)): hashlib.sha256(read_regular(path, MAX_OWNER_BYTES)).hexdigest()
+                for path in sorted(runtime.rglob("*.py"))},
+            "evidence_sha256": sorted(reader.source_digests), "exclusions": dict(reader.exclusions)}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--owner", type=Path, required=True)
+    parser.add_argument("--supervision", type=Path, required=True)
+    parser.add_argument("--start", required=True)
+    parser.add_argument("--end", required=True)
+    parser.add_argument("--output", type=Path, help="create one private report with sanitized inputs and provenance")
+    args = parser.parse_args(argv)
+    phase = "observation window"
+    try:
+        start, end = instant(args.start), instant(args.end)
+        if start >= end:
+            raise ValueError("select a positive fixed observation window")
+        phase = "private output path"
+        output = calculator.report_path(args.output) if args.output is not None else None
+        phase = "frozen owner input"
+        owner_bytes = read_regular(args.owner, MAX_OWNER_BYTES)
+        owner = json.loads(owner_bytes)
+        phase = "frozen supervision input"
+        supervision_bytes = read_regular(args.supervision, MAX_OWNER_BYTES)
+        supervision = json.loads(supervision_bytes)
+        phase = "source projection"
+        reader = EvidenceReader()
+        snapshot = export(owner, supervision, start, end, reader.native, reader.assessment, closure=reader.closed)
+        snapshot_bytes = calculator.encoded(snapshot)
+        if len(snapshot_bytes) > calculator.MAX_SNAPSHOT_BYTES:
+            raise EvidenceBudgetExceeded("preserve the full cohort; the sanitized snapshot exceeds its input budget")
+        summary = calculator.summarize(snapshot)
+        phase = "producer provenance"
+        proof = provenance(owner_bytes, supervision_bytes, snapshot, reader)
+        snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
+        output_file = None
+        if output is None:
+            rendered = calculator.encoded({"schema_version": 1, "kind": "coordination_capture_summary",
+                                           "authorizes_progression": False, "snapshot_sha256": snapshot_digest,
+                                           "exclusions": proof["exclusions"], "summary": summary})
+        else:
+            body = calculator.encoded({"schema_version": 1, "kind": "coordination_capture_report",
+                                       "authorizes_progression": False, "snapshot_sha256": snapshot_digest,
+                                       "snapshot": snapshot, "provenance": proof, "summary": summary})
+            output_file = output, body
+            rendered = calculator.encoded({"schema_version": 1, "kind": "coordination_capture_receipt",
+                                           "authorizes_progression": False, "path": str(output),
+                                           "sha256": hashlib.sha256(body).hexdigest(), "bytes": len(body),
+                                           "snapshot_sha256": snapshot_digest, "summary_schema": summary["schema"],
+                                           "tasks": summary["coverage"]["tasks"],
+                                           "assignments": summary["coverage"]["assignments"],
+                                           "exclusions": proof["exclusions"]})
+        phase = "printed response budget (use --output for the full cohort)"
+        if len(rendered) > calculator.OUTPUT_BYTES:
+            raise EvidenceBudgetExceeded("preserve the full cohort; select a private --output path")
+        phase = "private report destination"
+        if output_file is not None:
+            calculator.write_private_report(*output_file)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError, OverflowError, ImportError):
+        print("measurement-capture: unusable {}; preserve source evidence, repair the selected inputs or output path "
+              "using references/coordination-metrics.md, then retry".format(phase), file=sys.stderr)
+        return 2
+    sys.stdout.write(rendered.decode("utf-8"))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

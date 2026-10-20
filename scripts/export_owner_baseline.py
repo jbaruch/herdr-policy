@@ -18,9 +18,11 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 # This namespace stays separate from an explicitly selected older owner reader.
-from scripts.coordination_baseline import calculator
+from scripts.coordination_baseline import namespace
 
-producer = import_module(calculator.__package__ + ".measurement_capture")
+producer = import_module(namespace + ".measurement_capture")
+assert producer.__file__ is not None
+PRODUCER_SOURCE = Path(producer.__file__)
 EvidenceReader, export = producer.EvidenceReader, producer.export
 native_times, opaque, instant = producer.native_times, producer.opaque, producer.instant
 
@@ -49,7 +51,7 @@ def main():
                       "python_version": ".".join(str(part) for part in sys.version_info[:3]),
                       "owner_sha256": hashlib.sha256(owner_bytes).hexdigest(),
                       "supervision_sha256": hashlib.sha256(supervision_bytes).hexdigest(),
-                      "exporter_sha256": hashlib.sha256(Path(producer.__file__).read_bytes()).hexdigest(),
+                      "exporter_sha256": hashlib.sha256(PRODUCER_SOURCE.read_bytes()).hexdigest(),
                       "reader_source_sha256": {str(path.relative_to(runtime)): hashlib.sha256(path.read_bytes()).hexdigest()
                                                for path in sorted(runtime.rglob("*.py"))},
                       "evidence_sha256": sorted(reader.source_digests), "exclusions": dict(reader.exclusions)}

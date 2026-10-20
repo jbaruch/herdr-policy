@@ -72,7 +72,8 @@ def revision(value):
 
 def verify_runtime_payload(skill):
     required = ("foreman/remote_owner.py", "classify/extract-answer.py",
-                "foreman/coordination_metrics.py", "measurements.py", "references/coordination-metrics.md",
+                "foreman/coordination_metrics.py", "foreman/measurement_capture.py", "measurements.py",
+                "references/coordination-metrics.md",
                 "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py", "foreman/github_context.py",
                 "references/foreman-context.md", "references/worker-context.md",
                 "references/context-recovery.md", "references/workflow-worker.md",
@@ -320,6 +321,32 @@ def exercise(project, agent, host, herdr_source, coding_source):
             or receipt.get("authorizes_progression") is not False or stat.S_IMODE(report.stat().st_mode) != 0o600
             or saved_report.get("schema_version") != 1 or saved_report.get("summary") != measured):
         raise BehaviorFailure("{}: installed measurement output failed its private report contract".format(agent))
+    frozen_owner, frozen_supervision = project / "measurement-owner.json", project / "measurement-supervision.json"
+    owner_bytes = json.dumps({"schema_version": 11, "assignments": [], "recovery": {
+        "schema_version": 19, "dispatches": [], "tasks": {"private-fixture-task": {
+            "task": "private-fixture-task", "at": "2026-10-10T00:30:00Z"}}, "events": []}}).encode()
+    supervision_bytes = json.dumps({"schema_version": 1, "state_path": str(frozen_owner), "members": [],
+                                    "events": [], "holds": []}).encode()
+    frozen_owner.write_bytes(owner_bytes)
+    frozen_supervision.write_bytes(supervision_bytes)
+    collect = ("python3", str(skill / "measurements.py"), "collect", "--owner", str(frozen_owner),
+               "--supervision", str(frozen_supervision), "--start", "2026-10-10T00:00:00Z", "--end", "2026-10-10T01:00:00Z")
+    captured = json.loads(command(*collect, env=measurement_environment, cwd=project, check_behavior=True))
+    capture_report = project.parent / ("measurement-capture-" + agent + ".json")
+    capture_receipt = json.loads(command(*collect, "--output", str(capture_report), env=measurement_environment,
+                                         cwd=project, check_behavior=True))
+    saved_capture = json.loads(capture_report.read_bytes())
+    if (captured.get("kind") != "coordination_capture_summary" or captured.get("authorizes_progression") is not False
+            or captured.get("summary", {}).get("coverage", {}).get("tasks") != 1
+            or captured.get("summary", {}).get("outcomes", {}).get("acceptance") != {"evidenced": 0, "unmeasured": 1}
+            or capture_receipt.get("kind") != "coordination_capture_receipt"
+            or saved_capture.get("kind") != "coordination_capture_report" or saved_capture.get("schema_version") != 1
+            or saved_capture.get("summary") != captured.get("summary")
+            or saved_capture.get("provenance", {}).get("schema_version") != 3
+            or "private-fixture-task" in json.dumps(saved_capture)
+            or stat.S_IMODE(capture_report.stat().st_mode) != 0o600
+            or frozen_owner.read_bytes() != owner_bytes or frozen_supervision.read_bytes() != supervision_bytes):
+        raise BehaviorFailure("{}: installed collector failed its read-only private evidence contract".format(agent))
     forbidden = skill / "measurement-report.json"
     try:
         command("python3", str(skill / "measurements.py"), str(snapshot), "--output", str(forbidden),
@@ -425,7 +452,8 @@ raise SystemExit("Installed progression did not reach its policy-selection bound
         raise ValueError("{}: lifecycle modified user-owned content".format(agent))
     return {"agent": agent, "bootstrap_listed": before.get("ok") is True, "upgrade": "pass",
             "idempotence": "pass", "runtime": "pass", "envelope_decoders": "pass", "standalone_hooks": "pass",
-            "measurements": "pass", "private_measurement_report": "pass", "workflow_readiness": "pass",
+            "measurements": "pass", "private_measurement_report": "pass", "measurement_capture": "pass",
+            "workflow_readiness": "pass",
             "role_context": "pass",
             "skill_commands": skill_commands,
             "removal": "pass", "user_content": "preserved"}

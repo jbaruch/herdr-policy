@@ -21,7 +21,7 @@ and finishes here. Context grants no task or effect authority.
 
 ## Step 1 — Retrieve Coordination Measurements
 
-Return the bounded summary or receipt:
+Collect frozen evidence or summarize a snapshot:
 
 ```text
 skills/herdr-foreman/references/coordination-metrics.md
