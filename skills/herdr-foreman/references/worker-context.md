@@ -12,14 +12,14 @@ unrelated report archive. Missing or contradictory evidence stays explicit.
 
 ## Authority and isolation
 
-- Narrow exception for a worker consuming its foreman-provisioned task base.
-- Applies to a verified Herdr assignment naming that worktree.
-- Preconditions (all required):
-  1. The owner fetches and records the fresh default commit.
-  2. Git-owned worktree provenance matches the brief's original registered base.
-  3. An existing task preserves its original base separately from the fresh default.
-  4. Worker Git stays inside that worktree; shared drift goes in the report.
-- Consume the provisioned base; every other case follows general `sync-before-work`.
+- Before any repository read, run `git fetch origin` from the assigned task
+  checkout, never the shared checkout. Verify the fresh remote default under
+  general `sync-before-work`; preserve the original registered task base and
+  assigned head. If reconciling them needs unauthorized source, branch or base
+  changes, report `## BLOCKED` before inspection; never reset or rebase on a guess.
+- An older starting ref needs the general pinned-ref exception's explicit user
+  instruction and stated starting ref. A foreman's provisioned base alone
+  waives no generic fetch or freshness requirement.
 
 - Start no child agent or native delegation. Report a staffing need to the
   existing foreman; continue only authorized work. An unavailable Herdr route

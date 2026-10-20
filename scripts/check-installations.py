@@ -122,15 +122,20 @@ from foreman import supervision
 from foreman.state import default_state_path, empty_state, save_state
 owner = default_state_path()
 at = '2026-10-19T00:00:00+00:00'
-if sys.argv[2] == 'foreman':
-    save_state(owner, empty_state())
-    supervision.bind(owner, supervision.identity('private-foreman', str(Path.cwd()),
-        'private-conformance', pane_id='private-fixture-pane'), at)
+if sys.argv[2] in ('foreman', 'native-id', 'native-path'):
+    if sys.argv[2] == 'foreman':
+        save_state(owner, empty_state())
+    kind = 'path' if sys.argv[2] == 'native-path' else 'id'
+    value = str(owner.parent / 'foreman-native.jsonl') if kind == 'path' else 'private-foreman'
+    supervision.bind(owner, supervision.identity(value, str(Path.cwd()),
+        'private-conformance', kind=kind, pane_id='private-fixture-pane'), at)
 elif sys.argv[2] == 'hold':
     evidence = owner.parent / 'private-hold.md'
     evidence.write_text('Private conformance hold; never a live operator decision.')
     supervision.hold(owner, {'id':'private-hold','kind':'waiting_for_user',
-        'resume_condition':'Private explicit fixture resume','evidence':[str(evidence)],'dispositions':[]}, at)
+        'resume_condition':'Private explicit fixture resume','evidence':[str(evidence)],
+        'dispositions':[{'member':row['id'],'outcome':'Private fixture held', 'evidence':[str(evidence)]}
+                        for row in supervision.load(owner)['members'] if row['active']]}, at)
 elif sys.argv[2] == 'worker':
     kind = sys.argv[3]
     supervision.enroll(owner, {'id':'private-assignment','agent':'private-worker','task':'private-task',
@@ -144,13 +149,13 @@ else:
         command("python3", "-c", setup, str(skill), action, kind,
                 env=environment, cwd=project, check_behavior=True, quiet=True)
 
-    def observe(session, expected, *, absent=()):
+    def observe(session, expected, *, absent=(), transcript=None):
         before = {str(path.relative_to(fixture)): path.read_bytes()
                   for path in fixture.rglob("*") if path.is_file()}
         arguments = (adapter,) if adapter else ()
         raw = command("bash", str(hook), "session-start", *arguments,
                       env=environment, cwd=project, check_behavior=True,
-                      input_text=json.dumps({"session_id": session, "cwd": str(project)}))
+                      input_text=json.dumps({"session_id": session, "cwd": str(project), "transcript_path": transcript}))
         if expected is None:
             if raw:
                 raise BehaviorFailure("Unverified installed session loaded a role contract")
@@ -174,15 +179,26 @@ else:
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     observe("private-foreman", "Herdr Foreman Operating Context", absent=("## Step 17", "Herdr Worker Context"))
     observe("another-session", None)
+    seed("native-path")
+    transcript = str(fixture / "state/foreman/foreman-native.jsonl")
+    pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": {
+        **native, "kind": "path", "value": transcript}}))
+    observe("private-foreman", "Herdr Foreman Operating Context", transcript=transcript)
+    pane_file.write_text('{"unavailable":true}')
+    observe("private-foreman", "Herdr Context Recovery", transcript=transcript)
+    seed("native-id")
     pane_file.write_text('{"unavailable":true}')
     observe("private-foreman", "Herdr Context Recovery", absent=("Herdr Foreman Operating Context",))
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
-    seed("hold")
-    observe("private-foreman", "Herdr Context Recovery", absent=("Herdr Foreman Operating Context",))
     seed("worker")
     native["value"] = "private-worker"
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     observe("private-worker", "Herdr Worker Context", absent=("Herdr Foreman Operating Context", "## Step 17"))
+    seed("hold")
+    observe("private-worker", "Herdr Context Recovery", absent=("Herdr Worker Context", "Herdr Foreman Operating Context"))
+    native["value"] = "private-foreman"
+    pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
+    observe("private-foreman", "Herdr Context Recovery", absent=("Herdr Foreman Operating Context",))
     native["value"] = "unbound-session"
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     observe("unbound-session", None)

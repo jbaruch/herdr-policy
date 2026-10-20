@@ -111,6 +111,19 @@ class RoleContextTest(unittest.TestCase):
         self.assertNotIn("## Step", result["context"])
         self.assertNotIn("Herdr Foreman Operating Context", result["context"])
         self.assertEqual(self.files(), before)
+        pause = self.owner.root / "worker-pause.md"
+        pause.write_text("Private fixture hold covering the active worker.")
+        supervision.hold(self.owner.path, {"id": "worker-pause", "kind": "waiting_for_user",
+            "resume_condition": "Private explicit resume", "evidence": [str(pause)],
+            "dispositions": [{"member": "private-worker", "outcome": "Private fixture held",
+                              "evidence": [str(pause)]}]}, fixture.AT)
+        before = self.files()
+        with patch.dict(os.environ, {"HERDR_PANE_ID": "worker-pane"}):
+            held = role_context.select(self.skill, client=native, state_path=self.owner.path,
+                payload={**self.payload, "session_id": "worker-session"}, binding_root=self.bindings)
+        self.assertEqual((held["role"], held["verified"], held["reason"]), ("recovery", True, "operator_hold"))
+        self.assertNotIn("Herdr Worker Context", held["context"])
+        self.assertEqual(self.files(), before)
 
     def test_operator_hold_selects_recovery_and_is_not_cleared(self):
         pause = self.owner.root / "pause.md"
@@ -122,6 +135,34 @@ class RoleContextTest(unittest.TestCase):
         result = self.select()
         self.assertEqual((result["role"], result["reason"]), ("recovery", "operator_hold"))
         self.assertEqual(self.files(), before)
+
+    def test_live_transcript_binding_wins_over_an_also_supplied_opaque_id(self):
+        for agent in ("claude", "codex", "grok"):
+            with self.subTest(agent=agent):
+                transcript = str(self.owner.root / (agent + "-native.jsonl"))
+                self.owner.native.update(source="herdr:" + agent, agent=agent, kind="path", value=transcript)
+                who = supervision.identity(transcript, str(Path.cwd()), "fixture-only", kind="path", pane_id="fixture-pane")
+                supervision.bind(self.owner.path, who, fixture.AT, root=self.bindings)
+                before = self.files()
+                result = self.select(payload={**self.payload, "transcript_path": transcript})
+                self.assertEqual((result["role"], result["verified"]), ("foreman", True))
+                result = self.select(payload={**self.payload, "transcript_path": transcript + ".foreign"})
+                self.assertEqual((result["role"], result["context"]), ("unverified", ""))
+                self.assertEqual(self.files(), before)
+                with patch.object(self.owner.client, "pane_get", side_effect=HerdrError("Private outage", {})):
+                    result = self.select(payload={**self.payload, "session_id": "unknown-id", "transcript_path": transcript})
+                self.assertEqual((result["role"], result["verified"]), ("recovery", False))
+                self.assertEqual(result["state_path"], str(self.owner.path))
+                self.assertEqual(self.files(), before)
+
+    def test_invalid_native_transcript_proof_never_selects_foreman_context(self):
+        for value in (None, "", 12, "relative-transcript.jsonl"):
+            with self.subTest(value=value), patch.dict(self.owner.native, {"kind": "path", "value": value}):
+                before = self.files()
+                result = self.select()
+                self.assertNotEqual(result["role"], "foreman")
+                self.assertNotIn("Herdr Foreman Operating Context", result["context"])
+                self.assertEqual(self.files(), before)
 
     def test_discovery_generation_must_match_the_actual_owner(self):
         identity = supervision.identity("fixture-session", str(Path.cwd()), "fixture-only", pane_id="fixture-pane")

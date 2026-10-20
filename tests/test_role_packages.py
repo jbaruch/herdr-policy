@@ -58,7 +58,7 @@ class RolePackagesTest(unittest.TestCase):
         CHECK.verify_runtime_payload(skill)
         manifest = json.loads((package / ".tessl-plugin/plugin.json").read_text())
         self.assertEqual(manifest["rules"], ["rules/herdr-scope.md"])
-        self.assertLessEqual((package / manifest["rules"][0]).stat().st_size, 2048)
+        self.assertLessEqual((package / manifest["rules"][0]).stat().st_size, 2304)
         for kind in ("herdr-foreman", "herdr-standup"):
             self.assertTrue((package / "skills" / kind / "references").is_dir())
         for adapter in ("claude-code", "codex"):

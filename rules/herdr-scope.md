@@ -7,14 +7,14 @@ description: Minimal Herdr role routing, delegation boundary and installed looku
 
 ## Role Routing
 
-- Ordinary work follows the project's coding policy; load no additional Herdr references.
-- For an explicit Herdr request, use `Skill(skill: "herdr-foreman")`.
-- The shared bootstrap verifies the actual launched role before selecting coordination context.
-- `HERDR_ENV` is a routing hint, never role or task authority.
-- Foremen load their operating contract and the references needed for the current decision.
-- Workers load their verified assignment and worker protocol; never the foreman workflow.
-- Preserve unresolved ownership, unknown deliveries and operator holds through outages and handoffs.
-- Planning records and context selection grant no runtime or production authority.
+- Ordinary work follows general coding policy; load no Herdr references.
+- Explicit Herdr requests use `Skill(skill: "herdr-foreman")`.
+- Verify the launched role through the shared bootstrap.
+- `HERDR_ENV` grants no role or task authority.
+- Foremen load their operating contract and current decision references.
+- Workers load their verified assignment and protocol; never the foreman workflow.
+- Preserve ownership, unknown deliveries and holds across outages and handoffs.
+- Planning and context selection grant no runtime authority.
 
 ## Delegation
 
@@ -30,3 +30,12 @@ description: Minimal Herdr role routing, delegation boundary and installed looku
 - Every other command block follows generic coding-policy script delegation.
 - General review, release and worktree hygiene belong to `jbaruch/coding-policy`.
 - Keep both packages' hooks distinct; a policy upgrade requires a verified authority handoff for existing work.
+
+## Artifact Stdout
+
+- Narrow exception for `skills/herdr-foreman/review-package.sh` artifact-path stdout.
+- Applies to a completed Herdr review package in this installed plugin or its verified source.
+- Preconditions are binding: read `skills/herdr-foreman/references/coding-policy-integration.md` Script Output before relying on it.
+- Inputs: recorded `BASE HEAD [OUTFILE]` in the target checkout; absent `OUTFILE` uses `FOREMAN_REPORTS_DIR`.
+- Success: absolute artifact path and newline. Failure: no path, nonzero exit, actionable stderr diagnostic.
+- Every other script retains generic JSON stdout.

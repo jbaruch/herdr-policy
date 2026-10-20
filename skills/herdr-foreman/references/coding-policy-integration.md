@@ -4,9 +4,9 @@
 
 - Applies only to a verified Herdr team round under `skills/herdr-foreman/references/team-scope.md`.
 - The foreman provisions each writer's worktree and records its fetched base.
-- A worker consumes the provisioned base instead of fetching or rebasing the shared checkout under generic `sync-before-work`.
-- Foreman preconditions are binding: read `skills/herdr-foreman/references/team-operation.md` Writers and Checkouts before relying on that exception.
-- A worker instead reads the complete provisioned-base exception in `skills/herdr-foreman/references/worker-context.md`; all its fetched-base, provenance, original-base and own-worktree conditions must hold.
+- Before repository inspection, workers run `git fetch origin` from the assigned task checkout and verify the fresh remote default under generic `sync-before-work`.
+- Provisioning never waives that floor. Preserve the original registered task base and assigned head; incompatible freshness or missing checkout authority becomes a blocked report before inspection, not an unrequested rebase or reset.
+- The generic pinned-ref exception requires its actual user instruction and stated starting ref.
 - The operator resolves listed shared-checkout items by push, commit, pull request or delete.
 - The foreman carries out none of those resolutions.
 - Foreman teardown is limited to the merged task's worktree under `skills/herdr-foreman/references/foreman-workflow.md` Step 15 and its binding post-merge order.
@@ -41,6 +41,7 @@
 
 - Narrow exception for `skills/herdr-foreman/review-package.sh` artifact-path stdout under generic script delegation.
 - Applies only to this script's completed review package.
+- Input is recorded `BASE HEAD [OUTFILE]` in the target checkout. With no `OUTFILE`, use the owner's `FOREMAN_REPORTS_DIR`; the script header owns exit details.
 - Preconditions (all required):
   1. Success emits only the absolute completed package path and a newline.
   2. The package contains the resolved commit range, commit list, diff stat and patch.

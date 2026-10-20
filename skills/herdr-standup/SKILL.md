@@ -1,9 +1,11 @@
 ---
 name: herdr-standup
 description: >
-  Collect or render a Herdr team standup, daily status table, or what each
-  worker is doing. Live inspection requires the verified foreman and never
-  interrupts workers. Other sessions retain their ordinary or assigned work.
+  Collect Herdr standup evidence, check worker readiness, account for missing
+  reports, render a daily status table and relay blockers without interrupting
+  workers. Use when the user asks for a Herdr standup, team status update,
+  daily check-in, worker progress report or what each worker is doing. Live
+  inspection requires the verified foreman; ordinary work skips this skill.
 ---
 
 # Herdr Standup Skill
@@ -24,9 +26,11 @@ HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS
 bash "$HS/foreman.sh" role-context
 ```
 
-Proceed immediately to Step 2 only for a verified `foreman`. Preserve a recovery
-context, unverified role or diagnostic without roster calls, prompts or resets;
-finish here. Other agents continue their ordinary or assigned work.
+Proceed immediately to Step 2 only for a verified `foreman`. For `recovery`,
+`unverified` or a nonzero exit, report the returned reason and follow its
+restoration diagnostic; preserve holds and unknown deliveries, then finish here
+without roster calls, prompts or resets. Workers and standalone agents continue
+their assigned or ordinary work and finish this skill here.
 
 ## Step 2 — Run the Standup
 
@@ -36,4 +40,6 @@ Read the workflow and execute its current step:
 skills/herdr-standup/references/standup-workflow.md
 ```
  Preserve its readiness, no-send and report-delivery gates.
-Finish here after that workflow's declared result.
+Retain unknown rows for missing evidence. Report an atomic-readiness refusal
+without prompting a worker. Render the table and relay its blockers through
+that workflow's existing gates. Finish here after its declared result.

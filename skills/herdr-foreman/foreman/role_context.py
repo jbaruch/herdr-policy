@@ -59,19 +59,24 @@ def _binding(who, root):
     return binding
 
 
-def _payload_identity(payload, environment, cwd):
+def _payload_identities(payload, environment, cwd):
     if not isinstance(payload, dict):
-        return None
+        return []
     if "cwd" in payload and (not isinstance(payload["cwd"], str)
                              or not Path(payload["cwd"]).is_absolute()
                              or str(Path(payload["cwd"]).resolve()) != cwd):
-        return None
-    for kind, field in (("id", "session_id"), ("id", "conversation_id"), ("path", "transcript_path")):
-        value = payload.get(field)
-        if isinstance(value, str) and value:
-            return supervision.identity(value, cwd, environment["HERDR_ENV"], kind=kind,
-                                        pane_id=environment["HERDR_PANE_ID"])
-    return None
+        return []
+    # Native hooks may carry an opaque ID and transcript path together. The
+    # live controller chooses the binding kind; input field order cannot do so.
+    identities = []
+    session = payload.get("session_id") or payload.get("conversation_id")
+    for kind, value in (("id", session), ("path", payload.get("transcript_path"))):
+        if (not isinstance(value, str) or not value
+                or kind == "path" and not Path(value).is_absolute()):
+            continue
+        identities.append(supervision.identity(value, cwd, environment["HERDR_ENV"], kind=kind,
+                                               pane_id=environment["HERDR_PANE_ID"]))
+    return identities
 
 
 def select(skill, *, client=None, state_path=None, config_path=None, payload=None,
@@ -97,22 +102,25 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
         return _result("standalone", "outside_herdr", skill)
     if not environment.get("HERDR_ENV") or not environment.get("HERDR_PANE_ID"):
         return _result("recovery", "native_context_unavailable", skill)
-    incoming = _payload_identity(payload, environment, cwd)
-    saved = _binding(incoming, binding_root) if incoming is not None else None
+    incoming = _payload_identities(payload, environment, cwd)
+    saved = [binding for who in incoming if (binding := _binding(who, binding_root)) is not None]
     try:
         if client is None:
             from .supervision_runtime import read_client
             client = read_client(binary=environment.get("HERDR_BIN"))
         pane_id = environment["HERDR_PANE_ID"]
         pane = client.pane_get(pane_id)
-        native = report_delivery.native_identity(pane)
-        if (pane.get("pane_id") != pane_id or native is None
-                or native.get("agent") not in {"claude", "codex", "grok"}
-                or native.get("source") != "herdr:" + native["agent"]):
+        native = pane.get("agent_session")
+        if (pane.get("pane_id") != pane_id or not isinstance(native, dict)
+                or native.get("agent") not in ("claude", "codex", "grok")
+                or native.get("source") != "herdr:" + native["agent"]
+                or native.get("kind") not in ("id", "path")
+                or not isinstance(native.get("value"), str) or not native["value"]
+                or native["kind"] == "id" and report_delivery.native_identity(pane) is None):
             return _result("unverified", "native_identity_unverified", skill)
         who = supervision.identity(native["value"], cwd, environment["HERDR_ENV"],
                                    kind=native["kind"], pane_id=pane_id)
-        if payload is not None and incoming != who:
+        if payload is not None and who not in incoming:
             return _result("unverified", "hook_session_mismatch", skill)
         binding = _binding(who, binding_root)
         if binding is not None:
@@ -140,6 +148,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
                     and row["assignment"]["pane_id"] == pane_id
                     and row["assignment"]["native_session"] == native]
         if len(matching) == 1:
+            if any(row["resumed_at"] is None for row in data["holds"]):
+                return _result("recovery", "operator_hold", skill, verified=True, owner=selected)
             return _result("worker", "enrolled_native_worker", skill, verified=True, owner=selected)
         if data["binding"] is not None:
             return _result("unverified", "caller_is_not_bound_foreman", skill)
@@ -157,6 +167,7 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
     except ContextBundleError:
         raise
     except ForemanError:
-        return _result("recovery" if saved is not None else "unverified",
+        owners = {row["state_path"] for row in saved}
+        return _result("recovery" if saved else "unverified",
                        "current_role_unavailable", skill,
-                       owner=Path(saved["state_path"]) if saved is not None else None)
+                       owner=Path(next(iter(owners))) if len(owners) == 1 else None)

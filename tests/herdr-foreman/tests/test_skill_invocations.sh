@@ -364,7 +364,7 @@ from pathlib import Path
 root = Path(sys.argv[1]).parent
 router = (root / "skills/herdr-foreman/SKILL.md").read_text()
 standup = (root / "skills/herdr-standup/SKILL.md").read_text()
-assert len(router.encode()) <= 4096 and len(standup.encode()) <= 2048
+assert len(router.encode()) <= 4096 and len(standup.encode()) <= 3072
 assert 'role-context' in router and 'role-context' in standup
 assert 'Verified `worker`' in router and '`standalone`' in router
 assert 'recovery' in router and 'holds' in router and 'unknown' in router

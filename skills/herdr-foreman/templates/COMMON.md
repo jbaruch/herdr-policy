@@ -46,6 +46,11 @@ to know goes in the report.
 
 ## Checkouts
 
+- Before repository inspection, run `git fetch origin` from the assigned task
+  checkout and verify the fresh remote default under general `sync-before-work`.
+  Preserve the registered base and assigned head. If the brief supplies no such
+  checkout or freshness needs unauthorized changes, report BLOCKED; never fetch,
+  reset or rebase the shared checkout.
 - The original task base is exact commit `{{BASE_REVISION}}`. The owner reads
   this from the registered task; a later fetch never changes that task base.
 

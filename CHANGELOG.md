@@ -4,7 +4,8 @@
 
 - Reduce eager Herdr instructions to one small routing rule and two skill routers; keep foreman and standup workflows in co-shipped, on-demand references.
 - Select bounded foreman, worker or recovery context from actual native/attested ownership. Shared SessionStart hooks support native and portable envelopes, preserve holds and unknown work, and return without prerequisites in ordinary sessions.
-- Give workers a scoped protocol and admitted report schema instead of the full foreman contract. Preserve authority, isolation, independent verification and complete release gates.
+- Give workers a scoped protocol and admitted report schema instead of the full foreman contract. Preserve authority, isolation, independent verification and complete release gates. Workers retain the generic fetch/freshness floor in their assigned checkout; provisioning grants no waiver.
+- Preserve both native ID and transcript-path bindings. Held foremen and enrolled workers receive recovery context before assignment instructions; the routing rule explicitly binds the artifact-path stdout contract.
 - Exercise shared hooks from actual Tessl archives and ACR native installations, including role mismatch, outages, holds, worker isolation and read-only owner preservation.
 
 ## 0.9.0 — 2026-10-20
