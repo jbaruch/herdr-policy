@@ -79,7 +79,7 @@ class InstallationErrorsTest(unittest.TestCase):
             (skill / "classify").mkdir()
             (skill / "classify/extract-answer.py").write_text("runtime envelope decoder")
             for name in ("foreman/coordination_metrics.py", "measurements.py", "references/coordination-metrics.md",
-                         "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py",
+                         "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py", "foreman/github_context.py",
                          "references/foreman-context.md", "references/worker-context.md",
                          "references/context-recovery.md", "references/workflow-worker.md",
                          "references/foreman-workflow.md", "references/bootstrap.md",
@@ -88,6 +88,11 @@ class InstallationErrorsTest(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("packaged measurement runtime fixture")
             CHECK.verify_runtime_payload(skill)
+            github_runtime = skill / "foreman/github_context.py"
+            github_runtime.unlink()
+            with self.assertRaises(CHECK.BehaviorFailure):
+                CHECK.verify_runtime_payload(skill)
+            github_runtime.write_text("packaged GitHub context runtime fixture")
             for name in ("adversarial.py", "evaluate.sh", "scoring.py"):
                 path = skill / "classify" / name
                 path.write_text("development calibration fixture")
