@@ -6,6 +6,12 @@
 - Bound regular-file input and native/ledger reads, retain named exclusions, refuse raw-source diagnostics and leave owner/hold evidence unchanged. Collection adds no runtime history ledger or recurring model turn; direct foreman effort and independent deployment/acceptance measurements remain unmeasured.
 - Exercise installed collection and private reporting through Codex, Claude Code and Cursor adapters, including renamed ACR skill directories and immutable payloads.
 
+## 0.11.1 — 2026-10-20
+
+### Refresh independent fleet reviews
+
+Refresh the coding-policy 0.5.0 review setup for independent Codex policy and Claude quality reviews. The trigger documents the repository's Actions secret settings, and selective ignores retain shared project configuration while ignoring editor-local state. Align the explicit Tessl and ACR versions for the merge-triggered dual publisher.
+
 ## 0.11.0 — 2026-10-20
 
 - Charge current-context views against the existing shared exposure allowance before printing, including bounded diagnostics, without changing canonical state results or caching history. Keep task/foreman counters, holds and unresolved evidence across alternate APIs and pages.
