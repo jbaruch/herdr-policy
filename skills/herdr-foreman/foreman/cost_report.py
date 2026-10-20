@@ -240,13 +240,20 @@ def report(state, task=None):
 def view(state, task=None, *, limit=context_output.DEFAULT_LIMIT, offset=0):
     """Page task identities before calculating, retaining coverage and unknowns."""
     context_output.validate_page(limit, offset)
+    if task is not None and offset:
+        raise UsageError("A selected task returns its full cost record. Omit --offset, or omit --task to page through the task collection.",
+                         {"context_complete": False})
     known = _known(state, task)
     snapshots = [row for row in state.get("snapshots", []) if isinstance(row, dict)]
+    reports = {}
 
     def build(effective):
         coverage = context_output.page(known, offset, effective)
         selected = coverage.pop("items")
+        for name in selected:
+            if name not in reports:
+                reports[name] = _task_report(name, state["recovery"], state["assignments"], snapshots)
         return {"unrecorded": list(UNRECORDED), "coverage": coverage,
-                "tasks": [_task_report(name, state["recovery"], state["assignments"], snapshots) for name in selected]}
+                "tasks": [reports[name] for name in selected]}
 
     return context_output.fit_pages(build, limit, offset)

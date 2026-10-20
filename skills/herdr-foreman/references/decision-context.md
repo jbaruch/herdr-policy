@@ -184,6 +184,9 @@ that a partial page covers all tasks. Selecting one canonical task retains its
 full current cost record. An indivisible oversized record refuses, with its
 cost still unexamined rather than zero. Unknown or oversized task identities
 and unusable owner state refuse before any cost content is emitted.
+Combining `--task` with a nonzero `--offset` refuses rather than skipping that
+task's record. Page fitting reuses calculations within this invocation; it
+creates no durable cost cache.
 
 Relay each quantity separately and every `unknown` as unknown. Never add
 unlike resources into a single cost or infer savings from this report.

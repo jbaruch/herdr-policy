@@ -200,6 +200,28 @@ class ContextAllowancesTest(unittest.TestCase):
             self.fail("Finite task cost pages did not finish")
         self.assertEqual(seen, names)
 
+    def test_selected_cost_record_cannot_be_skipped_with_collection_offset(self):
+        original = self.owners()
+        for offset in (1, 999):
+            with self.subTest(offset=offset):
+                code, out, err = self.call("cost-report", "--task", "one", "--offset", str(offset))
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn("Omit --offset", json.loads(err)["message"])
+                self.assertEqual(self.owners(), original)
+        code, out, err = self.call("cost-report", "--task", "one")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([row["task"] for row in json.loads(out)["tasks"]], ["one"])
+
+    def test_cost_page_fitting_calculates_each_selected_task_at_most_once(self):
+        state = empty_state()
+        for index in range(50):
+            self.register(state, "task-{:03}".format(index))
+        with patch.object(cost_report, "_task_report", wraps=cost_report._task_report) as calculate:
+            result = cost_report.view(state, limit=50)
+        self.assertLess(result["coverage"]["returned"], 50)
+        self.assertLessEqual(calculate.call_count, 50)
+        self.assertEqual(len({call.args[0] for call in calculate.call_args_list}), calculate.call_count)
+
     def test_oversized_parse_error_keeps_exit_two_without_echoing_argument_data(self):
         private = "Private fixture argument body"
         error = io.StringIO()
