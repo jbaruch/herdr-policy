@@ -421,7 +421,7 @@ exactly one of four triggers:
 - A report `VERDICT:` the classifier gate contradicts — a classifier `block`
   gate on a report recording `VERDICT: approved`. The foreman settles that
   contradiction by neither the line nor the label.
-- A bot finding the team disagrees with — the policy reviewer or Copilot flags
+- A policy finding the team disagrees with — the policy reviewer flags
   something the developer and reviewer both think is wrong.
 - A weighing nomination — a blocking finding `foreman finding-churn` places on
   lines the previous fix round added, or one a worker report marks `MARGINAL:`.

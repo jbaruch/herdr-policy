@@ -1,6 +1,6 @@
 schemaVersion: 1
 name: jbaruch/herdr-policy
-version: 0.11.1
+version: 0.13.0
 description: Herdr team coordination policy for AI coding agents
 source:
   repository: https://github.com/jbaruch/herdr-policy

@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
 from foreman.errors import UsageError
-from foreman.policy_paths import NATIVE_FOREMAN, NATIVE_RELEASE, RELEASE_FILES, brief_inputs, coding_release
+from foreman.policy_paths import NATIVE_FOREMAN, NATIVE_RELEASE, RELEASE_FILES, WORKFLOW_RELEASE_FILES, brief_inputs, coding_release, require_workflow_release
 
 
 class PolicyPathsTest(unittest.TestCase):
@@ -43,6 +43,18 @@ class PolicyPathsTest(unittest.TestCase):
         local = self.bundle(self.shared / ".tessl/plugins/jbaruch/coding-policy/skills/release")
         self.bundle(self.global_tessl / "plugins/jbaruch/coding-policy/skills/release")
         self.assertEqual(self.resolve(), local)
+
+    def test_task_workflow_requires_independent_reviews_in_the_selected_bundle(self):
+        local = self.bundle(self.shared / ".tessl/plugins/jbaruch/coding-policy/skills/release")
+        other = self.bundle(self.global_tessl / "plugins/jbaruch/coding-policy/skills/release")
+        for name in WORKFLOW_RELEASE_FILES:
+            (other / name).write_text("Other installation's helper.\n")
+        with self.assertRaisesRegex(UsageError, "0.5.0") as caught:
+            require_workflow_release(self.resolve())
+        self.assertIn("review-lanes.sh", caught.exception.details["missing"])
+        for name in WORKFLOW_RELEASE_FILES:
+            (local / name).write_text("Selected installation's helper.\n")
+        self.assertEqual(require_workflow_release(self.resolve()), local)
 
     def test_global_tessl_bundle_is_available_without_a_local_install(self):
         expected = self.bundle(self.global_tessl / "plugins/jbaruch/coding-policy/skills/release")

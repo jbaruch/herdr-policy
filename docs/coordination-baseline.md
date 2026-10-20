@@ -132,8 +132,9 @@ The packaged [measurement reference](../skills/herdr-foreman/references/coordina
 owns the input and summary schemas, queue-state interpretation, overlap rules
 and bounded installed command. The repository's
 `scripts/coordination_baseline.py` remains a compatibility entrypoint to that
-same implementation. Owner-evidence export remains the frozen-source analysis
-operation above.
+same calculator. Installed `measurements.py collect` uses the shared frozen-source
+producer and returns a bounded summary or one private report. The development
+export command above retains explicit selection of an older trusted reader.
 
 ## Preregister the ten-task pilot
 

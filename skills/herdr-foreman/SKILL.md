@@ -1,41 +1,49 @@
 ---
 name: herdr-foreman
 description: >
-  Delegate Herdr tasks, supervise workers, recover assignments, release verified
-  changes and inspect readiness. Retrieve follow-ups, handoffs, retrospectives,
-  task cost, coordination measurements and named GitHub evidence. Use when the
-  Herdr foreman is asked to assign an issue, delegate work, supervise the crew,
-  recover a worker, release a change, check ready work or retrieve task context.
-  Live coordination requires the verified foreman. Workers retain their
-  assignment; ordinary coding skips this skill.
+  Delegate Herdr tasks, supervise workers, recover assignments and release verified
+  changes. Inspect readiness, task cost and named GitHub evidence. Collect frozen
+  coordination evidence; summarize measurement snapshots. Retrieve follow-ups,
+  handoffs and retrospectives. Use when asked to assign Herdr work, supervise the
+  crew, recover a worker, release a change, check ready work or retrieve task context.
+  Live coordination requires the verified foreman. Workers retain their assignment;
+  ordinary coding skips this skill.
 ---
 
 # Herdr Foreman Skill
 
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
-Prose paths use the verified plugin root; commands use its `HS` skill directory.
-Preserve the owner, holds, unknown deliveries and supervision obligations.
-Each offline action reads its named reference, runs the requested operation
-and finishes here. Context grants no task or effect authority.
+Resolve prose paths from the verified plugin root; commands use `HS`.
+Preserve owner, holds, unknown deliveries and supervision obligations.
+Offline actions read their named section, return its result and finish here.
+Context grants no task or effect authority.
 
-## Step 1 — Retrieve Coordination Measurements
+## Step 1 — Collect Coordination Evidence
 
-Return the bounded summary or receipt:
+Use Collect selected evidence:
 
 ```text
 skills/herdr-foreman/references/coordination-metrics.md
 ```
 
-## Step 2 — Inspect Workflow Readiness
+## Step 2 — Summarize a Measurement Snapshot
 
-Use the Readiness view; retain unknowns and coverage:
+Use Summarize a prepared snapshot:
+
+```text
+skills/herdr-foreman/references/coordination-metrics.md
+```
+
+## Step 3 — Inspect Workflow Readiness
+
+Use Readiness; retain unknowns and coverage:
 
 ```text
 skills/herdr-foreman/references/workflow-capacity.md
 ```
 
-## Step 3 — Retrieve Saved Attention
+## Step 4 — Retrieve Saved Attention
 
 Read every attention page before claiming completeness:
 
@@ -43,7 +51,7 @@ Read every attention page before claiming completeness:
 skills/herdr-foreman/references/attention.md
 ```
 
-## Step 4 — Retrieve Working Memory
+## Step 5 — Retrieve Working Memory
 
 For lessons, saved context or handoffs:
 
@@ -51,7 +59,7 @@ For lessons, saved context or handoffs:
 skills/herdr-foreman/references/working-memory.md
 ```
 
-## Step 5 — Retrieve a Retrospective
+## Step 6 — Retrieve a Retrospective
 
 Report the saved note's date, coverage and path:
 
@@ -59,23 +67,23 @@ Report the saved note's date, coverage and path:
 skills/herdr-foreman/references/retrospectives.md
 ```
 
-## Step 6 — Inspect Task Cost
+## Step 7 — Inspect Task Cost
 
-Use the Task Cost contract; retain unknowns and page coverage:
-
-```text
-skills/herdr-foreman/references/decision-context.md
-```
-
-## Step 7 — Retrieve GitHub Evidence
-
-Use the GitHub Lookup contract for one named source and question:
+Use Task Cost; retain unknowns and page coverage:
 
 ```text
 skills/herdr-foreman/references/decision-context.md
 ```
 
-## Step 8 — Coordinate Live Work
+## Step 8 — Retrieve GitHub Evidence
+
+Use GitHub Lookup for one named source and question:
+
+```text
+skills/herdr-foreman/references/decision-context.md
+```
+
+## Step 9 — Coordinate Live Work
 
 For owner-attested remote context, read:
 
@@ -99,14 +107,13 @@ HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS
 bash "$HS/foreman.sh" role-context
 ```
 
-Success returns read-only JSON with `role`, `verified`, `reason`, `context`
-and the owner path. If lookup or execution fails, report its diagnostic,
-restore that installation or owner, and finish here. Select no replacement
-store to obtain a role.
+Read `role`, `verified`, `reason`, `context` and owner path from success JSON.
+On failure, report its diagnostic, restore the selected installation or owner,
+and finish here. Use no replacement store to obtain a role.
 
-- Verified `foreman`: follow the operating context and continue immediately to its workflow at the saved decision/step. Load only its named reference. Retain Stop and handoff gates; finish only at its authorized boundary.
+- Verified `foreman`: continue immediately through its operating context to the saved workflow decision/step. Load its named reference. Retain Stop and handoff gates; finish at its authorized boundary.
 - Verified `worker`: follow its returned protocol and delivered assignment; finish this skill here.
 - `standalone`: perform ordinary authorized work under general coding policy; finish this skill here.
 - `recovery` or `unverified`: follow recovery instructions; restore a verified role before coordination. Finish here without clearing obligations.
 
-Do not preload the legacy plan, later stages or owner history.
+Load no legacy plan, later stages or owner history.

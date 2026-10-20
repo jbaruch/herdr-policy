@@ -25,7 +25,7 @@ def quota(state, worker_kind, at):
         return None
     remaining = cli._snapshot_headroom(snapshot)
     value = remaining.get(worker_kind)
-    groups = cli._snapshot_groups(snapshot)
+    groups = planner._window_groups(snapshot.get("agents", {}))
     group = groups.get(worker_kind)
     if group is not None:
         shared = [reading for name, reading in remaining.items() if groups.get(name) == group and reading is not None]

@@ -225,6 +225,42 @@ class WorkflowReadinessTest(unittest.TestCase):
             self.assertEqual(self.f.native.events, events)
             self.assertEqual(self.f.active(), [])
 
+    def test_empty_account_groups_do_not_exhaust_an_available_provider(self):
+        self.f.admit()
+        self.snapshot(0.0)
+        state = self.f.owner.state()
+        agents = state["snapshots"][-1]["agents"]
+        agents["codex"]["headroom_pct"] = 60.0
+        for reading in agents.values():
+            reading["window_group"] = ""
+        save_state(self.f.path, state)
+        with self.f.owner.session() as capability:
+            runner = self.f.runner(capability, planner=workflow_planning.plan)
+            progression_runtime.pulse(capability, self.f.now())
+            row = self.one(native_verified=True)
+            self.assertTrue(row["dispatchable"], row)
+            self.assertEqual(row["worker_kind"], "codex")
+            self.assertEqual(runner.tick()["data"]["status"], "prepared")
+            self.assertEqual(self.f.progress()["pending"]["job"]["worker_kind"], "codex")
+            runner.tick()
+            self.assertEqual([job["worker_kind"] for job in self.f.active()], ["codex"])
+            self.assertTrue(self.f.native.events)
+
+    def test_unowned_enrollment_after_live_pulse_excludes_the_task_without_effects(self):
+        self.f.admit()
+        with self.f.owner.session() as capability:
+            runner = self.f.runner(capability, planner=workflow_planning.plan)
+            progression_runtime.pulse(capability, self.f.now())
+            self.f.foreign_enrollment(task="one")
+            before, events = self.files(), list(self.f.native.events)
+            with self.assertRaisesRegex(UsageError, "enrollment without a confirmed dispatch owner"):
+                runner.tick()
+            row = self.one(native_verified=True)
+            self.assertEqual((row["ready"], row["dispatchable"], row["reason"]),
+                             (False, False, "enrollment_owner_unverified"))
+            self.assertEqual(self.files(), before)
+            self.assertEqual(self.f.native.events, events)
+
     def test_shared_account_uses_its_lowest_known_headroom(self):
         self.f.admit()
         self.snapshot(0.0)

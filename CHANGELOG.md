@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0 — 2026-10-20
+
+- Migrate native task releases to the independent Codex policy and Claude code-quality verdicts. Require both on the reviewed head; either blocking verdict holds release. Retain all-author review reading and historical Copilot feedback without requiring a Copilot verdict.
+- Require the coding-policy 0.5.0 review ABI before new task admission, readiness or release verification. Refuse an incomplete selected bundle instead of borrowing helpers from another installation; preserve legacy cleanup lookup and existing owner/hold records.
+- Verify the supported pair with the published coding-policy 0.5.0 package in Tessl and all three ACR adapters. Update worker guidance and keep weighing scoped to policy findings.
+
+- Interpret measured quota groups consistently with the canonical planner. Empty group IDs do not pool unrelated accounts; preserve the lowest known headroom for explicitly shared windows and explicit empty identities in tier-access evidence. Verify readiness and native fixture dispatch can select an available provider while another account is exhausted.
+- Exclude a task from readiness when a new active enrollment lacks a confirmed dispatch owner, even after a valid executor pulse. Share the native capability's task-scoped ownership check; preserve other tasks, owner records and native-effect refusal.
+
+- Package the existing frozen-evidence producer for both channels. Add explicit `measurements.py collect` with report-bound native timing, verified assessment receipts, bounded summaries and optional private reports containing the sanitized snapshot, provenance and summary. Preserve the development export command and selection of older trusted readers.
+- Bound regular-file input and native/ledger reads, retain named exclusions, refuse raw-source diagnostics and leave owner/hold evidence unchanged. Collection adds no runtime history ledger or recurring model turn; direct foreman effort and independent deployment/acceptance measurements remain unmeasured.
+- Reserve evidence allowance only when a bounded read starts. Missing, linked, nonregular and oversized sources cannot exhaust the budget without reading bytes; failed reads still retain their reservation.
+- Exercise installed collection and private reporting through Codex, Claude Code and Cursor adapters, including renamed ACR skill directories and immutable payloads.
+
 ## 0.11.1 — 2026-10-20
 
 ### Refresh independent fleet reviews

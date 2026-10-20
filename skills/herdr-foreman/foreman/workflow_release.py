@@ -51,8 +51,8 @@ class WorkflowReleaseAdapter:
         explicit = os.environ.get("HERDR_CODING_POLICY_ROOT") or None
         if explicit is not None and not Path(explicit).is_absolute():
             raise UsageError("Use an absolute coding-policy package root for the complete selected release bundle.", {})
-        return policy_paths.coding_release(Path(__file__).resolve().parents[1],
-            workspace.base_checkout(service.document), Path.home() / ".tessl", explicit)
+        return policy_paths.require_workflow_release(policy_paths.coding_release(Path(__file__).resolve().parents[1],
+            workspace.base_checkout(service.document), Path.home() / ".tessl", explicit))
 
     def _helper(self, bundle, name, arguments, cwd, *, json_output=True):
         script = bundle / name

@@ -24,6 +24,16 @@ RELEASE_FILES = (
     "lib/prune-remote-branches.sh",
     "lib/prune_result.py",
 )
+WORKFLOW_RELEASE_FILES = ("review-lanes.sh", "poll-pr-reviews.sh", "watch-pr-reviews.sh")
+
+
+def require_workflow_release(release):
+    """Require the independent-review ABI for a schema-2 task workflow."""
+    missing = [name for name in WORKFLOW_RELEASE_FILES if not (release / name).is_file()]
+    if missing:
+        raise UsageError("Install coding-policy 0.5.0 or later in the selected release bundle before admitting or resuming this task workflow; preserve existing owners and holds.",
+                         {"release_skill": str(release), "missing": missing})
+    return release
 
 
 def refuse_combined_policy(skill_dir, shared, global_tessl):
@@ -102,10 +112,12 @@ def coding_release(skill_dir, shared, global_tessl, explicit_root=None):
     )
 
 
-def brief_inputs(skill_dir, shared, global_tessl, explicit_root=None):
+def brief_inputs(skill_dir, shared, global_tessl, explicit_root=None, *, workflow=False):
     """Resolve the scoped worker contract and the selected general policy."""
     skill_dir, shared = Path(skill_dir).resolve(), Path(shared).resolve()
     release = coding_release(skill_dir, shared, global_tessl, explicit_root)
+    if workflow:
+        require_workflow_release(release)
     indexes = [shared / ".tessl/RULES.md", Path(global_tessl) / "RULES.md"]
     if release.name == NATIVE_RELEASE:
         # Native adapters may host rules in CLAUDE.md, an imported instruction

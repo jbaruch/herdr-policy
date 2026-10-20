@@ -18,11 +18,18 @@ source documentation alone does not prove a version is published or installable.
 | Byte-bounded context views with CLI view schema 2 | herdr-policy 0.5.0 |
 | Opt-in native new-start capacity limits using config schema 9 | herdr-policy 0.6.0 |
 | Private native artifact retirement after verified acceptance | herdr-policy 0.6.1 |
+| Task releases with independent Codex policy and Claude quality gates | herdr-policy 0.13.0 with coding-policy 0.5.0 |
 
 These are capability floors, not a promise that an older owner can read newer
 stored state. Record the actual installed pair and policy identity. Before using
 the context views, update callers to consume their schema, pagination and omitted
 evidence flags. Persisted owner formats retain their separate compatibility rules.
+
+Herdr 0.13.0 requires the coding-policy 0.5.0 release bundle for schema-2 task
+admission and progression. Update the selected consumer installation before
+admitting new work. Existing tasks retain their recorded authority and holds;
+use the owning upgrade/handoff procedure before resuming under a changed policy.
+Generic cleanup of older extracted installations remains available.
 
 Herdr policy lookup refuses legacy combined team trees in the project, global
 Tessl installation or executing package's Tessl peer. An explicit helper root

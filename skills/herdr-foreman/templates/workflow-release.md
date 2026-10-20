@@ -6,8 +6,8 @@ actual merge and each selected publication. The executor owns local task
 teardown; preserve the writer checkout and its branch for that step.
 
 Repair no source, version manifest or generated file. Before merge, return
-`blocking` with the actual source/CI/policy defect and explicit correction
-facts when implementation must change. Copilot is advisory. Read and
+`blocking` with the actual source/CI/policy/quality defect and explicit correction
+facts when implementation must change. Read and
 acknowledge advisories in the existing work without another repair/review
 round. A source conflict or unsettled cause cannot be wished away.
 

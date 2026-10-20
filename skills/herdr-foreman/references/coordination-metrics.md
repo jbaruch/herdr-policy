@@ -1,10 +1,60 @@
 # Coordination measurements
 
-Summarize a sanitized snapshot offline. This operation follows this reference;
+Collect selected frozen owner evidence or summarize a sanitized snapshot offline. This operation follows this reference;
 live team-round steps govern native work. It returns observational evidence
 and grants no task, release or production authority. Return the summary or
 receipt and finish this skill here. On a non-zero exit, report the diagnostic
 and finish here without starting live team work.
+
+## Collect selected evidence
+
+Use the installed producer with explicitly selected frozen owner and supervision
+files and a fixed observation window:
+
+```bash
+HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
+python3 "$HS/measurements.py" collect --owner /private/baseline/owner.json --supervision /private/baseline/supervision.json --start 2026-10-10T00:00:00Z --end 2026-10-10T01:00:00Z --output /private/baseline/capture.json
+```
+
+Omit `--output` for a bounded `coordination_capture_summary` (schema_version 1)
+containing summary schema 2, the sanitized snapshot digest and named collection
+exclusions. A large summary refuses without partial output; retain the full
+cohort and use a private report path.
+
+With `--output`, the mode-0600 `coordination_capture_report` (schema_version 1)
+contains sanitized snapshot schema 2, private provenance schema_version 3 and
+summary schema 2. Its schema-1 `coordination_capture_receipt` gives path, digest,
+byte count, snapshot digest, summary version, cohort counts and exclusions.
+All three new record kinds set `authorizes_progression: false`. The herdr-foreman
+skill owns their shapes; the collector writes them and comparison readers read
+only supported versions. Existing reports and source evidence are never migrated.
+The snapshot can be passed to the existing calculator after extracting it from
+the private report.
+
+The producer's `EvidenceReader` and `export` in
+`skills/herdr-foreman/foreman/measurement_capture.py` own source verification and
+cohort selection. Missing evidence remains unmeasured with collection exclusions.
+Integration, deployment, acceptance, direct foreman effort and activity samples
+remain unmeasured. Collection creates no recurring model turn, worker call,
+owner migration, state write or history ledger.
+
+`skills/herdr-foreman/foreman/measurement_capture.py` owns `MAX_OWNER_BYTES` per owner/supervision
+file, `MAX_NATIVE_BYTES` per transcript, `MAX_LEDGER_BYTES` per captured prefix
+and `MAX_EVIDENCE_BYTES` across transcript/prefix reads in one invocation.
+`MAX_SNAPSHOT_BYTES` in the calculator bounds the sanitized export. Nonregular,
+linked, malformed or oversized owner inputs refuse. Native/ledger read failures
+leave named exclusions, including exhausted evidence budgets. Preserve originals
+and the full cohort; report the diagnostic or exclusions and finish here.
+Producer changes require a separately authorized implementation task.
+
+Provenance retains normalized window, Python version, owner/supervision digests,
+actual producer digest, canonical reader file digests, verified evidence digests
+and exclusions. It contains no transcript bodies or private source-path map.
+`scripts/export_owner_baseline.py` uses this same producer and retains its explicit
+trusted-older-reader interface. Its `exporter_sha256` identifies the relocated
+producer; its snapshot schema 2 and provenance schema_version 3 remain supported.
+
+## Summarize a prepared snapshot
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
@@ -38,7 +88,7 @@ repo commands through `scripts/coordination_baseline.py` use this same owner.
 
 ## Sanitized snapshot
 
-The CLI reads only this file, emits one bounded summary or report receipt, and performs no network
+The snapshot command reads only this file, emits one bounded summary or report receipt, and performs no network
 or team-state operations. A malformed export exits 2 with a diagnostic and no
 measurement. Keep snapshots and their raw-source maps outside the repository.
 

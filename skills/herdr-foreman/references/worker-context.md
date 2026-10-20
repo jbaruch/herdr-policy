@@ -59,7 +59,7 @@ release skill, its binding references and the current report/operator gates.
 Read `skills/herdr-foreman/references/coding-policy-integration.md` for a legacy release assignment. A blocking
 verdict remains held until the responsible current-tip re-check or actual
 resolved operator decision; a judge's ruling alone clears no verdict gate.
-Copilot and other advisories create no repair or new review round. Return
+Advisory findings create no repair or new review round. Return
 required source changes to implementation. Never merge without explicit brief
 authority; never claim required publication, deployment or acceptance without
 its actual evidence.
