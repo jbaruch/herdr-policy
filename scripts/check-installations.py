@@ -31,7 +31,7 @@ class BehaviorFailure(RuntimeError):
 RUNTIME_ENVIRONMENT = frozenset({
     "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL",
     "SYSTEMROOT", "XDG_STATE_HOME", "XDG_CONFIG_HOME", "PYTHONDONTWRITEBYTECODE",
-    "HERDR_ENV", "HERDR_PANE_ID",
+    "HERDR_ENV", "HERDR_PANE_ID", "FOREMAN_CONTEXT_STATE", "FOREMAN_CONTEXT_CONFIG",
     "WORKTREE_ROOT",
 })
 
@@ -108,19 +108,20 @@ def verify_role_context(project, skill, hook, environment, adapter: str | None =
     (binary / "herdr").chmod(0o755)
     environment = {**environment, "PATH": str(binary) + os.pathsep + environment.get("PATH", ""),
                    "XDG_STATE_HOME": str(fixture / "state"), "XDG_CONFIG_HOME": str(fixture / "config"),
-                   "HERDR_ENV": "private-conformance", "HERDR_PANE_ID": "private-fixture-pane"}
+                   "HERDR_ENV": "private-conformance", "HERDR_PANE_ID": "private-fixture-pane",
+                   "FOREMAN_CONTEXT_STATE": str(fixture / "selected-owner/owner.json")}
     selected_adapter = adapter
     if selected_adapter is None:
         selected_adapter = "claude-code" if ".claude" in hook.parts else "codex"
     kind = {"claude-code": "claude", "grok": "grok"}.get(selected_adapter, "codex")
     native = {"source": "herdr:" + kind, "agent": kind, "kind": "id", "value": "private-foreman"}
     setup = """
-import sys
+import os,sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from foreman import supervision
 from foreman.state import default_state_path, empty_state, save_state
-owner = default_state_path()
+owner = Path(os.environ["FOREMAN_CONTEXT_STATE"])
 at = '2026-10-19T00:00:00+00:00'
 if sys.argv[2] in ('foreman', 'native-id', 'native-path'):
     if sys.argv[2] == 'foreman':
@@ -140,7 +141,9 @@ elif sys.argv[2] == 'worker':
     kind = sys.argv[3]
     supervision.enroll(owner, {'id':'private-assignment','agent':'private-worker','task':'private-task',
         'report':str(owner.parent / 'worker-report.md'),'pane_id':'private-fixture-pane',
-        'native_session':{'source':'herdr:'+kind,'agent':kind,'kind':'id','value':'private-worker'}}, at)
+        'native_session':None}, at)
+    supervision.refine(owner, 'private-assignment', 'private-fixture-pane',
+        {'source':'herdr:'+kind,'agent':kind,'kind':'id','value':'private-worker','pane_id':'private-fixture-pane'}, at)
 else:
     raise SystemExit('Unsupported private fixture setup')
 """
@@ -174,13 +177,15 @@ else:
                  for path in fixture.rglob("*") if path.is_file()}
         if after != before:
             raise BehaviorFailure("Installed role observation modified its private owner or binding")
+        if (fixture / "state/foreman/state.json").exists():
+            raise BehaviorFailure("Installed role hook created a default owner instead of using the selected store")
 
     seed("foreman")
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     observe("private-foreman", "Herdr Foreman Operating Context", absent=("## Step 17", "Herdr Worker Context"))
     observe("another-session", None)
     seed("native-path")
-    transcript = str(fixture / "state/foreman/foreman-native.jsonl")
+    transcript = str(Path(environment["FOREMAN_CONTEXT_STATE"]).parent / "foreman-native.jsonl")
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": {
         **native, "kind": "path", "value": transcript}}))
     observe("private-foreman", "Herdr Foreman Operating Context", transcript=transcript)
@@ -192,6 +197,7 @@ else:
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     seed("worker")
     native["value"] = "private-worker"
+    native["pane_id"] = "private-fixture-pane"
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     observe("private-worker", "Herdr Worker Context", absent=("Herdr Foreman Operating Context", "## Step 17"))
     seed("hold")

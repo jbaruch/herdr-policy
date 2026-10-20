@@ -53,7 +53,11 @@ skill entrypoints route to decision-specific references. SessionStart verifies
 the actual native session and existing owner/configured foreman seat before
 loading a bounded foreman, worker or recovery capsule. A bare `HERDR_ENV` grants
 no role. Known outages and holds preserve recovery obligations; changing context
-never clears them. Hooks cannot remove text already loaded into a session.
+never clears them. Hooks cannot remove text already loaded into a session. Custom owner/config
+paths use the two explicit startup locators in the
+[bootstrap contract](skills/herdr-foreman/references/bootstrap.md#selected-owner-paths);
+managed workers receive the state locator through native workspace environment
+settings. Existing foreman panes need their verified fresh bootstrap/handoff.
 
 Foremen load the [team contract](skills/herdr-foreman/references/team-scope.md)
 and [workflow](skills/herdr-foreman/references/foreman-workflow.md) only when

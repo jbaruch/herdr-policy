@@ -8,7 +8,8 @@ description: Minimal Herdr role routing, delegation boundary and installed looku
 ## Role Routing
 
 - Ordinary work follows general coding policy; load no Herdr references.
-- Explicit Herdr requests use `Skill(skill: "herdr-foreman")`.
+- Herdr standups and worker status updates use `Skill(skill: "herdr-standup")`.
+- Other explicit Herdr requests use `Skill(skill: "herdr-foreman")`.
 - Verify the launched role through the shared bootstrap.
 - `HERDR_ENV` grants no role or task authority.
 - Foremen load their operating contract and current decision references.

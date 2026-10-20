@@ -2081,9 +2081,12 @@ def _apply(args, client, warn, trace, hold_gates):
                     })
                 owned = {}
                 try:
+                    from .role_context import startup_environment
                     pane = lifecycle.spawn(
                         client, agents_by_name[name], tier,
                         history=state["assignments"], before_start=preflight_start, owned=owned,
+                        workspace_env=(startup_environment(state_path, _config_path(args))
+                                       if getattr(getattr(client, "context", None), "mode", "native") == "native" else ()),
                     )
                 except HerdrError as exc:
                     if exc.details.get("failure_kind") in (TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND):
@@ -2405,7 +2408,7 @@ def cmd_role_context(args, client=None, warn=None, trace=None):
     if getattr(args, "herdr_bin", None):
         environment["HERDR_BIN"] = args.herdr_bin
     return role_context.select(Path(__file__).resolve().parents[1], client=client,
-                               state_path=getattr(args, "state", None), config_path=_config_path(args),
+                               state_path=getattr(args, "state", None), config_path=getattr(args, "config", None),
                                environment=environment), None
 
 
@@ -3460,7 +3463,21 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
         if args.command == "foreman-reset" and not args.explicit_reset:
             raise UsageError("Automatic foreman context resets are disabled. Keep the current context, active goal and foreground supervision; checkpoint and continue at the saved step. Use --explicit-reset only for an existing explicit operator-requested maintenance reset.",
                              {"reason": "automatic_foreman_reset_disabled"})
-        if client is not None and getattr(getattr(client, "context", None), "mode", None) == "attested-remote":
+        remote_context = getattr(getattr(client, "context", None), "mode", None) == "attested-remote"
+        if args.command == "role-context":
+            if remote_context and not getattr(args, "state", None):
+                authority = getattr(client, "_remote_authority", None)
+                if authority is None:
+                    raise UsageError("Restore the attached remote owner before selecting its context.", {})
+                args.state = str(authority.state_path)
+            elif not remote_context and "HERDR_ENV" in os.environ:
+                from .role_context import selected_paths
+                selected = selected_paths(os.environ, state_path=getattr(args, "state", None),
+                                          config_path=getattr(args, "config", None))
+                for field, attribute in (("state_path", "state"), ("config_path", "config")):
+                    if selected[field] is not None:
+                        setattr(args, attribute, str(selected[field]))
+        if remote_context and client is not None:
             client.remote_preflight(_state_path(args), allow_indeterminate=True)
             if args.command in {"start-foreman", "foreman-reset", "foreman-reset-deliver", "foreman-reset-reconcile", "migrate-home"}:
                 from .command_context import refuse
@@ -3484,8 +3501,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
         # blocks them.
         # A command that reads no state or config uses no home, so it neither
         # takes the guard nor refuses on a home awaiting migration.
-        standalone_role = (args.command == "role-context" and "HERDR_ENV" not in os.environ
-                           and getattr(getattr(client, "context", None), "mode", None) != "attested-remote")
+        standalone_role = args.command == "role-context" and ("HERDR_ENV" not in os.environ or remote_context)
         defaults = set() if args.command in HOME_FREE_COMMANDS or standalone_role else {
             kind for kind, given in (("state", getattr(args, "state", None)),
                                      ("config", getattr(args, "config", None))) if not given}

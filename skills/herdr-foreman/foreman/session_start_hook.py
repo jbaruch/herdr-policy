@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import config, context_output, role_context
+from . import context_output, role_context
 from .errors import ForemanError
 
 
@@ -50,7 +50,7 @@ def collect(skill, environment, payload=None, *, context_reader=role_context.sel
         return None
     try:
         result = context_reader(skill, environment=environment, payload=payload,
-                                config_path=config.default_config_path())
+                                **role_context.selected_paths(environment))
         context = result["context"]
         if not context:
             return None

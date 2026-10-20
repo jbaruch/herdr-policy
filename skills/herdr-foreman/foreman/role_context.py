@@ -11,13 +11,44 @@ from pathlib import Path
 
 from . import config, context_output, launch, progression_owner, report_delivery
 from . import supervision, tiers, workflow_capacity
-from .errors import ForemanError, StateError
+from .errors import ForemanError, StateError, UsageError
 from .state import default_state_path, load_state_checked
 
 
 CONTEXT_BYTES = 4_096
 ROLE_FILES = {"foreman": "foreman-context.md", "worker": "worker-context.md",
               "recovery": "context-recovery.md"}
+
+
+SELECTION_ENV = {"state_path": "FOREMAN_CONTEXT_STATE", "config_path": "FOREMAN_CONTEXT_CONFIG"}
+
+
+def selected_paths(environment, *, state_path=None, config_path=None):
+    """Resolve routing locators only; native role/owner checks remain required."""
+    result = {}
+    for field, explicit in (("state_path", state_path), ("config_path", config_path)):
+        hint = environment.get(SELECTION_ENV[field])
+        value = explicit if explicit is not None else hint
+        if explicit is None and hint is not None and (not isinstance(hint, str) or not Path(hint).is_absolute()):
+            raise UsageError("Restore an absolute {} routing path from the current owner; a context hint grants no role.".format(SELECTION_ENV[field]), {})
+        result[field] = Path(value).resolve() if value is not None else None
+    return result
+
+
+def startup_environment(state_path, config_path=None):
+    """Pass only owner-selected locators to a fresh native workspace, never ambient env."""
+    selected = selected_paths({}, state_path=state_path, config_path=config_path)
+    return tuple(SELECTION_ENV[field] + "=" + str(value) for field, value in selected.items() if value is not None)
+
+
+def _worker_matches(member, pane_id, native):
+    if not member["active"]:
+        return False
+    current = supervision.expected_assignment(member)
+    expected = current["native_session"]
+    return (current["pane_id"] == pane_id and isinstance(expected, dict)
+            and expected.get("pane_id", pane_id) == pane_id
+            and all(expected.get(key) == native.get(key) for key in ("source", "agent", "kind", "value")))
 
 
 class ContextBundleError(StateError):
@@ -102,6 +133,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
         return _result("standalone", "outside_herdr", skill)
     if not environment.get("HERDR_ENV") or not environment.get("HERDR_PANE_ID"):
         return _result("recovery", "native_context_unavailable", skill)
+    selected = selected_paths(environment, state_path=state_path, config_path=config_path)
+    state_path, config_path = selected["state_path"], selected["config_path"]
     incoming = _payload_identities(payload, environment, cwd)
     saved = [binding for who in incoming if (binding := _binding(who, binding_root)) is not None]
     try:
@@ -116,6 +149,7 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
                 or native.get("source") != "herdr:" + native["agent"]
                 or native.get("kind") not in ("id", "path")
                 or not isinstance(native.get("value"), str) or not native["value"]
+                or native.get("pane_id", pane_id) != pane_id
                 or native["kind"] == "id" and report_delivery.native_identity(pane) is None):
             return _result("unverified", "native_identity_unverified", skill)
         who = supervision.identity(native["value"], cwd, environment["HERDR_ENV"],
@@ -144,9 +178,7 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
             return _result("foreman", "bound_native_foreman", skill, verified=True, owner=selected)
         if binding is not None:
             return _result("recovery", "owner_binding_changed", skill, owner=selected)
-        matching = [row for row in data["members"] if row["active"]
-                    and row["assignment"]["pane_id"] == pane_id
-                    and row["assignment"]["native_session"] == native]
+        matching = [row for row in data["members"] if _worker_matches(row, pane_id, native)]
         if len(matching) == 1:
             if any(row["resumed_at"] is None for row in data["holds"]):
                 return _result("recovery", "operator_hold", skill, verified=True, owner=selected)
@@ -158,7 +190,7 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
             return _result("recovery", "unbound_existing_obligations", skill, owner=selected)
         # First launch precedes supervision binding. Prove its configured seat
         # and exact foreground model/effort instead of promoting any Herdr pane.
-        seat = config.load_foreman(config_path) if config_path is not None else None
+        seat = config.load_foreman(config_path or config.default_config_path())
         if seat is not None and seat.kind == native["agent"]:
             tier = tiers.select_tier(seat, "foreman")
             launch.verify_foreman(client, seat, pane_id, tier)

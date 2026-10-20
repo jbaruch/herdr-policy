@@ -41,3 +41,13 @@
 - Claude Code, Codex and Grok-compatible hooks use `hookSpecificOutput.additionalContext`; Cursor uses `additional_context`; portable Tessl uses `additionalContext`.
 - Portable startup defers to registered Claude Code and Codex native hooks. Ordinary-session wrappers exit before runtime prerequisites.
 - Context injection never removes instructions already loaded. Existing work retains its actual handoff, hold and Stop requirements.
+
+## Selected Owner Paths
+
+- `FOREMAN_CONTEXT_STATE` and `FOREMAN_CONTEXT_CONFIG` are absolute routing locators, never role, task or effect authority.
+- Fresh managed native worker workspaces receive the actual owner's state locator through Herdr's native `--env` transport; legacy dispatch also passes its selected config. The hook still requires the exact active current enrollment, including verified refinements and pane identity.
+- When provisioning a foreman shell pane or workspace with nondefault paths, its operator supplies these locators through Herdr's native workspace/pane `--env KEY=VALUE` options before `start-foreman`. Pass only those two paths; never copy ambient credentials or manufacture `HERDR_ENV`.
+- A bare SessionStart may precede native registration/enrollment. It loads no unverified role; the first explicit skill query uses the same locators once the actual configured seat or assignment exists. Workers also receive their scoped protocol in the assignment.
+- Explicit CLI state/config overrides take precedence over locators. A conflicting state locator cannot retarget a foreman's existing native discovery binding; preserve the original owner and return recovery.
+- Trusted remote `role-context` uses its attached owner's state when no override is supplied; an explicit foreign store remains refused. Native locators never construct remote authority.
+- Existing panes and teams retain their upgrade/handoff obligations; this source change does not retrofit or resume them. No context ledger, history scan or new owner record is created by lookup.

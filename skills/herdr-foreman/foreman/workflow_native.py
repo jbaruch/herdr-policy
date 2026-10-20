@@ -74,8 +74,10 @@ class NativeWorkflowAdapter:
         def before_start(pane):
             job["pane_id"] = pane
             self.changed()
+        from .role_context import startup_environment
         pane = lifecycle.spawn(self.client, worker, job["tier"], cwd=worktree,
-                               history=history, before_start=before_start, sleep=self.sleeper)
+                               history=history, before_start=before_start, sleep=self.sleeper,
+                               workspace_env=startup_environment(self.capability.state_path))
         job["pane_id"] = pane
         job["status"] = "ready"
         live = self.client.agent_get(worker.name)
