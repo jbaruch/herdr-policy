@@ -1097,17 +1097,16 @@ in `skills/herdr-foreman/references/probe-recovery.md`.
   implementation separately from active audit work. `apply --dry-run` reads
   current recovery bounds without writes; an older ledger requires an owner
   `state` command first. Dry-run never proves live continuity.
-  `cost-report [--task TASK]` reads the ledger, the recovery events and the
-  snapshots without writing or migrating, and refuses an unusable state file
-  rather than reporting no tasks. Its output is
-  `{"schema_version": 1, "unrecorded": [...], "tasks": [...]}`: per task its
-  `status` (`accepted`, `abandoned` or `open`), `started_at`, `ended_at`,
-  `elapsed_seconds`, `tokens`, `correction_rounds`, `work`, `coordination` and
-  `windows`, each reported separately. `unrecorded` names every field no owner
-  record carries. A window's movement carries `attribution: unknown` unless the
-  report's attribution predicate holds. What each field counts, and that
-  predicate, are the contract of `skills/herdr-foreman/foreman/cost_report.py`
-  (module docstring), not restated here.
+  Foreman-facing context reads debit the separate existing exposure counter;
+  this changes no operational owner record. The command set and continuation,
+  error, budget and GitHub-read contracts are in
+  `skills/herdr-foreman/references/decision-context.md`.
+  `cost-report [--task TASK] [--limit N] [--offset N]` now returns a schema-2
+  bounded view with `tasks`, `unrecorded` and `coverage`. Each quantity retains
+  its previous meaning and unknown values. The internal complete calculator
+  remains schema 1; it is not the model-facing CLI view. Quantity meanings
+  and attribution belong to `skills/herdr-foreman/foreman/cost_report.py`
+  (module docstring).
   Readers identify the maintenance tier variant by `status: maintenance`.
   `role_counts` excludes it from assignment experience; `cost-report` excludes
   it from both work and `unstarted_assignments`; chronology may still use its

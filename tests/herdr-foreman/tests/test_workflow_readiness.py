@@ -18,7 +18,7 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_workflow_service as fixture
-from foreman import cli, context_output, progression_runtime, recovery, supervision
+from foreman import cli, context_output, decision_budget, progression_runtime, recovery, supervision
 from foreman import workflow_planning, workflow_readiness as readiness
 from foreman.errors import UsageError
 from foreman.state import add_snapshot, save_state
@@ -41,6 +41,17 @@ class WorkflowReadinessTest(unittest.TestCase):
     def files(self):
         return {str(path.relative_to(self.f.root)): path.read_bytes()
                 for path in self.f.root.rglob("*") if path.is_file() and ".git" not in path.parts}
+
+    def owner_files(self):
+        files = self.files()
+        counter = decision_budget.location(self.f.path)
+        for path in (counter, Path(str(counter) + ".lock"), decision_budget.presence_location(self.f.path)):
+            files.pop(str(path.relative_to(self.f.root)), None)
+        return files
+
+    def assert_charge(self, printed):
+        counter = json.loads(decision_budget.location(self.f.path).read_text())
+        self.assertEqual(counter["returned_bytes"], printed)
 
     def invoke(self, *arguments, client=None):
         out, err = io.StringIO(), io.StringIO()
@@ -300,7 +311,7 @@ class WorkflowReadinessTest(unittest.TestCase):
         with self.f.owner.session() as capability:
             self.f.runner(capability, planner=workflow_planning.plan)
             progression_runtime.pulse(capability, self.f.now())
-            before = self.files()
+            before = self.owner_files()
             with patch.dict(os.environ, {}, clear=True), patch.object(cli, "_client", side_effect=AssertionError("offline transport")):
                 code, out, err = self.invoke("--task", "one")
             self.assertEqual((code, err), (0, ""))
@@ -308,7 +319,8 @@ class WorkflowReadinessTest(unittest.TestCase):
             self.assertEqual(result["items"][0]["reason"], "native_foreman_unverified")
             self.assertEqual(result["native_foreman"], {"verified": False, "reason": "native_context_unavailable"})
             self.assertLessEqual(len(out.encode()), context_output.OUTPUT_BYTES)
-            self.assertEqual(self.files(), before)
+            self.assertEqual(self.owner_files(), before)
+            self.assert_charge(len((out + err).encode()))
 
     def test_cli_verifies_actual_native_identity_instead_of_trusting_environment(self):
         self.f.admit()
@@ -365,7 +377,8 @@ class WorkflowReadinessTest(unittest.TestCase):
         self.assertEqual([row["task"] for row in self.view()["items"]], ["one", "two"])
 
     def test_unknown_oversized_and_invalid_pages_refuse_without_empty_success(self):
-        before = self.files()
+        before = self.owner_files()
+        printed = 0
         for arguments in (("--task", "absent"), ("--task", "x" * 1_025),
                           ("--limit", "0"), ("--offset", "-1")):
             with self.subTest(arguments=arguments[:1]):
@@ -373,16 +386,19 @@ class WorkflowReadinessTest(unittest.TestCase):
                     code, out, err = self.invoke(*arguments)
                 self.assertEqual((code, out), (1, ""))
                 self.assertIn("error", json.loads(err))
-                self.assertEqual(self.files(), before)
+                self.assertEqual(self.owner_files(), before)
+                printed += len((out + err).encode())
+                self.assert_charge(printed)
 
     def test_unusable_ledger_cannot_look_like_an_empty_queue(self):
         self.f.path.write_text("Unusable private owner fixture")
-        before = self.files()
+        before = self.owner_files()
         with patch.object(cli, "_client", side_effect=AssertionError("unusable owner transport")):
             code, out, err = self.invoke()
         self.assertEqual((code, out), (1, ""))
         self.assertIn("unusable ledger is not an empty queue", err)
-        self.assertEqual(self.files(), before)
+        self.assertEqual(self.owner_files(), before)
+        self.assert_charge(len((out + err).encode()))
 
 
 if __name__ == "__main__":

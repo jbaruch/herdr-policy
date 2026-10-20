@@ -389,13 +389,14 @@ class StateCommandTest(CliCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["assignments"][0]["agent"], "grok")
 
-    def test_routes_state_warnings_to_the_cli_stderr(self):
+    def test_corrupt_state_warns_and_refuses_instead_of_returning_empty_context(self):
         self.state.write_text('{"schema_version": 2, broken', encoding="utf-8")
+        original = self.state.read_bytes()
         code, out, err = self.run_cli(self.base() + ["state"])
-        self.assertEqual(code, 0)
-        self.assertEqual(json.loads(out)["snapshots"], [])
+        self.assertEqual((code, out), (1, ""))
         self.assertIn("foreman: state file", err)
         self.assertIn(str(self.state), err)
+        self.assertEqual(self.state.read_bytes(), original)
 
 
 class PlanCommandTest(CliCase):

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 — 2026-10-20
+
+- Charge current-context views against the existing shared exposure allowance before printing, including bounded diagnostics, without changing canonical state results or caching history. Keep task/foreman counters, holds and unresolved evidence across alternate APIs and pages.
+- Add targeted GitHub GET retrieval: one metadata index page or hash-bound body chunk, explicit unexamined coverage, sanitized failures and no local history mirror.
+- Page task-cost calculations before output; preserve unknown quantities. Refuse unreadable state/status views instead of returning empty success, and keep malformed private schema contents out of diagnostics.
+
 ## 0.10.0 — 2026-10-20
 
 - Reduce eager Herdr instructions to one small routing rule and two skill routers; keep foreman and standup workflows in co-shipped, on-demand references.

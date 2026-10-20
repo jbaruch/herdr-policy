@@ -9,7 +9,7 @@
 ## Current Decision
 
 - Use one current task and decision at a time.
-- Read its bounded owner result and retrieve only the evidence needed now.
+- Read current owner results and named GitHub evidence through the bounded contracts in `skills/herdr-foreman/references/decision-context.md`; retrieve only what the current question needs.
 - Never traverse `.hr`, dump owner history or preload all references.
 - Keep durable change, review and delivery history in GitHub.
 - For an explicitly admitted schema-2 task, read `skills/herdr-foreman/references/task-workflow.md` and `skills/herdr-foreman/references/progression.md`.
