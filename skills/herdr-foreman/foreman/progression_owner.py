@@ -255,6 +255,19 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     return supervision.transaction(state_path, commit)
 
 
+def has_unowned_enrollments(state, supervised, task):
+    """Check current enrollment ownership without granting task or effect authority."""
+    known = {item["id"] for item in state["recovery"]["dispatches"]
+             if item["task"] == task and item["status"] != "not_sent"}
+    progress = state["recovery"]["tasks"][task].get("progression", {})
+    if progress.get("schema_version") == 2:
+        pending = progress.get("pending")
+        if pending is not None and pending.get("job") is not None:
+            known.add(pending["job"]["id"])
+    return any(item["active"] and item["assignment"]["task"] == task and item["id"] not in known
+               for item in supervised["members"])
+
+
 class ServiceCapability:
     """Mint only while holding the admitted kernel lease; never serialize."""
 
@@ -283,15 +296,7 @@ class ServiceCapability:
         supervised = supervision.load(state_path)
         if _binding(supervised) != grant["binding"] or _unresumed_hold(supervised):
             raise UsageError("The supervision binding or operator hold prevents service effects; preserve pending deliveries and resume conditions.", {})
-        known = {item["id"] for item in state["recovery"]["dispatches"]
-                 if item["task"] == task and item["status"] != "not_sent"}
-        progress = state["recovery"]["tasks"][task].get("progression", {})
-        if progress.get("schema_version") == 2:
-            pending = progress.get("pending")
-            if pending is not None and pending.get("job") is not None:
-                known.add(pending["job"]["id"])
-        if any(item["active"] and item["assignment"]["task"] == task and item["id"] not in known
-               for item in supervised["members"]):
+        if has_unowned_enrollments(state, supervised, task):
             raise UsageError("This task has an enrollment without a confirmed dispatch owner; reconcile it before service effects.", {})
         version, digest = loaded_policy(self.plugin_root)
         if grant["policy"] != {"version": version, "digest": digest}:
