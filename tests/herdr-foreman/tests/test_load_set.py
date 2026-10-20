@@ -189,7 +189,8 @@ class DecisionTest(unittest.TestCase):
             self.assertLessEqual(len((json.dumps(first, indent=2) + "\n").encode()), OUTPUT_BYTES)
             tail = read_evidence(packet, str(report), "What remains unread?", READ_BYTES)
             self.assertEqual((tail["evidence"]["content"], tail["evidence"]["next_offset"]), ("tail123", None))
-            for target, question in ((str(report), ""), (str(Path(scratch) / "unlisted"), "Why?")):
+            for target, question in ((str(report), ""), (str(report), "\udcff"),
+                                     (str(Path(scratch) / "unlisted"), "Why?")):
                 with self.subTest(target=target), self.assertRaises(UsageError):
                     read_evidence(packet, target, question)
             report.unlink()

@@ -487,7 +487,11 @@ def _version_of(payload):
     """The declared version, with an absent key reading as UNVERSIONED."""
     version = payload.get("schema_version", UNVERSIONED)
     if isinstance(version, bool) or not isinstance(version, int):
-        raise _NoUsableState("schema_version {!r} is not an integer".format(version))
+        # Owner data is private. A malformed version may contain arbitrary
+        # report text or credentials; diagnostics describe its type, not bytes.
+        raise _NoUsableState("schema_version is not an integer")
+    if abs(version) > 1_000_000:
+        raise _NoUsableState("schema_version is outside the supported integer range")
     return version
 
 

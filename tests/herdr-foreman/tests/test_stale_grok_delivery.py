@@ -167,7 +167,7 @@ class StaleGrokDeliveryTests(unittest.TestCase):
                     with self.subTest(schema=schema, index=index, index_type=type(index), command=command):
                         self.assertNotIn('Traceback', result.stderr)
                         self.assertEqual(ledger.read_bytes(), before)
-                        self.assertEqual(result.returncode, 0 if valid or command == 'state' else 1, result.stderr)
+                        self.assertEqual(result.returncode, 0 if valid else 1, result.stderr)
                         if valid:
                             self.assertEqual(result.stderr, '')
                             expected = candidate if command == 'state' else candidate['recovery']['delivery_recoveries'][0]
@@ -175,11 +175,8 @@ class StaleGrokDeliveryTests(unittest.TestCase):
                         else:
                             self.assertIn('restore the owner-written ledger', result.stderr)
                             self.assertIn('file is left untouched', result.stderr)
-                            if command == 'state':
-                                self.assertEqual(json.loads(result.stdout), state.empty_state())
-                            else:
-                                self.assertEqual(result.stdout, '')
-                                self.assertIn('"error": "state_error"', result.stderr)
+                            self.assertEqual(result.stdout, '')
+                            self.assertIn('"error": "state_error"', result.stderr)
 
     def test_public_owner_scrollbar_only_requires_complete_bare_source_and_row(self):
         marker = self.case.marker

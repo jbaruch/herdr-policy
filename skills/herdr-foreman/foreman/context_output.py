@@ -13,6 +13,41 @@ OUTPUT_BYTES = 16_384
 VIEW_SCHEMA_VERSION = 2
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 50
+WARNING_BYTES = 4_096
+
+# Foreman-facing knowledge views. Native Stop/executor owners use their own
+# observation APIs; this exposure gate never changes their effect authority.
+READ_COMMANDS = frozenset({
+    "state", "status", "foreman-queue", "workflow-readiness", "cost-report",
+    "memory-list", "memory-show", "attention-list", "attention-show", "catch-up",
+    "supervision-gate", "supervision-status", "supervision-drain", "supervision-watch",
+    "retro-check", "retro-list", "retro-show", "capability-check", "capability-show",
+    "report-gate-status", "github-context",
+})
+
+
+def printed_json(value):
+    return json.dumps(value, indent=2) + "\n"
+
+
+def utf8_size(value: str, label: str):
+    """Measure semantic context text without exposing malformed input bytes."""
+    try:
+        return len(value.encode("utf-8"))
+    except UnicodeError:
+        raise UsageError("Use valid UTF-8 for {} before requesting context. Preserve the original owner and unread evidence while correcting the text.".format(label),
+                         {"context_complete": False}) from None
+
+
+def error_text(error, diagnostics=""):
+    """Retain complete JSON errors; never cut an oversized diagnostic in half."""
+    result = diagnostics + printed_json(error.to_dict())
+    if len(result.encode("utf-8")) <= OUTPUT_BYTES:
+        return result
+    return printed_json(UsageError(
+        "The requested operation failed and its diagnostic exceeds the context budget. Preserve the original owner records, holds and unknown outcomes; narrow the evidence question or repair the source diagnostic before retrying. No omitted evidence is accepted.",
+        {"reason": "context_diagnostic_budget_exceeded", "context_complete": False,
+         "operation_failed": True}).to_dict())
 
 
 def validate_page(limit, offset):

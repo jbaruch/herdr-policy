@@ -138,13 +138,13 @@ authority.
 - **A saved retrospective** — `skills/herdr-foreman/references/retrospectives.md`. Report the note's
   date, coverage, conclusions, and path.
 - **A task's cost or resource use** — invoke the table's `cost-report` entry,
-  omitting `--task` for every task.
+  omitting `--task` for the first bounded task page.
 
-  It prints JSON with a `tasks` list and an `unrecorded` list. Relay each
-  quantity separately, and every `unknown` value as `unknown`. Never total the
-  quantities or claim a saving. A non-zero exit writes its diagnostic to stderr
-  for an unusable state file or an unknown task; report it and stop. The output
-  contract is `skills/herdr-foreman/state-schema.md` (Writer / Reader Contract).
+  Follow the Task Cost contract in
+  `skills/herdr-foreman/references/decision-context.md`. Retain page coverage and
+  unknown quantities; never total unlike resources or claim a saving. Follow
+  a continuation only when the current question needs it. On refusal, report
+  the diagnostic and preserve unread evidence; do not dump the owner file.
 
 For every other request, read `HERDR_ENV` and the controller's attached context before running scripts.
 

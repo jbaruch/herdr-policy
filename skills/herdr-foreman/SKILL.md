@@ -1,14 +1,13 @@
 ---
 name: herdr-foreman
 description: >
-  Assign and delegate Herdr work, supervise workers, recover interrupted
-  assignments, release verified changes and inspect dispatch readiness. Retrieve
-  saved follow-ups, handoffs, retrospectives, task cost and coordination
-  measurements. Use when the user asks the Herdr foreman to assign an issue,
-  delegate a task, supervise the crew, recover a worker, release a change,
-  check ready work or retrieve those saved records. Live coordination requires
-  the verified foreman; workers retain their assignment. Ordinary coding skips
-  this skill.
+  Delegate Herdr tasks, supervise workers, recover assignments, release verified
+  changes and inspect readiness. Retrieve follow-ups, handoffs, retrospectives,
+  task cost, coordination measurements and named GitHub evidence. Use when the
+  Herdr foreman is asked to assign an issue, delegate work, supervise the crew,
+  recover a worker, release a change, check ready work or retrieve task context.
+  Live coordination requires the verified foreman. Workers retain their
+  assignment; ordinary coding skips this skill.
 ---
 
 # Herdr Foreman Skill
@@ -18,7 +17,7 @@ This skill is an action router — pick the step that matches the user's intent 
 Prose paths use the verified plugin root; commands use its `HS` skill directory.
 Preserve the owner, holds, unknown deliveries and supervision obligations.
 Each offline action reads its named reference, runs the requested operation
-and finishes here. No action grants new task authority.
+and finishes here. Context grants no task or effect authority.
 
 ## Step 1 — Retrieve Coordination Measurements
 
@@ -62,13 +61,21 @@ skills/herdr-foreman/references/retrospectives.md
 
 ## Step 6 — Inspect Task Cost
 
-Use the Writer / Reader Contract; relay unknowns and invent no totals:
+Use the Task Cost contract; retain unknowns and page coverage:
 
 ```text
-skills/herdr-foreman/state-schema.md
+skills/herdr-foreman/references/decision-context.md
 ```
 
-## Step 7 — Coordinate Live Work
+## Step 7 — Retrieve GitHub Evidence
+
+Use the GitHub Lookup contract for one named source and question:
+
+```text
+skills/herdr-foreman/references/decision-context.md
+```
+
+## Step 8 — Coordinate Live Work
 
 For owner-attested remote context, read:
 
@@ -95,12 +102,11 @@ bash "$HS/foreman.sh" role-context
 Success returns read-only JSON with `role`, `verified`, `reason`, `context`
 and the owner path. If lookup or execution fails, report its diagnostic,
 restore that installation or owner, and finish here. Select no replacement
-store to obtain a role. Every returned authority field is false.
+store to obtain a role.
 
-- Verified `foreman`: follow the returned operating context. Continue immediately to its workflow at the saved decision/step and load only the reference it names. Retain Stop and handoff gates; finish this skill only at that workflow's authorized boundary.
+- Verified `foreman`: follow the operating context and continue immediately to its workflow at the saved decision/step. Load only its named reference. Retain Stop and handoff gates; finish only at its authorized boundary.
 - Verified `worker`: follow its returned protocol and delivered assignment; finish this skill here.
 - `standalone`: perform ordinary authorized work under general coding policy; finish this skill here.
-- `recovery` or `unverified`: follow only the recovery context or diagnostic and obtain a verified role before coordination. Finish here without starting work or clearing obligations.
+- `recovery` or `unverified`: follow recovery instructions; restore a verified role before coordination. Finish here without clearing obligations.
 
-Do not preload the legacy plan, later stages or owner history. Role selection
-grants no dispatch, acceptance, reset or release authority.
+Do not preload the legacy plan, later stages or owner history.

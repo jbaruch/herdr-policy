@@ -2,7 +2,8 @@
 
 The foreman owner keeps one capped counter and a fixed creation receipt, never report bodies or
 history. All load-set decisions/questions/offsets for unchanged task facts
-share an allowance within a foreman-session cap. Changed task facts refresh
+share an allowance within a foreman-session cap. Other current-context views
+debit that same session cap without inventing task records. Changed task facts refresh
 only that task's allowance; only a changed supervision-bound foreman identity
 refreshes the session cap. This is an exposure gate, never
 dispatch, review, acceptance or release authority.
@@ -177,6 +178,15 @@ def _load(path, state_path, foreman, known):
     return _empty(state_path, foreman)
 
 
+def _commit(path, selected, document, receipt_path, known):
+    if len((json.dumps(document, indent=2) + "\n").encode()) > STORE_BYTES:
+        raise UsageError("The context counter document exceeds its storage bound. Keep its counters and unresolved obligations; resume through a fresh verified foreman context instead of deleting state.",
+                         {"reason": "decision_context_capacity", "context_complete": False})
+    save_state(path, document)
+    if not known:
+        _remember(receipt_path, selected)
+
+
 def consume(state_path, packet, state_sha256, identity):
     """Debit exact printed JSON bytes durably before returning content.
 
@@ -217,10 +227,41 @@ def consume(state_path, packet, state_sha256, identity):
         document["tasks"][task] = {"schema_version": SCHEMA_VERSION, "state_sha256": state_sha256,
                                    "returned_bytes": used + returned, "responses": responses + 1}
         document["returned_bytes"] += returned
-        if len((json.dumps(document, indent=2) + "\n").encode()) > STORE_BYTES:
-            raise UsageError("The context counter document exceeds its storage bound. Keep its counters and unresolved obligations; resume through a fresh verified foreman context instead of deleting state.",
-                             {"reason": "decision_context_capacity", "context_complete": False})
-        save_state(path, document)
-        if not known:
-            _remember(receipt_path, selected)
+        _commit(path, selected, document, receipt_path, known)
     return result
+
+
+def consume_view(state_path, result, identity, *, diagnostic_text=""):
+    """Debit a view's exact stdout/stderr bytes without changing its schema.
+
+    The existing counter and fixed creation receipt are the only writes.
+    Bootstrap capsules are not owner-history views and do not call this API.
+    No view name, page, query or changed task can refresh the session cap.
+    """
+    returned = len((json.dumps(result, indent=2) + "\n" + diagnostic_text).encode("utf-8"))
+    _consume_output(state_path, returned, identity)
+    return result
+
+
+def consume_diagnostic(state_path, text, identity):
+    """Charge a complete bounded stderr response, never its private source."""
+    _consume_output(state_path, len(text.encode("utf-8")), identity)
+
+
+def _consume_output(state_path, returned, identity):
+    if returned > OUTPUT_BYTES:
+        raise UsageError("Current context and its diagnostics exceed the response budget. Select a narrower page or evidence question; keep unread evidence and gates unresolved.",
+                         {"reason": "context_budget_exceeded", "budget_bytes": OUTPUT_BYTES, "context_complete": False})
+    selected = Path(state_path).expanduser().resolve()
+    path = location(selected)
+    foreman = _foreman(identity)
+    with state_lock(path):
+        receipt_path = presence_location(selected)
+        known = _presence(receipt_path, selected)
+        document = _load(path, selected, foreman, known)
+        if document["returned_bytes"] + returned > FOREMAN_BYTES:
+            raise UsageError("Current context exhausted the shared foreman-session allowance. Preserve unread evidence, goals, holds and unknown deliveries; use the existing verified continuation or task-owner route. Changing API, page or question does not refund the allowance.",
+                             {"reason": "decision_context_budget_exceeded", "scope": "foreman_session",
+                              "previously_returned_bytes": document["returned_bytes"], "context_complete": False})
+        document["returned_bytes"] += returned
+        _commit(path, selected, document, receipt_path, known)

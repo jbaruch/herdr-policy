@@ -26,7 +26,7 @@ import sys
 from . import runnable
 from .attention import GATING_KINDS
 from .chronology import latest_assignment, timestamp
-from .context_output import OUTPUT_BYTES
+from .context_output import OUTPUT_BYTES, utf8_size
 from .foreman_queue import waiting
 from .errors import StateError, UsageError
 from .recovery import PENDING_STATUSES, active_plans, confirmed_fix, current_approach, developer_reservations, task_statuses
@@ -109,7 +109,7 @@ def _bounded(result):
 
 def read_evidence(packet, path, question, offset=0):
     """Read one listed current reference without treating an excerpt as approval."""
-    if (not isinstance(question, str) or not question.strip() or len(question.encode("utf-8")) > 512
+    if (not isinstance(question, str) or not question.strip() or utf8_size(question, "the evidence question") > 512
             or type(offset) is not int or not 0 <= offset <= sys.maxsize):
         raise UsageError("Supply a specific evidence question of at most 512 bytes and a nonnegative byte offset.", {})
     if not any(row["path"] == path for row in packet["files"]):
@@ -206,7 +206,7 @@ def build(state, reports, attention_entries, busy_tasks, decision, *, task=None,
         if pending:
             # An unknown send outcome is reconciled before anything reads the
             # round as complete (Dispatch Safety).
-            examples = [identifier for identifier in pending if len(identifier.encode("utf-8")) <= 256][:8]
+            examples = [identifier for identifier in pending if utf8_size(identifier, "the pending dispatch identity") <= 256][:8]
             raise UsageError("Task has dispatches with an unknown send outcome: {}. Reconcile through `{}` before this decision.".format(
                 ", ".join(examples), runnable.command("reconcile")), {"pending": examples, "pending_count": len(pending)})
     start = _round_start(assignments, task) if task is not None else None
@@ -217,7 +217,7 @@ def build(state, reports, attention_entries, busy_tasks, decision, *, task=None,
             # Every dispatch is enrolled before its brief is sent (Fleet
             # Supervision); a missing enrollment is lost evidence, not "no report".
             raise UsageError("Dispatches have no supervision enrollment with a report path. Restore supervision or reconcile before this decision.",
-                             {"unenrolled": [identifier for identifier in unenrolled if len(identifier.encode("utf-8")) <= 256][:8],
+                             {"unenrolled": [identifier for identifier in unenrolled if utf8_size(identifier, "the unenrolled dispatch identity") <= 256][:8],
                               "unenrolled_count": len(unenrolled)})
     if decision == "plan":
         records["queue"] = next((entry for entry in waiting(store, assignments, busy_tasks)["queue"]

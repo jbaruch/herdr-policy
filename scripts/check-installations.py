@@ -73,7 +73,7 @@ def revision(value):
 def verify_runtime_payload(skill):
     required = ("foreman/remote_owner.py", "classify/extract-answer.py",
                 "foreman/coordination_metrics.py", "measurements.py", "references/coordination-metrics.md",
-                "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py",
+                "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py", "foreman/github_context.py",
                 "references/foreman-context.md", "references/worker-context.md",
                 "references/context-recovery.md", "references/workflow-worker.md",
                 "references/foreman-workflow.md", "references/bootstrap.md",
