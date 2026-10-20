@@ -120,6 +120,25 @@ Session metadata changes do not refund charges. Loss of a previously recorded
 binding refuses; first binding carries prior offline charges. Capacity exhaustion preserves existing
 records instead of evicting spent allowance. There is no manual reset command.
 
+## Whole-state inspection
+
+`state` and `status` enforce the same per-response `OUTPUT_BYTES` limit from
+`skills/herdr-foreman/foreman/context_output.py`, including JSON escaping and
+the final newline. Small responses retain their existing document schemas and
+fields. A large response exits 1 with a JSON diagnostic on stderr and no partial
+stdout. It neither truncates owner history nor marks unexamined tasks complete.
+
+For a large owner file, select one known canonical identity with
+`status --task <task>`, or use `load-set` for the pending decision. The selected
+status has the same task record as the unfiltered command; other tasks remain
+in their owner file. An unknown or oversized selector refuses rather than
+returning an empty success. This inspection adds no owner records or archives
+and retains the existing state-loader migration behavior.
+
+These two commands have a per-response limit only. They do not debit the
+`load-set` aggregate counter. Do not work around an output refusal by loading
+the whole owner file into context.
+
 ## Scope and rollout
 
 This allowance covers `load-set` and its evidence reads. It does not count other

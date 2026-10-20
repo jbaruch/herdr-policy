@@ -450,7 +450,8 @@ def build_parser():
         else:
             record_parser.add_argument("--record", required=True, metavar="FILE", help="Structured evidence JSON; see dispatch-recovery.md.")
         record_parser.add_argument("--now", metavar="ISO8601")
-    sub.add_parser("status", parents=[common], help="Show implementation budgets and paused work separately from active audit workers.")
+    status_parser = sub.add_parser("status", parents=[common], help="Show implementation budgets and paused work within the stdout budget; select one task for a large owner file.")
+    status_parser.add_argument("--task", help="One known canonical task; leaves every other task unresolved.")
     reset_parser = sub.add_parser("foreman-reset", parents=[common], help="Schedule an explicitly requested maintenance reset, never an automatic round-boundary reset.")
     reset_parser.add_argument("--explicit-reset", action="store_true", help="Declare an existing explicit operator request for this maintenance reset; ordinary checkpoints do not use it.")
     reset_parser.add_argument("--stow", default="latest", help="Stow id the reset resumes from (default: the latest).")
@@ -2169,13 +2170,25 @@ def _apply(args, client, warn, trace, hold_gates):
 
 
 def cmd_state(args, client=None, warn=None, trace=None):
-    return load_state(_state_path(args), warn=warn), None
+    return context_output.enforce_budget(
+        load_state(_state_path(args), warn=warn),
+        "State exceeds its printed output budget. Preserve the owner file and use `{}` or `{}` for the specific pending question; do not dump or copy its history into context.".format(
+            runnable.command("status --task <task>"), runnable.command("load-set --decision diagnose --task <task>"))), None
 
 
 def cmd_status(args, client=None, warn=None, trace=None):
+    if args.task is not None and len(args.task.encode("utf-8")) > 1_024:
+        raise UsageError("Select a known canonical task identity of at most 1024 bytes.", {})
     state = load_state(_state_path(args), warn=warn)
-    return {"schema_version": recovery.RECOVERY_SCHEMA_VERSION,
-            "tasks": recovery.task_statuses(state["recovery"], state["assignments"])}, None
+    tasks = recovery.task_statuses(state["recovery"], state["assignments"])
+    if args.task is not None:
+        if args.task not in tasks:
+            raise UsageError("The selected task has no recorded implementation status. Keep its outcome unresolved and select its canonical identity from the task's owning GitHub issue or dispatch receipt.", {})
+        tasks = {args.task: tasks[args.task]}
+    return context_output.enforce_budget(
+        {"schema_version": recovery.RECOVERY_SCHEMA_VERSION, "tasks": tasks},
+        "Status exceeds its printed output budget. Select one known canonical task with `{}`; every unexamined task remains unresolved.".format(
+            runnable.command("status --task <task>"))), None
 
 
 def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
