@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Interpret measured quota groups consistently with the canonical planner. Empty group IDs do not pool unrelated accounts; preserve the lowest known headroom for explicitly shared windows. Verify readiness and native fixture dispatch can select an available provider while another account is exhausted.
+
 ## 0.12.0 — 2026-10-20
 
 - Package the existing frozen-evidence producer for both channels. Add explicit `measurements.py collect` with report-bound native timing, verified assessment receipts, bounded summaries and optional private reports containing the sanitized snapshot, provenance and summary. Preserve the development export command and selection of older trusted readers.
