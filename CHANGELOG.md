@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.1 — 2026-10-20
 
 - Interpret measured quota groups consistently with the canonical planner. Empty group IDs do not pool unrelated accounts; preserve the lowest known headroom for explicitly shared windows. Verify readiness and native fixture dispatch can select an available provider while another account is exhausted.
 - Exclude a task from readiness when a new active enrollment lacks a confirmed dispatch owner, even after a valid executor pulse. Share the native capability's task-scoped ownership check; preserve other tasks, owner records and native-effect refusal.
