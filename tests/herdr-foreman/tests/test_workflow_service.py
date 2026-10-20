@@ -237,7 +237,8 @@ class WorkflowServiceTest(unittest.TestCase):
         helper = self.repository / ".tessl/plugins/jbaruch/coding-policy/skills/release/review-lanes.sh"
         helper.unlink()
         before = self.path.read_bytes()
-        with self.assertRaisesRegex(UsageError, "0.5.0"):
+        selected = self.repository / ".tessl/plugins/jbaruch/coding-policy"
+        with patch.dict(os.environ, {"HERDR_CODING_POLICY_ROOT": str(selected)}), self.assertRaisesRegex(UsageError, "0.5.0"):
             self.admit()
         self.assertEqual(self.path.read_bytes(), before)
         self.assertFalse(Path(self.document["artifact_directory"]).exists())
