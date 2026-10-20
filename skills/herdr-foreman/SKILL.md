@@ -26,8 +26,9 @@ skills/herdr-foreman/references/progression.md
 ```
 
 That scoped contract owns ordinary progression, report handling, context floor
-and continuation. When selecting config-schema-9 native capacity limits, read
-this reference before admission:
+and continuation. Retain current supervision, assessment and Stop obligations;
+this adapter supplies no release approval. When selecting config-schema-9 native
+capacity limits, read this reference before admission:
 
 ```text
 skills/herdr-foreman/references/workflow-capacity.md
@@ -60,15 +61,6 @@ Each command resolves `HS` to its installed Herdr skill or that skill in a
 herdr-policy clone. Repeat the resolver in every call. Prose `skills/...`
 paths are relative to the package root.
 
-Explicitly admitted task progression follows:
-
-```text
-skills/herdr-foreman/references/progression.md
-```
-
-Retain the current supervision, assessment and Stop obligations; this adapter
-supplies no release approval.
-
 Read the lookup rule before running these command blocks:
 
 ```text
@@ -95,7 +87,7 @@ bash "$HS/foreman.sh" <command-and-arguments>
 | `load-set --decision diagnose --task <task>` | Step 13, diagnosis mode |
 | `cost-report --task <task>` | Offline cost lookup in Step 1 |
 
-`load-set` prints schema-2 JSON with a question-specific retrieval menu in `files`.
+`load-set` prints schema-3 JSON with a question-specific retrieval menu in `files`.
 Retrieve only the evidence needed for the pending question, within the command's
 budgets. Read every report fully when Team Operation requires it for gating.
 A file with `present: false` remains an unresolved gap. A non-zero exit names a
@@ -214,12 +206,9 @@ skills/herdr-foreman/references/round-preflight.md
 
 ## Step 3 — Verify Authority for the Repo
 
-Step 2 includes this check. For a standalone authority check, run the documented
-command and record namespace evidence. Non-owned repositories require explicit
-per-action permission; otherwise remain read-only or finish here. On non-zero,
+For an authority-only check, record namespace evidence. Non-owned repositories
+require explicit per-action permission; otherwise remain read-only or finish here. On non-zero,
 report the diagnostic and finish here. Proceed immediately to Step 4.
-
-Read before acting:
 
 ```text
 skills/herdr-foreman/references/round-preflight.md
@@ -227,12 +216,9 @@ skills/herdr-foreman/references/round-preflight.md
 
 ## Step 4 — Measure Headroom
 
-Step 2 includes this measurement. For a re-measurement, run the documented owner
-command. Preserve failed measurements and unknown billing; recover required seats
-through their owner route. Proceed immediately to Step 5 when required readings
+For a headroom-only check, preserve failed measurements and unknown billing;
+recover required seats through their owner route. Proceed immediately to Step 5 when required readings
 are available.
-
-Read before acting:
 
 ```text
 skills/herdr-foreman/references/round-preflight.md

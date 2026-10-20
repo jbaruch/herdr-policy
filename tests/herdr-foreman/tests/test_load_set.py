@@ -7,6 +7,8 @@ _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[3] / "skills/
 
 import io
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -269,6 +271,34 @@ class DecisionTest(unittest.TestCase):
 
 
 class LoadSetCommandTest(CliCase):
+    def test_nonregular_evidence_refuses_without_waiting_for_a_fifo_writer(self):
+        fifo = self.tmp / "report.fifo"
+        os.mkfifo(fifo, 0o600)
+        unrelated = self.tmp / "unrelated.txt"
+        unrelated.write_text("unrelated fixture must not enter decision context")
+        linked = self.tmp / "linked-report.md"
+        linked.symlink_to(unrelated)
+        program = '''import json,sys
+from foreman.load_set import read_evidence
+from foreman.errors import StateError
+path=sys.argv[1]
+packet={"files":[{"path":path}]}
+try:
+    read_evidence(packet,path,"What evidence is available?")
+except StateError as exc:
+    print(json.dumps(exc.to_dict()))
+else:
+    raise RuntimeError("Nonregular evidence returned content")
+'''
+        environ = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+                   "PYTHONPATH": str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman")}
+        for path in (fifo, self.tmp, linked):
+            result = subprocess.run([sys.executable, "-c", program, str(path)], env=environ,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["error"], "state_error")
+            self.assertNotIn("unrelated fixture", result.stdout)
+
     def test_cli_retains_the_actual_supervision_hold_as_an_observation(self):
         from foreman import supervision
         state = empty_state()
@@ -305,7 +335,7 @@ class LoadSetCommandTest(CliCase):
         code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
         self.assertEqual(code, 0, err)
         result = json.loads(out)
-        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["schema_version"], 3)
         self.assertFalse(result["history_included"])
         self.assertFalse(result["authorizes_progression"])
         self.assertEqual((result["decision"], result["core"]["task"]["scope"]), ("plan", "fix it"))
@@ -343,16 +373,43 @@ class LoadSetCommandTest(CliCase):
                 self.assertEqual(code, 1)
                 self.assertIn(message, err)
 
-    def test_the_command_creates_no_files(self):
+    def test_the_command_debits_context_without_changing_operational_owner_facts(self):
+        from foreman.decision_budget import location
         state = empty_state()
         register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "fix it",
                                           "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
         add_assignment(state, DEV_0, "developer", "grok", task="t")
         save_state(self.state, state)
-        before = sorted(self.tmp.rglob("*"))
-        code, _, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
+        before = self.state.read_bytes()
+        code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
         self.assertEqual(code, 0, err)
-        self.assertEqual(sorted(self.tmp.rglob("*")), before)
+        self.assertEqual(self.state.read_bytes(), before)
+        counter = json.loads(location(self.state).read_text())
+        self.assertEqual(counter["tasks"]["t"]["returned_bytes"], len(out.encode()))
+        self.assertEqual(json.loads(out)["aggregate_budget"]["previously_returned_bytes"], 0)
+
+    def test_repeated_cli_reads_share_the_allowance_and_preserve_all_owner_obligations(self):
+        from foreman.decision_budget import location
+        state = empty_state()
+        register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "x" * 3500,
+                                          "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
+        save_state(self.state, state)
+        before = self.state.read_bytes()
+        results = []
+        for _ in range(20):
+            self.out, self.err = io.StringIO(), io.StringIO()
+            code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
+            if code:
+                self.assertEqual(out, "")
+                self.assertIn("decision_context_budget_exceeded", err)
+                break
+            results.append(json.loads(out))
+        else:
+            self.fail("CLI repeated the same task context without exhausting allowance")
+        self.assertGreater(len(results), 1)
+        self.assertGreater(results[-1]["aggregate_budget"]["previously_returned_bytes"], 0)
+        self.assertEqual(self.state.read_bytes(), before)
+        self.assertEqual(len(json.loads(location(self.state).read_text())["tasks"]), 1)
 
     def test_an_unreadable_listed_path_fails_with_a_diagnostic(self):
         from foreman import cli

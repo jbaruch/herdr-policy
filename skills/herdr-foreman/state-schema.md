@@ -1174,6 +1174,7 @@ The independent continuity stores do not change this dispatch-state schema.
 | Model capabilities, sourced and dated | `<selected-state>.capabilities.json` | `skills/herdr-foreman/references/model-tiers.md`, Capability table |
 | Provisional successor placements and recalibration history | Same capability-table schema 2; entries remain schema 1 | `skills/herdr-foreman/references/successor-placement.md`, Saved schema and readers |
 | Report gates from classifier labels and blocking verdicts | `<selected-state>.report-gates.json` | `skills/herdr-foreman/references/report-classifier.md`, Sidecar schema 2 |
+| Aggregate decision-context allowance and creation receipt | `<selected-state>.context.json`, `<selected-state>.context-presence.json` | `skills/herdr-foreman/references/decision-context.md`, Counter schema |
 
 Resolve the selected state path before deriving these locations. Each store and
 its records have their own schema version and lock. Their offline readers never

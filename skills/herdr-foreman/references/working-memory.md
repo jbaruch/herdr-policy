@@ -218,9 +218,10 @@ foreman load-set --decision wake --enrollment <enrollment-id>
 foreman load-set --decision diagnose --task <task> --read-file <listed-reference> --question <specific-question> [--offset <byte-offset>]
 ```
 
-Schema 2 adds `budget`, `history_included: false` and
-`authorizes_progression: false`. This ephemeral view changes no persisted owner
-schema. It retains task/budget facts, task-local and global open attention,
+Schema 3 retains `budget`, `history_included: false` and
+`authorizes_progression: false`, and adds `aggregate_budget`. The command debits
+one bounded private context counter and retains its fixed creation receipt; operational owner schemas remain
+unchanged. It retains task/budget facts, task-local and global open attention,
 unknown deliveries of every role, and current-round references.
 The supervision view retains unresumed hold references even when an event changes
 their original boundary. `boundary_held: false` never means the operator cleared
@@ -240,11 +241,17 @@ continuations end at complete UTF-8 sequences. Invalid UTF-8 or an offset inside
 a character refuses with a recovery instruction; no replacement characters are
 substituted. Escaped text still obeys the printed output budget.
 
-The output and evidence-read budgets belong to `OUTPUT_BYTES` and `READ_BYTES`
+The response and evidence-read bounds belong to `OUTPUT_BYTES` and `READ_BYTES`
 in `skills/herdr-foreman/foreman/load_set.py`. Oversized current obligations fail
 visibly rather than being silently truncated. Unknown tasks or enrollments refuse.
-Readers requiring schema 1 must update before consuming schema 2; neither shape
+Readers requiring earlier view schemas must update before consuming schema 3; no shape
 grants progression authority.
+
+The aggregate allowance, error recovery and counter schema bind here:
+
+```text
+skills/herdr-foreman/references/decision-context.md
+```
 
 GitHub owns durable issue, PR, review and delivery history. Retrieve historical
 evidence by task and question with an explicit output budget. Do not mirror it
@@ -271,5 +278,6 @@ CLI context responses use the view schema in
 The owner enforces the printed-byte bound before emitting JSON. Page counts,
 continuations and `context_complete` describe the selected records, not task
 acceptance; `authorizes_progression` remains false. Readiness still requires
-current owner checks. Per-decision aggregate budgets and artifact retirement
-remain separate requirements under issue #11.
+current owner checks. `load-set` uses its separately versioned view and aggregate
+allowance above. Aggregate coverage of other context commands, targeted GitHub
+retrieval and historical artifact retirement remain requirements under issue #11.

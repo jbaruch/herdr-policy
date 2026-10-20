@@ -735,7 +735,7 @@ workstation's thin anchor.
 - Before a PR exists, the developer's own evidence is the branch CI its push triggered
 - On an open PR, the developer reads that evidence with `skills/release/poll-pr-reviews.sh`, never the pre-merge watch
 - The developer reports each reviewer lane's observed state, including whether a request is pending, whoever asked for it
-- Waiting on a review the role cannot request follows `skills/release/references/release-contract.md` Pre-Merge Watch Mechanics
+- Waiting on a review the role cannot request follows Pre-Merge Watch Mechanics in the selected compatible `jbaruch/coding-policy` bundle's `skills/release/references/release-contract.md`
 - The developer pushes the branch and stops
 - Advisory findings are recorded and do not create another push, verification round or target-task prerequisite
 - A shared GitHub account posts internal reviews as COMMENT reviews

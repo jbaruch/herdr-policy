@@ -12,8 +12,9 @@ make this more than a directory move:
 - Owner stores carry a `state_path` identity field that must equal the
   canonical state path, or the store refuses to load. `migrate` rewrites
   every `state_path` field holding the old canonical path to the new one. A
-  pending retrospective journal's derived ancestry digest is rebased with
-  that identity; no record shape or version changes
+  context creation receipt's `state_path_sha256` and a pending retrospective
+  journal's derived ancestry digest are rebased with that identity; no record
+  shape or version changes
 - Records also quote old absolute paths as history: stow required reads,
   retrospective notes, attention evidence. Rewriting history is forbidden, so
   the old home is left as a symlink to the new one and every quoted path
@@ -175,12 +176,15 @@ def _held_locks(directory):
 
 
 def _rewrite_identity(value, old, new):
-    """Replace `state_path` fields equal to `old`; return (value, count)."""
+    """Rebind named state-path identities and hashes; return (value, count)."""
     if isinstance(value, dict):
         count = 0
         for key, item in value.items():
             if key == "state_path" and item == old:
                 value[key] = new
+                count += 1
+            elif key == "state_path_sha256" and item == _digest(old):
+                value[key] = _digest(new)
                 count += 1
             else:
                 value[key], found = _rewrite_identity(item, old, new)

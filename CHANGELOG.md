@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — 2026-10-20
+
+- Rebind the context creation receipt during the existing legacy home migration. Preserve charged counters and task-state hashes; interrupted moves remain held and finish idempotently on retry.
+- Detect a lost charged counter through a fixed private creation receipt instead of granting fresh allowance. Preserve charges through interrupted receipt creation, refuse unsupported receipts, and reject symlink evidence before reading its target.
+- Support validated attested-remote decision reads without inventing a native session value or refunding charges on lease/policy metadata changes. Preserve task allowances across unrelated event-boundary changes, and fit the final receipt with UTF-8-safe evidence continuations before charging output.
+- Keep a typed preflight contract at each stable authority/headroom resume step, remove the duplicate progression reference, and preserve explicit continuations. Identify the compatible coding-policy bundle as the provider of its release contract.
+- Enforce an aggregate printed-byte allowance across repeated `load-set` decisions and evidence reads for unchanged task facts, with a second cap across the bound foreman session. Task progression does not refund the session charge. Keep one private capped counter document, without copying reports or appending history. Counter exhaustion preserves unresolved evidence and directs existing task-owner or verified foreman reset/resume recovery.
+- Add load-set view schema 3 with an aggregate allowance receipt. Charge exact formatted output before returning it, retain spent allowance across processes and state-path aliases, and preserve corrupt, linked or unsupported counter files. Refuse nonregular evidence without a blocking open while holding the owner lock. Other context APIs and actual pilot measurements remain separate work.
+
 ## 0.7.0 — 2026-10-19
 
 - Add measurement-summary schema 2 and input schema 2 with explicit completed, pending and unmeasured queue states; retain schema-1 input support. Report known pending ages with bounded oldest lists and explicit exclusions. Merge overlapping known waits within each task and queue, retain blocked work and report holds separately. These calculations create no additional owner history and do not establish observed ROI.
