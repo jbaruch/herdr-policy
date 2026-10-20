@@ -13,7 +13,7 @@ to know goes in the report.
 
 ## Authority
 
-- Delegation follows `rules/agent-team-operation.md` Delegation. Use no native
+- Delegation follows the scoped worker contract below. Use no native
   subagent mechanism, including through tools, skills or CLI wrappers.
 - Record a need for delegated help as a staffing need in your report for the
   foreman. Start no child agent and assume no dispatch authority; continue only
@@ -67,13 +67,15 @@ to know goes in the report.
 - If your brief names a fixture root, create it yourself under that exact name;
   a directory that already exists, or one reached through a symlink, is a stop,
   not a root to reuse. Fixtures go there and nothing else does.
+  Keep the root outside every ancestor that configures the tool.
   Prove the tool's effective root inside it before any command writes through
   the tool, record a digest of every user-level file the run can reach before
   and after (a hash listing, never a copy of a directory tree), copy only the
   single files the run is expected to change and restore those, stop on an
   unexpected change and report it unrestored, and
-  remove the root when you finish (`skills/herdr-foreman/references/team-operation.md` Writers and
-  Checkouts carries the preconditions).
+  never reinstall the operator's environment as automatic recovery, and
+  remove the root when you finish (these are the worker fixture
+  preconditions).
 - Write nowhere else — not the shared checkout, not your home directory, not a
   path no brief named. Restoring a user-level file from the pre-run copy you
   made of it is the one exception, and only for a file the run itself
@@ -87,9 +89,11 @@ to know goes in the report.
 - The resolved rule index is `{{POLICY_INDEX}}`; follow its links or native-policy routing to every applicable rule. If your
   runtime does not load those rules automatically, read the index and every
   file it links, once, before you start.
-- Required read, whatever your runtime loads: the team-round contract at
-  `{{TEAM_OPERATION}}`. Read it in full, once, before you start. It binds this
-  round as rule content; no rule file carries it.
+- Required read, whatever your runtime loads: the scoped worker contract at
+  `{{TEAM_OPERATION}}`. Read it in full, once, before you start. This field
+  retains its compatibility name; it points to the worker protocol, not the
+  foreman workflow. Read only your role template and current named evidence
+  beyond that protocol. The brief and applicable general rules remain binding.
 - Your runtime may have inherited a parent rule reference — a `.tessl/RULES.md`
   or similar — that does not resolve from your worktree. Expected. The index
   above is authoritative and complete. Do not chase the broken reference, do not

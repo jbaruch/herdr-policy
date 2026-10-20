@@ -266,7 +266,7 @@ class CliSurfaceTest(unittest.TestCase):
                                               {"src/cli/main.py": ["    return payload"]}), [])
 
     def test_a_declared_refusal_marker_fires(self):
-        # rules/agent-team-operation.md: a new user-facing refusal path is a
+        # skills/herdr-foreman/references/team-scope.md: a new user-facing refusal path is a
         # UX and product trigger, not only a new command or flag.
         found = triggers.cli_surface(declaration(cli_surface_markers=["raise UsageError("]),
                                      {"src/cli/main.py": "M"},
@@ -367,7 +367,7 @@ class ThisRepoDeclarationTest(unittest.TestCase):
         self.declaration = triggers.load_declaration(self.repo)
 
     def test_the_modules_that_gate_generated_evidence_are_trust_boundaries(self):
-        # rules/agent-team-operation.md: anything deciding whether generated
+        # skills/herdr-foreman/references/team-scope.md: anything deciding whether generated
         # content or a proposed change is safe triggers security.
         for path in ("skills/herdr-foreman/foreman/recovery.py",
                      "skills/herdr-foreman/foreman/engagement.py",
@@ -381,7 +381,12 @@ class ThisRepoDeclarationTest(unittest.TestCase):
                      "skills/herdr-foreman/foreman/triggers.py",
                      "skills/herdr-foreman/foreman.sh",
                      ".herdr/triggers.json",
-                     "rules/agent-team-operation.md",
+                     "skills/herdr-foreman/references/team-scope.md",
+                     "skills/herdr-foreman/references/bootstrap.md",
+                     "skills/herdr-foreman/references/coding-policy-integration.md",
+                     "skills/herdr-foreman/references/worker-context.md",
+                     "skills/herdr-foreman/references/workflow-worker.md",
+                     "skills/herdr-foreman/foreman/role_context.py",
                      "skills/herdr-foreman/native-hook.sh",
                      "skills/herdr-foreman/foreman/policy_paths.py",
                      ".github/workflows/tests.yml"):

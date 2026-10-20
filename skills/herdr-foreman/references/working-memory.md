@@ -75,7 +75,7 @@ claiming that recalled context proves present competence or independence.
 
 ## Stow before replacing the foreman
 
-Stow at every round boundary (SKILL.md Step 17), then continue in the same
+Stow at every round boundary (`skills/herdr-foreman/references/foreman-workflow.md` Step 17), then continue in the same
 context with the active goal intact. A checkpoint never schedules a reset or
 permits stopping supervision. Only an explicit operator-requested maintenance
 reset uses `foreman foreman-reset --explicit-reset`; it refuses unless the stow is

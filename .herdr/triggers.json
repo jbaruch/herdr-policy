@@ -15,7 +15,12 @@
     "skills/herdr-foreman/*.sh",
     "skills/herdr-foreman/foreman/*.py",
     "skills/herdr-foreman/hooks/*",
-    "skills/herdr-foreman/references/team-operation.md"
+    "skills/herdr-foreman/references/team-operation.md",
+    "skills/herdr-foreman/references/team-scope.md",
+    "skills/herdr-foreman/references/bootstrap.md",
+    "skills/herdr-foreman/references/coding-policy-integration.md",
+    "skills/herdr-foreman/references/worker-context.md",
+    "skills/herdr-foreman/references/workflow-worker.md"
   ],
   "cli_spec_paths": [
     "skills/herdr-foreman/foreman/*.py",

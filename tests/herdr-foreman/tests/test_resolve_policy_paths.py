@@ -17,7 +17,7 @@ import unittest
 
 SCRIPT = (Path(__file__).resolve().parents[3] / "skills/herdr-foreman") / "resolve-policy-paths.sh"
 RELEASE = Path("plugins/jbaruch/coding-policy/skills/release/SKILL.md")
-TEAM = Path("references/team-operation.md")
+TEAM = Path("references/worker-context.md")
 
 
 class ResolvePolicyPaths(unittest.TestCase):

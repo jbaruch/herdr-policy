@@ -367,7 +367,7 @@ main() {
   # Resolver-produced policy paths are explicit brief inputs. Custom templates
   # need not carry POLICY_INDEX or RELEASE_SKILL; any supplied artifact must
   # remain readable at compose. TEAM_OPERATION is different: every worker brief
-  # names the team-round contract as a required read (rules/agent-team-operation.md
+  # names the team-round contract as a required read (skills/herdr-foreman/references/team-scope.md
   # Team Round Contract), so the key is required and COMMON.md must render it,
   # whichever templates the foreman passes.
   local policy_key policy_path policy_present

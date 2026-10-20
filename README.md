@@ -6,16 +6,13 @@ Herdr team coordination policy, distributed from the same authored files through
 
 ## Contents
 
-The `herdr-foreman` skill owns dispatch, identity, reports, supervision, state and recovery. The `herdr-standup` skill asks idle workers for a bounded status update. Team rules, templates and the native reset, Stop and startup hooks ship with those skills.
+The `herdr-foreman` skill owns dispatch, identity, reports, supervision, state and recovery. The `herdr-standup` skill asks idle workers for a bounded status update. Role contracts, templates and the shared reset, Stop and startup hooks ship with those skills.
 
 General coding and release policy belongs to [jbaruch/coding-policy](https://github.com/jbaruch/coding-policy). Tests and fixtures remain in this repository under `tests/`; consumers do not install them. Extraction does not itself reduce model coordination cost. Background progression and context changes are tracked separately in [the epic](https://github.com/jbaruch/herdr-policy/issues/1).
 
 | Rule | Purpose |
 | --- | --- |
 | [herdr-scope](rules/herdr-scope.md) | Team applicability and package boundary |
-| [agent-team-operation](rules/agent-team-operation.md) | Existing team modes, delegation and foreman authority |
-| [herdr-bootstrap](rules/herdr-bootstrap.md) | Installed skill lookup across both channels |
-| [coding-policy-integration](rules/coding-policy-integration.md) | Team-specific exceptions and release integration |
 
 | Skill | Purpose |
 | --- | --- |
@@ -24,7 +21,7 @@ General coding and release policy belongs to [jbaruch/coding-policy](https://git
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.2.1** with the reduced coding-policy **0.4.0**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.10.0** with the reduced coding-policy **0.4.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
@@ -49,7 +46,23 @@ Tessl uses `.tessl-plugin/plugin.json`; ACR uses `agent-plugin.yaml`. ACR v1 has
 
 ## Supported Execution
 
-Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR also realizes Cursor's canonical hook surface; installation and lifecycle behavior are covered by conformance checks. Grok uses the Claude-compatible settings contract; the reset and Stop subprocess regression tests preserve its shell-command form. Portable Tessl startup reports cache maintenance from a dry run and defers to the registered native startup hooks.
+Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR also realizes Cursor's canonical hook surface; installation and lifecycle behavior are covered by conformance checks. Grok uses the Claude-compatible settings contract; the reset and Stop subprocess regression tests preserve its shell-command form. Portable Tessl startup uses the same role reader and defers to the registered native hooks. All ordinary-session hooks return before checking Python, Herdr or owner files.
+
+Only the small [routing rule](rules/herdr-scope.md) loads automatically. The
+skill entrypoints route to decision-specific references. SessionStart verifies
+the actual native session and existing owner/configured foreman seat before
+loading a bounded foreman, worker or recovery capsule. A bare `HERDR_ENV` grants
+no role. Known outages and holds preserve recovery obligations; changing context
+never clears them. Hooks cannot remove text already loaded into a session.
+
+Foremen load the [team contract](skills/herdr-foreman/references/team-scope.md)
+and [workflow](skills/herdr-foreman/references/foreman-workflow.md) only when
+applicable. Workers get their assignment and
+[worker protocol](skills/herdr-foreman/references/worker-context.md), plus the
+[report schema](skills/herdr-foreman/references/workflow-worker.md) for admitted
+workflows. They do not load foreman choreography. Reset and Stop retain their
+existing owners. Startup does not enumerate history or run cache maintenance.
+Cursor's hook format is supported; it does not add a native Herdr foreman kind.
 
 Inspect current admitted-task readiness with the foreman skill's `workflow-readiness`
 command. Its bounded pages distinguish dispatchable work, exclusions and unmeasured

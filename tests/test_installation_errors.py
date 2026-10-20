@@ -78,7 +78,12 @@ class InstallationErrorsTest(unittest.TestCase):
                 CHECK.verify_runtime_payload(skill)
             (skill / "classify").mkdir()
             (skill / "classify/extract-answer.py").write_text("runtime envelope decoder")
-            for name in ("foreman/coordination_metrics.py", "measurements.py", "references/coordination-metrics.md"):
+            for name in ("foreman/coordination_metrics.py", "measurements.py", "references/coordination-metrics.md",
+                         "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py",
+                         "references/foreman-context.md", "references/worker-context.md",
+                         "references/context-recovery.md", "references/workflow-worker.md",
+                         "references/foreman-workflow.md", "references/bootstrap.md",
+                         "references/team-scope.md", "references/coding-policy-integration.md"):
                 path = skill / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("packaged measurement runtime fixture")

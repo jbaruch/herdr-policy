@@ -76,7 +76,7 @@ check_mode_gate() { # <skill-name> <skill-file>
   # section would still pass -- an assertion that survives the removal of the
   # thing it asserts is not a test (rules/testing-standards.md Assertions).
   local body
-  body="$(awk 'BEGIN{n=0} /^---[[:space:]]*$/{n++; next} n>=2' "$skill")" \
+  body="$(cat "$skill")" \
     || die "could not strip the frontmatter from ${skill}"
   [[ -n "$body" ]] || die "${skill} has no body after its frontmatter"
 
@@ -263,7 +263,7 @@ boy_scout = (rules / "boy-scout.md").read_text()
 severity = (rules / "review-severity.md").read_text()
 advisory_directive = next(line for line in boy_scout.splitlines() if line.startswith("- **Advisory**"))
 risk_directive = next(line for line in boy_scout.splitlines() if line.startswith("- **Unrelated blocking risk**"))
-integration = (root.parent / "rules/coding-policy-integration.md").read_text()
+integration = (root.parent / "skills/herdr-foreman/references/coding-policy-integration.md").read_text()
 # Generic duties follow the published reduced-policy baseline; team-specific
 # routing belongs to Herdr.
 assert "current conversation" in risk_directive
@@ -324,12 +324,12 @@ check_delegation_contract() {
 import sys
 from pathlib import Path
 root = Path(sys.argv[1])
-rule = (root.parent / "rules/agent-team-operation.md").read_text()
+rule = (root.parent / "skills/herdr-foreman/references/team-scope.md").read_text()
 import os
 isolation = (Path(os.environ["HERDR_CODING_POLICY_ROOT"]) / "rules/agent-worktree-isolation.md").read_text()
-integration = (root.parent / "rules/coding-policy-integration.md").read_text()
+integration = (root.parent / "skills/herdr-foreman/references/coding-policy-integration.md").read_text()
 team = (root / "herdr-foreman/references/team-operation.md").read_text()
-skill = (root / "herdr-foreman/SKILL.md").read_text()
+skill = (root / "herdr-foreman/references/foreman-workflow.md").read_text()
 common = (root / "herdr-foreman/templates/COMMON.md").read_text()
 assert "## Delegation" in rule
 assert "Herdr-managed agents" in rule
@@ -341,9 +341,10 @@ assert "Standalone direct work follows every other applicable rule" in rule
 assert 'Agent tool\'s `isolation: "worktree"`' not in isolation
 assert "git worktree add" in isolation
 assert "foreman provisions each writer's worktree" in integration
-for surface in (team, skill, common):
-    assert "rules/agent-team-operation.md" in surface and "Delegation" in surface
-assert "staffing" in common and "foreman" in common
+for surface in (team, skill):
+    assert "skills/herdr-foreman/references/team-scope.md" in surface and "Delegation" in surface
+assert "scoped worker contract" in common and "{{TEAM_OPERATION}}" in common
+assert "no native" in common and "staffing" in common and "foreman" in common
 assert "unavailable" in rule and "native" in rule
 for name in ("reviewer", "tester", "specialist", "judge", "judge-diagnosis", "judge-weighing"):
     brief = (root / f"herdr-foreman/templates/brief-{name}.md").read_text()
@@ -361,7 +362,13 @@ import re
 import sys
 from pathlib import Path
 root = Path(sys.argv[1]).parent
-skill = (root / "skills/herdr-foreman/SKILL.md").read_text()
+router = (root / "skills/herdr-foreman/SKILL.md").read_text()
+standup = (root / "skills/herdr-standup/SKILL.md").read_text()
+assert len(router.encode()) <= 4096 and len(standup.encode()) <= 2048
+assert 'role-context' in router and 'role-context' in standup
+assert 'Verified `worker`' in router and '`standalone`' in router
+assert 'recovery' in router and 'holds' in router and 'unknown' in router
+skill = (root / "skills/herdr-foreman/references/foreman-workflow.md").read_text()
 sections = re.split(r"(?=^## Step \d+ — )", skill, flags=re.M)
 assert len(sections) == 18, "the resume contract needs all 17 steps"
 for number, section in enumerate(sections[1:], 1):
@@ -378,10 +385,11 @@ for number, section in enumerate(sections[1:], 1):
     assert heading in detail.splitlines(), (number, "contract lost its step", routes[0])
     assert "only the current step" in detail, routes[0]
 assert len(skill.encode("utf-8")) <= 20000, "entry point exceeds the 5000-token approximation"
-rule = (root / "rules/herdr-bootstrap.md").read_text()
+rule = (root / "skills/herdr-foreman/references/bootstrap.md").read_text()
 scope = next(line for line in rule.splitlines() if line.startswith("- Applies to "))
 allowed = {"skills/herdr-foreman/SKILL.md", "skills/herdr-standup/SKILL.md"}
-allowed.update(str(p.relative_to(root)) for p in (root / "skills/herdr-foreman/references").glob("*.md"))
+for kind in ("herdr-foreman", "herdr-standup"):
+    allowed.update(str(p.relative_to(root)) for p in (root / f"skills/{kind}/references").glob("*.md"))
 for file in (root / "skills").rglob("*.md"):
     if re.search(r"^[ \t]*HS=\.tessl/plugins/jbaruch/herdr-policy/skills/", file.read_text(), re.M):
         assert file.relative_to(root).as_posix() in allowed, (file, "bootstrap is outside its exact policy scope")
@@ -400,7 +408,7 @@ run_suite() {
   check_delegation_contract "$skills_root"
   check_foreman_reference_routes "$skills_root"
 
-  skill="${skills_root}/${MODE_GATE_SKILL}/SKILL.md"
+  skill="${skills_root}/${MODE_GATE_SKILL}/references/foreman-workflow.md"
   check_mode_gate "$MODE_GATE_SKILL" "$skill"
   check_mode_gate_regressions "$skill"
 

@@ -216,8 +216,8 @@ JSON
      && grep -q 'Skill(skill: "release")' "$o6b/brief-release.md"; then
     pass; else fail "packaged templates: expected exit 0 and a filled release brief, got RC=$RC ERR=$ERRTEXT"; fi
 
-  # Every worker receives the team-round contract path through COMMON.md.
-  if [[ $RC -eq 0 ]] && grep -Fq "the team-round contract at" "$o6b/COMMON.md" \
+  # Every worker receives the scoped worker contract through COMMON.md.
+  if [[ $RC -eq 0 ]] && grep -Fq "the scoped worker contract at" "$o6b/COMMON.md" \
      && grep -Fq "\`$TMP/package.diff\`. Read it in full" "$o6b/COMMON.md"; then
     pass; else fail "packaged COMMON.md must name TEAM_OPERATION as a required read"; fi
 
@@ -760,8 +760,8 @@ JSON
       "$oc/brief-advisor.md")" && [[ "$criteria_count" == "2" ]]; then
     pass; else fail "report contracts: the rendered brief must count 2 criteria, got ${criteria_count:-none}"; fi
   local contract_role
-  if [[ $RC -eq 0 ]] && grep -Fq 'rules/agent-team-operation.md' "$oc/COMMON.md" \
-     && grep -Fq 'Delegation. Use no native' "$oc/COMMON.md" \
+  if [[ $RC -eq 0 ]] && grep -Fq 'Delegation follows the scoped worker contract' "$oc/COMMON.md" \
+     && grep -Fq 'Use no native' "$oc/COMMON.md" \
      && grep -Fq 'staffing need in your report' "$oc/COMMON.md" \
      && grep -Fq 'Start no child agent' "$oc/COMMON.md"; then
     pass; else fail "packaged worker common must carry the Herdr-only delegation and foreman staffing route"; fi

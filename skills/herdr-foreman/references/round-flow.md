@@ -320,7 +320,7 @@ the findings and their proposed corrections. Preserve required judge rulings
 and operator decisions; scope classification never waives a blocking finding.
 Read this task's confirmed fix history, name the next fix number,
 and treat the return to Step 4 as a round boundary: log the round and checkpoint
-(SKILL.md Steps 16–17), recording the fix number, findings and prior reports in
+(`skills/herdr-foreman/references/foreman-workflow.md` Steps 16–17), recording the fix number, findings and prior reports in
 the stow, then take Step 17's Continue Route in the current context to Step 4 with self-contained briefs
 carrying them. Preserve the developer for retained fixes; use a fresh context for the
 fresh-worker stage. Never reset the counter during re-planning. At a contested
@@ -409,7 +409,7 @@ The COMMENT state carries no gate, so the FOREMAN is the gate: a recorded
 A reserved seat outside ordinary staffing, on the most capable model
 available. It holds no other responsibility. `skills/herdr-foreman/references/team-operation.md`
 Judge Seat is the contract; this section is the operational detail for
-`skills/herdr-foreman/SKILL.md` Step 13, whose seven steps run from
+`skills/herdr-foreman/references/foreman-workflow.md` Step 13, whose seven steps run from
 `skills/herdr-foreman/references/judge-round.md`.
 
 It runs in two modes. Adjudication settles a dispute or weighs findings;

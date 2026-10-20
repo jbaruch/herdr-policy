@@ -134,7 +134,7 @@ a saved handoff alone is not a live successor.
    <observed-id>` with the complete inspected set. Skip resume when there are no
    holds. An unmet condition or incomplete reconciliation prevents continuation;
    the reset itself grants no authority to clear a hold.
-5. Read the bounded `foreman-queue`, then run SKILL.md Step 1 and Step 2.
+5. Read the bounded `foreman-queue`, then run `skills/herdr-foreman/references/foreman-workflow.md` Step 1 and Step 2.
 6. Take the stow's continuation step, in place of Step 5, loading the bounded
    decision view and only the evidence selected for that question.
 

@@ -55,7 +55,7 @@ def current_inputs(state, state_path, task_name, supervised, policy_root, *, pol
     selected = policy_paths.brief_inputs(skill_root, shared, Path.home() / ".tessl",
         os.environ.get("HERDR_CODING_POLICY_ROOT") or None)
     policy = {key: selected[key] for key in ("POLICY_INDEX", "RELEASE_SKILL")}
-    policy.update(TASK_WORKFLOW=str(skill_root / "references/task-workflow.md"),
+    policy.update(TASK_WORKFLOW=str(skill_root / "references/workflow-worker.md"),
                   WORKFLOW_REVIEW=str(skill_root / "workflow-review.py"))
     if not all(Path(policy[name]).is_file() for name in ("TASK_WORKFLOW", "WORKFLOW_REVIEW")):
         raise UsageError("Restore the co-shipped admitted task-workflow contract before starting its executor.", {})

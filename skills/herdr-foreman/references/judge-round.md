@@ -11,10 +11,10 @@ Repeat its resolver in every call.
 
 Optional. Modes, triggers and both report contracts are in
 `skills/herdr-foreman/references/round-flow.md` "The Judge" (a bot
-disagreement inside SKILL.md Step 14 returns here first). No trigger — proceed to
-SKILL.md Step 14.
+disagreement inside `skills/herdr-foreman/references/foreman-workflow.md` Step 14 returns here first). No trigger — proceed to
+`skills/herdr-foreman/references/foreman-workflow.md` Step 14.
 
-For a dispute, compose from `skills/herdr-foreman/templates/brief-judge.md` through SKILL.md Step 8: the
+For a dispute, compose from `skills/herdr-foreman/templates/brief-judge.md` through `skills/herdr-foreman/references/foreman-workflow.md` Step 8: the
 dispute, both positions with report paths, the governing rule, the tree. Fill
 `POSITION_A_EVIDENCE` and `POSITION_B_EVIDENCE` with the citations each report
 makes (file and line, or command output, at a revision), copied, never supplied by the
@@ -27,7 +27,7 @@ evidence value with `supplied by the investigator report`, and fill
 ruling as well, otherwise "none".
 
 For an exhausted allowance, compose from `skills/herdr-foreman/templates/brief-judge-diagnosis.md`
-through SKILL.md Step 8 under the role key `judge-diagnosis`, which writes
+through `skills/herdr-foreman/references/foreman-workflow.md` Step 8 under the role key `judge-diagnosis`, which writes
 `brief-judge-diagnosis.md`: the assessed investigator report, the task, rounds
 spent, remaining blocking work, the per-round history, the tree, and any prior
 remedy with what it changed.
@@ -58,11 +58,11 @@ and its evidence; policy findings come from the list-mode JSON in the release
 worker's report. `HEAD` is that head's full sha. Fill `INVESTIGATION_REPORT`
 after an `insufficient` weighing, otherwise "none".
 
-Skip SKILL.md Step 7 for the read-only judge. Proceed immediately to step 2.
+Skip `skills/herdr-foreman/references/foreman-workflow.md` Step 7 for the read-only judge. Proceed immediately to step 2.
 
 ## 2 — Re-measure the Shared Window
 
-Re-run SKILL.md Step 4's `measure` under its outcome contract. Resolve any unreadable
+Re-run `skills/herdr-foreman/references/foreman-workflow.md` Step 4's `measure` under its outcome contract. Resolve any unreadable
 judge window before planning. Pass the fresh snapshot to step 3; never reuse
 the earlier reading as affordability proof. Proceed immediately to step 3.
 
@@ -105,7 +105,7 @@ in the plan. The header owns the contract.
 
 ## 5 — Dispatch the Judge
 
-Use step 3's plan under SKILL.md Step 10's dispatch contract:
+Use step 3's plan under `skills/herdr-foreman/references/foreman-workflow.md` Step 10's dispatch contract:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
@@ -116,14 +116,14 @@ bash "$HS/foreman.sh" apply \
   --task <task-id> [--no-clear]
 ```
 
-Pass the same `--judge-mode` step 3 planned. SKILL.md Step 10's outcomes govern. Use
+Pass the same `--judge-mode` step 3 planned. `skills/herdr-foreman/references/foreman-workflow.md` Step 10's outcomes govern. Use
 `--no-clear` only for the worker just started in
 step 4; an existing judge receives the default cleared relaunch with retrospective
 coverage. Apply verifies the live tier before input. Proceed immediately to step 6.
 
 ## 6 — Wait for the Ruling
 
-Run SKILL.md Step 11's fleet observation loop, including the judge named by step 3.
+Run `skills/herdr-foreman/references/foreman-workflow.md` Step 11's fleet observation loop, including the judge named by step 3.
 Proceed immediately to step 7 once its report lands; keep other enrollments
 under observation.
 
@@ -152,11 +152,11 @@ scoped re-check and release briefs, and one whose path changed as no longer
 covered; it blocks again.
 
 Apply the Ruling Outcomes contract in `skills/herdr-foreman/references/round-flow.md`. Investigation
-rulings return to SKILL.md Step 12's knowledge gate. Implementation rulings route
+rulings return to `skills/herdr-foreman/references/foreman-workflow.md` Step 12's knowledge gate. Implementation rulings route
 unchanged-branch rulings to verified release or renewed verification,
 branch-changing rulings to the counted correction path, an `insufficient`
 ruling to an investigator and then back to step 1, and a blocked ruling to its
 saved operator question. Only the operator overrides a completed ruling; `insufficient` binds nothing and creates no checkpoint.
-A judge round is a round: log it in SKILL.md Step 16 and checkpoint in Step 17,
+A judge round is a round: log it in `skills/herdr-foreman/references/foreman-workflow.md` Step 16 and checkpoint in Step 17,
 recording the step that outcome names as the stow's continuation step. The
-current context takes SKILL.md Step 17's Continue Route without clearing.
+current context takes `skills/herdr-foreman/references/foreman-workflow.md` Step 17's Continue Route without clearing.

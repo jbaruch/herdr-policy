@@ -1,20 +1,15 @@
----
-alwaysApply: false
-applyTo: "** — during verified Herdr team rounds or when applying Herdr release, cleanup and script-output contracts"
-description: Team-specific sync, isolation, release and cleanup contracts at the coding-policy boundary
----
-
 # Coding Policy Integration
 
 ## Sync and Checkouts
 
-- Applies only to a verified Herdr team round under `rules/agent-team-operation.md`.
+- Applies only to a verified Herdr team round under `skills/herdr-foreman/references/team-scope.md`.
 - The foreman provisions each writer's worktree and records its fetched base.
 - A worker consumes the provisioned base instead of fetching or rebasing the shared checkout under generic `sync-before-work`.
-- Preconditions are binding: read `skills/herdr-foreman/references/team-operation.md` Writers and Checkouts before relying on that exception.
+- Foreman preconditions are binding: read `skills/herdr-foreman/references/team-operation.md` Writers and Checkouts before relying on that exception.
+- A worker instead reads the complete provisioned-base exception in `skills/herdr-foreman/references/worker-context.md`; all its fetched-base, provenance, original-base and own-worktree conditions must hold.
 - The operator resolves listed shared-checkout items by push, commit, pull request or delete.
 - The foreman carries out none of those resolutions.
-- Foreman teardown is limited to the merged task's worktree under `skills/herdr-foreman/SKILL.md` Step 15 and its binding post-merge order.
+- Foreman teardown is limited to the merged task's worktree under `skills/herdr-foreman/references/foreman-workflow.md` Step 15 and its binding post-merge order.
 - Workers retain diagnostics and handoff obligations on their own changed files.
 - Narrow exception for the explicitly admitted schema-2 task executor.
 - Applies only under its verified current service generation and the admission boundaries in `skills/herdr-foreman/references/task-workflow.md`.

@@ -1,6 +1,6 @@
 # Team Operation
 
-The legacy Herdr team round contract. `rules/agent-team-operation.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. Its scoped admitted task-workflow exception follows `skills/herdr-foreman/references/task-workflow.md` instead. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through `skills/herdr-foreman/SKILL.md`, and every legacy worker brief names it as a required read.
+The legacy Herdr team round contract. `skills/herdr-foreman/references/team-scope.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. Its scoped admitted task-workflow exception follows `skills/herdr-foreman/references/task-workflow.md` instead. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through its scoped workflow. Every legacy worker brief instead names `skills/herdr-foreman/references/worker-context.md`; workers follow that protocol and their role template without loading this foreman contract.
 
 ## Bounded Factual Lookup
 
@@ -39,7 +39,7 @@ monetary savings remain unknown.
 
 ## Delegation
 
-- Follow `rules/agent-team-operation.md` Delegation for every delegated task.
+- Follow `skills/herdr-foreman/references/team-scope.md` Delegation for every delegated task.
 - The foreman uses the existing planning, assignment, dispatch, supervision and report owners.
 - Preserve responsibility, model/effort selection, account/capacity checks, contribution exclusion, checkout ownership and lifecycle evidence.
 - A worker needing delegated help records the staffing need and its evidence in its report for the foreman.
@@ -433,7 +433,7 @@ refuse only the stage whose harm it prevents.
 - Narrow exception for the merged task's own worktree.
 - Preconditions (all required):
   1. The task's branch has merged
-  2. The foreman is at `skills/herdr-foreman/SKILL.md` Step 15, the release cleanup
+  2. The foreman is at `skills/herdr-foreman/references/foreman-workflow.md` Step 15, the release cleanup
   3. The removal is `git worktree remove` in the post-merge order of `rules/agent-worktree-isolation.md` Cleanup
 - Every other worktree leaves only through the sweep or the session-start cleanup of `rules/agent-worktree-isolation.md` Cleanup
 - A worker's report, plan, and patch artifacts go only under the reports directory its brief names
@@ -444,7 +444,8 @@ refuse only the stage whose harm it prevents.
   1. The cache sits at the tool's user-level default location
   2. The cache never lands under the reports directory
 - Every other write still follows the write limit above
-- The session-start hook `skills/herdr-foreman/hooks/check-report-caches.sh` removes build and package caches from idle reports directories through `skills/herdr-foreman/prune-report-caches.py`
+- The explicit maintenance owner `skills/herdr-foreman/hooks/check-report-caches.sh` removes build and package caches from idle reports directories through `skills/herdr-foreman/prune-report-caches.py`
+- Role-context startup never invokes this maintenance owner
 - Its discovery, idleness and cache predicates live in that script's top-of-file docstring
 - It removes only a directory matching one enumerated cache kind by name, signature and top-level entries
 - It keeps every other file and directory

@@ -1,8 +1,3 @@
----
-alwaysApply: true
-description: Standalone/team modes, delegation, foreman authority and runtime dialogs
----
-
 # Agent Team Operation
 
 ## Two Modes
@@ -63,20 +58,21 @@ description: Standalone/team modes, delegation, foreman authority and runtime di
 
 ## Team Round Contract
 
-- A Herdr team round follows `skills/herdr-foreman/references/team-operation.md` in full
+- The foreman of a legacy Herdr round follows `skills/herdr-foreman/references/team-operation.md` in full
 - Narrow exception for preparing, admitting or executing the supported schema-2 task workflow
 - Applies only under the real verified native foreman and the admission boundaries in `skills/herdr-foreman/references/task-workflow.md`
 - Preconditions are binding: read `skills/herdr-foreman/references/task-workflow.md` Ownership and current inputs before relying on it
 - Read that task-workflow contract instead of the legacy round steps and historical paperwork
-- Its compiled briefs must name the actual compatible general policy, task contract and complete selected release skill
+- Its compiled briefs must name the actual compatible general policy, scoped worker/report contract and complete selected release skill
 - One verified service generation owns the task; native provenance, independent verification, existing gates, operator holds and generic release requirements remain binding
 - Only a healthy implemented executor may cover its exact current obligations at Stop; a prepared chain or saved row never does
 - Unknown evidence, unsupported specialist/production work and material disputes follow the task-local exception route, without weakening their existing owners' requirements
-- Every other team round follows the full legacy contract above
-- That file is a must-read before any team-round action outside Bounded Factual Lookup
+- Every other foreman-led round follows the full legacy contract above
+- That file is a foreman must-read before legacy team-round action outside Bounded Factual Lookup
 - In the scoped task-workflow exception, the named task-workflow file is that required read
 - Its sections bind a team round as rule content
 - The foreman loads `skills/herdr-foreman/SKILL.md`
-- Every worker brief names it as a required read
-- Task-workflow briefs name their scoped task-workflow contract as the required team read instead
+- Every worker brief instead names `skills/herdr-foreman/references/worker-context.md` as its required scoped protocol
+- Task-workflow briefs also name `skills/herdr-foreman/references/workflow-worker.md` for the report schema
+- Workers follow their role template and current evidence; never load the foreman workflow or the full legacy contract
 - A section this rule names without a path (Team Composition, Review Before PR, Specialist Consultations, Writers and Checkouts) lives in that file

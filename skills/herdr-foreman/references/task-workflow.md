@@ -28,10 +28,10 @@ it look new. Native remote/attested execution is not enabled by this adapter.
 Admission exclusively creates its fresh private artifact directory; an
 existing directory cannot be reused by this or another task.
 
-The compiled common brief names the actual general policy entrypoint, this
-contract and the complete selected release skill. Workers read the general
-policy and this contract, then their current task brief, authorized source and
-named current blocking evidence. Release also reads the complete release
+The compiled common brief names the actual general policy entrypoint, the
+scoped worker/report contract and the complete selected release skill. Workers
+read the general policy, worker protocol and report schema, then their current
+task brief, authorized source and named current blocking evidence. Release also reads the complete release
 skill and its binding references. Legacy composition, round narration,
 retrospectives, ledger events and full historical report reads are not normal
 prerequisites for this workflow. They remain available to their existing
@@ -65,48 +65,9 @@ and testing remain read-only; a native release worker repairs no source.
 
 ## Worker reports
 
-A report is the enrolled file delivered by the exact native assignment. The
-final chat line is exactly `REPORT: <absolute path>`. File existence, pane text,
-an exit code or a report's own claim is insufficient delivery proof. Native
-launch, permissions, model/process, composer and final-source checks remain
-binding. Their canonical assignment record owns tier provenance; repeating
-that metadata in prose grants no extra authority.
-
-Every report contains exactly one operative `WORKFLOW: <JSON object>` line,
-outside examples, quotations, indentation and code fences. A reviewer/tester
-also carries exactly one operative `VERDICT: approved|blocking` line. The
-claim must match that verdict. The complete schema is validated by
-`skills/herdr-foreman/foreman/workflow_contract.py`; unsupported, missing, duplicate or conflicting
-claims do not advance the task.
-
-The schema-1 claim fields are `schema_version`, `task`, `head_revision`,
-`responsibilities`, `outcome`, `acceptance`, `checks`, `findings`, `correction`,
-`pull_request`, `review_snapshot`, `review_evidence` and `publication`.
-
-- Use the actual full Git head and selected responsibilities: `implementation`,
-  `review`, `tests` or `release`. A bounded verifier supplies both `review` and
-  `tests`.
-- Each check carries `responsibility`, `name`, `result` and `evidence`. Results
-  are `passed`, `failed` or `unavailable`. A successful outcome needs actual
-  successful evidence for every selected responsibility.
-- Independent verification addresses each admitted criterion in order with
-  `criterion` (one-based number), `state` (`met` or `unmet`) and `evidence`.
-  Other responsibilities set `acceptance` to null. A verified outcome requires
-  every criterion met and every claimed check passed.
-- Implementation outcomes are `built` or `blocked`; verification outcomes
-  are `verified`, `blocking` or `blocked`. Release outcomes are `delivered`,
-  `blocking` or `blocked`; `ready` records preparation only and cannot complete
-  delivery.
-- Findings carry schema 1, a unique `id`, `severity` (`blocking`, `advisory` or
-  `uncertain`) and `status` (`open`, `resolved` or `disputed`). Review/test and
-  blocking release outcomes supply explicit correction facts:
-  `scope_unchanged`, `cause_settled`, `contradictory_evidence`, `repeated_defect`,
-  `non_converged`, `changed_production_plan`. Other outcomes use an empty
-  findings list and null correction. The executor derives current authority
-  and evidence facts itself.
-- PR/review/publication fields are null outside release. A delivered release
-  provides the actual PR, complete pre-merge canonical watcher artifact
-  receipt and all-body digest, plus the publication claim described below.
+Read the scoped report and publication claim schema in
+`skills/herdr-foreman/references/workflow-worker.md` when assessing native
+reports; workers receive that contract instead of this foreman workflow.
 
 The native responsible worker owns its assessment and full report. The
 executor parses the claim, verifies native provenance, current Git scope and
@@ -161,14 +122,9 @@ review rows also need their canonical review state. Those fields bind into
 the digest. An unidentified author or missing/unsupported state is an
 evidence exception, never an inferred completed reading.
 
-The publication claim has schema 1, `baseline`, `baseline_at`, `publisher_run`,
-`tag` and `tessl_version`. Report actual canonical-helper results. A Tessl
-baseline/time must come from before the actual merge; preserve `unpublished`
-only when its helper verified that sentinel. Nonselected channel fields are
-null. No publication uses a null run id; a task without publications uses null
-publication identities. The initial adapter supports the admitted
-merge-triggered Tessl/ACR publisher, bound to workflow, merge commit, push and
-base ref. Other publication/deployment adapters require their actual owner.
+The delivered publication fields are defined in
+`skills/herdr-foreman/references/workflow-worker.md`. Other publication or
+deployment adapters require their actual owner.
 
 After native report delivery, the executor independently verifies the actual
 PR repository/base/head/merge and each selected channel through the complete
