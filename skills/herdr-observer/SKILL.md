@@ -5,8 +5,9 @@ description: >
   evidence, inspect collection health, and produce private weekly reports or urgent
   alerts about delivery throughput, coordination overhead, idle capacity, subscription
   balance, model/effort suitability and other improvement opportunities. Use for
-  Herdr observer wake prompts, observer health checks, factory efficiency reports
-  and observer alerts. Never gates delivery.
+  Herdr observer wake prompts or requests to start, restart or stop the observer,
+  inspect observer status, analyze factory efficiency, prepare its weekly report
+  or investigate an observer alert. Never gates delivery.
 ---
 
 # Herdr Observer Skill
@@ -64,39 +65,15 @@ factory or replay history. For analysis and reporting follow:
 skills/herdr-observer/references/analysis.md
 ```
 
-Retrieve only evidence needed for an open question. Set `HOURS` to a value in
-`evidence_hours` returned by `next`; set `NAME` to the observed agent name. Omit
-`--agent NAME` for a fleet view. Success returns bounded evidence with omissions.
-
-```bash
-HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/observer.sh" evidence --hours HOURS --agent NAME
-```
-
-The agent makes the judgments; candidate signals are questions, never automatic
-findings. Write a warranted report only to the returned private draft. Set
-`KIND` to `weekly` for a due weekly report or `urgent` for an earlier alert.
-A due weekly report includes coverage gaps even when no improvement is supported.
-
-```bash
-HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/observer.sh" report --job ID --kind KIND --file DRAFT
-```
-
-Success returns the private path and notification receipt. An already saved
-report is idempotent. Finish here after saving. For a nonweekly analysis with
-nothing worth reporting, acknowledge the saved job instead:
-
-```bash
-HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/observer.sh" ack --job ID
-```
-
-Success returns the acknowledgement receipt. Finish silently here.
+Use the contract's complete command blocks to retrieve focused evidence, save a
+justified private report or acknowledge an uneventful nonweekly job. Finish here
+after the report or acknowledgement receipt.
 
 ## Step 3 — Inspect Observer Health
 
-Use Inspect Observer Health in the lifecycle/storage contract, then finish here:
+Use Inspect Observer Health in the lifecycle/storage contract. Check the returned
+running state, sample age, coverage and pending job. For an unexpected exit,
+inspect its private diagnostic and follow the named repair. Finish here:
 
 ```text
 skills/herdr-observer/references/storage.md
@@ -104,7 +81,8 @@ skills/herdr-observer/references/storage.md
 
 ## Step 4 — Stop Observation
 
-Use Stop Observation in the same contract, then finish here:
+Use Stop Observation in the same contract. Confirm its disabled acknowledgement,
+then finish here:
 
 ```text
 skills/herdr-observer/references/storage.md
