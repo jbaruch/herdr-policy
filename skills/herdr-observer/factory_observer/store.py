@@ -2,7 +2,7 @@
 
 All JSON records contain schema_version=1. This cache never grants task authority.
 Only Store writes/migrates it. Foreman's observer_role reader accepts migration 1
-read-only and reads only meta.binding; incompatible/missing data means no role.
+read-only and reads meta.binding and meta.config; incompatible/missing data means no role.
 See references/storage.md for lifecycle and the public CLI's writer/reader contract.
 """
 
