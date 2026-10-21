@@ -149,7 +149,7 @@ class ResumePromptRunsTest(unittest.TestCase):
 
     def test_every_command_is_accepted_by_the_launcher(self):
         commands = self.commands()
-        self.assertEqual(len(commands), 12)
+        self.assertEqual(len(commands), 13)
         for command in commands:
             filled = (command.replace("<plan|brief|gate|diagnose>", "plan").replace("<task>", "t")
                       .replace("<enrollment-id>", "e1"))

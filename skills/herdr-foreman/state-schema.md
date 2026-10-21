@@ -1419,7 +1419,7 @@ could not take.
 | `schema_version` | integer, always `4` | Row version |
 | `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before continuation input. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
-| `host_goal` | null or goal-receipt schema 1 | Legacy null grants no goal authority. New rows carry the host preflight and journal below; the input hook requires a verified Codex handoff before saving acceptance |
+| `host_goal` | null or goal-receipt schema 1 | Legacy null grants no goal authority. New rows carry host preflight and the journal below. The input hook retires the source before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
 | `stow` | string | The stow id the resume prompt names |
 | `status` | one of `scheduled`, `delivering`, `delivered`, `failed`, `interrupted`, `reconciled` | `scheduled` → `delivering` → `delivered`; `failed` before any keystroke; `interrupted` after one; `reconciled` when the operator confirmed through `foreman-reset-reconcile` that the foreman resumed |

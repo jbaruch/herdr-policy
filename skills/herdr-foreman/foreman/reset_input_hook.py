@@ -114,7 +114,7 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
                 if data["binding"] != binding:
                     return refusal("binding_changed_before_host_transfer")
                 if goal is not None:
-                    host_goals.transfer(goal, who["value"], lambda: save_state(path, document))
+                    host_goals.transfer(goal, who["value"], lambda: save_state(path, document), restore=False)
                 row["accepted_session"] = {key: who[key] for key in ("kind", "value")}
                 save_state(path, document)
         return acceptance()

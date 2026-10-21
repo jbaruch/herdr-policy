@@ -137,6 +137,10 @@ to read that one receipt; do not open the reset history. The Codex receipt must
 report `host_goal.phase: verified` before dispatch. Its carried usage belongs
 to the same objective; the host's successor counter records only that thread's
 usage. Never grant a fresh full budget or recreate a goal from prompt text.
+At `phase: retired`, the native hook has admitted the continuation without
+creating a target goal. After reading the saved scope and holds, finish it with
+`foreman-reset-reconcile --outcome delivered` for that pane/stow. The model
+receives its continuation instructions before automatic target work can start.
 
 Native Claude/Grok report `not_applicable` for the Codex goal scheduler and
 create no host goal. An external scheduler is outside that receipt's proof.

@@ -163,6 +163,10 @@ class ResetHookTest(unittest.TestCase):
     def test_active_goal_reset_leaves_one_executor_after_the_outgoing_turn_ends(self):
         self.setUp(source=goal(SESSION["value"], budget=1000, tokens=300))
         self.assertEqual(self.invoke(), hook.acceptance())
+        self.assertIsNone(self.host.goal(CLEARED))
+        # The admitted continuation has received its saved-scope instructions.
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: True)
         self.host.end_turn(SESSION["value"])
         self.host.end_turn(CLEARED)
         self.assertEqual(self.host.continuations, [CLEARED])
@@ -172,6 +176,42 @@ class ResetHookTest(unittest.TestCase):
         self.assertEqual(row["host_goal"]["phase"], "verified")
         self.assertEqual(row["host_goal"]["carried_tokens"], 300)
         self.assertEqual(reset.accepted_resume(self.state, PANE, "round-7", SESSION), {"kind": "id", "value": CLEARED})
+
+    def test_failed_admission_commit_can_never_activate_the_successor_goal(self):
+        self.setUp(source=goal(SESSION["value"]))
+        save = hook.save_state
+        def failed_admission(path, document):
+            if document["resets"][0]["accepted_session"] is not None:
+                raise OSError("fixture failed admission")
+            save(path, document)
+        with patch("foreman.reset_input_hook.save_state", side_effect=failed_admission):
+            self.assertEqual(self.invoke()["decision"], "block")
+        self.host.end_turn(SESSION["value"])
+        self.host.end_turn(CLEARED)
+        self.assertEqual(self.host.continuations, [])
+        self.assertIsNone(self.host.goal(CLEARED))
+        self.assertFalse(any(method == "thread/goal/set" for method, _ in self.host.calls))
+
+    def test_a_lost_activation_response_occurs_only_after_input_was_admitted(self):
+        self.setUp(source=goal(SESSION["value"]))
+        self.assertEqual(self.invoke(), hook.acceptance())
+        self.host.lost = "thread/goal/set"
+        call = self.host.call
+
+        def immediate_work(method, params):
+            try:
+                return call(method, params)
+            finally:
+                if method == "thread/goal/set":
+                    row = json.loads(reset.record_path(self.state).read_text())["resets"][0]
+                    self.assertEqual(row["accepted_session"]["value"], CLEARED)
+                    self.host.end_turn(CLEARED)
+
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect), \
+                patch.object(self.host, "call", side_effect=immediate_work):
+            with self.assertRaises(reset.ForemanError):
+                reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: True)
+        self.assertEqual(self.host.continuations, [CLEARED])
 
     def test_failed_host_transfer_blocks_input_and_reconciliation_recovers_without_duplicate_goal(self):
         self.setUp(source=goal(SESSION["value"], budget=None))

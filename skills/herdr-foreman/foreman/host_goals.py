@@ -153,7 +153,7 @@ def retire_turn(receipt, host, persist, sleep, clock):
     refresh(receipt, host, interrupted=receipt["retiring_turn"] is not None)
 
 
-def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=time.monotonic):
+def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=time.monotonic, restore=True):
     """Complete/recover only this authenticated reset's journaled host handoff."""
     if not valid(receipt) or receipt is None:
         raise unavailable("missing_goal_preflight")
@@ -198,6 +198,10 @@ def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=
         quiescent(host, receipt["source_thread"], sleep, clock)
         if host.goal(receipt["source_thread"]) is not None:
             raise unavailable("source_goal_reactivated")
+        if not restore:
+            # UserPromptSubmit retires only. Creating an active target here
+            # could schedule work even if native input admission later fails.
+            return
         if receipt["phase"] == "retired":
             if host.goal(target) is not None:
                 raise unavailable("target_goal_already_exists")

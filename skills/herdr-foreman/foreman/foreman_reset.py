@@ -122,10 +122,13 @@ RESUME_TEMPLATE = (
     "anything else: run `{tl} memory-show {flags} --id {stow}` and read its "
     "capture and unresolved work. Its file receipts are references for targeted "
     "owner queries, not an instruction to dump the memory index, raw owner files "
-    "or prior reports. The reset input hook owns host-goal restoration and outgoing "
+    "or prior reports. The reset owner controls host-goal restoration and outgoing "
     "executor retirement; run `{tl} foreman-reset-status {flags} --stow {stow}` for this reset's host_goal receipt under the working-memory "
     "Successor Goal contract. Never create or rewrite a goal to emulate that transfer. "
-    "If the receipt is unavailable or unverified, recover without dispatch or claiming "
+    "If host_goal.phase is retired, the hook safely retired the source without activating a target. "
+    "After reading the saved scope and holds, run `{tl} foreman-reset-reconcile {flags} --pane <current-pane> --stow {stow} --outcome delivered` "
+    "to finish goal restoration from this admitted continuation. "
+    "If the receipt is otherwise unavailable or unverified, recover without dispatch or claiming "
     "healthy takeover. Then run "
     "`{tl} supervision-bind {flags}`, `{tl} supervision-status {flags} --compact`, "
     "`{tl} catch-up {flags} --compact` and `{tl} supervision-drain {flags} --compact`. "
@@ -178,7 +181,7 @@ def accepted_resume(state, pane_id, stow, before):
     who = binding["identity"] if binding is not None else {}
     current = {key: who.get(key) for key in ("kind", "value")}
     if (row is not None and row["status"] == "delivering" and row["accepted_session"] == current
-            and (row["host_goal"] is None or row["host_goal"]["phase"] in ("verified", "not_applicable"))
+            and (row["host_goal"] is None or row["host_goal"]["phase"] in ("retired", "verified", "not_applicable"))
             and who.get("pane_id") == pane_id and _valid_session(current) and current != before):
         return current
     return None
@@ -910,18 +913,22 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
         # operator who sees it running reconciles it as delivered.
         # A `scheduled` row was never claimed, so nothing was typed and it can
         # only have failed; a delivery that began may have resumed the foreman.
+        goal = row["host_goal"]
+        admitted_goal = (outcome == "delivered" and row["accepted_session"] is not None
+                         and goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified")
         reopenable = ((row["status"] == "scheduled" and outcome == "failed")
                       or row["status"] == "delivering"
+                      or row["status"] == "delivered" and admitted_goal
                       or (row["status"] == "interrupted" and outcome == "delivered"))
         if not reopenable:
             raise UsageError("The reset from stow {} already ended {}{}; there is nothing to reconcile.".format(
                 row["stow"], row["status"], " (reconciled as {})".format(previous) if previous else ""),
                 {"record": str(path), "status": row["status"]})
-        if row["status"] != "interrupted" and alive(row["process"]):
+        live_deliverer = row["status"] != "interrupted" and alive(row["process"])
+        if live_deliverer and not admitted_goal:
             raise UsageError("The reset from stow {} still has its deliverer running; let it finish instead of "
                              "reconciling.".format(row["stow"]), {"record": str(path), "process": row["process"]})
         if outcome == "delivered":
-            goal = row["host_goal"]
             if goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified":
                 data = boundary.enter_context(supervision.effect_boundary(state_path))
                 bound = data["binding"]["identity"]
@@ -929,7 +936,8 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
                         or bound.get("pane_id") != row["pane_id"]):
                     raise UsageError("The incoming host-goal executor is not the bound foreman. Restore its verified native binding before reconciling; no goal was changed.", {})
                 host_goals.transfer(goal, bound["value"], lambda: save_state(path, document))
-            row.update(status="reconciled", result={"outcome": "delivered", "reconciled_at": at})
+            if not live_deliverer:
+                row.update(status="reconciled", result={"outcome": "delivered", "reconciled_at": at})
         else:
             lost = StateError("The operator reconciled this reset as failed: its deliverer stopped without an outcome.",
                               {"reconciled": "failed", "reconciled_at": at,

@@ -19,7 +19,7 @@ and the native payload's new session. It consumes the old supervision binding
 under its owner lock, preserves members/events/holds, and saves acceptance on
 the reset row. Replay cannot consume the original binding twice. The deliverer
 requires that acceptance and the matching new binding before reporting success.
-For Codex, input admission also requires the host-goal receipt owned by
+For Codex, input admission also requires source retirement through the host-goal receipt owned by
 `skills/herdr-foreman/foreman/host_goals.py` (`prepare`, `transfer`). That module
 defines supported host control, ordering, recovery phases and budget accounting;
 the record shape is in `skills/herdr-foreman/state-schema.md` Foreman Reset Record.
@@ -28,6 +28,12 @@ The transfer never starts another app-server or changes the user's goal status
 to represent executor retirement. Native Claude/Grok retain their session reset
 without creating an external host goal; external schedulers need their own
 supported integration before a reset can claim that goal's handoff.
+The input hook creates no successor goal: it retires the source, commits the
+incoming binding/acceptance, and admits the saved continuation. That continuation
+reads its scope and holds, then uses `foreman-reset-reconcile --outcome delivered`
+to restore the original lifecycle. A blocked hook can never activate automatic
+target work. Goal activation and its recovery therefore happen after the
+continuation instructions have reached the model, without a synthetic pause.
 Codex 0.163's installed `ThreadGoalClearParams` supports `threadId` and
 `origin`, with no conditional generation or compare-and-clear transaction.
 The Herdr supervision lock serializes its handoff owners, and the transfer
@@ -98,7 +104,9 @@ A failed receipt commit admits no model input and leaves no delivery proof;
 replay refuses the consumed original binding. Preserve both records, restore
 storage, and use the saved owner recovery route; never retry uncertain input.
 For a pending Codex goal handoff, `foreman-reset-reconcile --outcome delivered`
-first finishes that handoff against the already bound incoming session. A
+finishes that handoff against the already bound incoming session. It may finish
+an admitted goal while the deliverer is still saving its native delivery result;
+it leaves that result for the deliverer. A
 missing or changed incoming owner refuses without replacing it. Continue from
 the verified receipt through the ordinary saved resume prompt, without another
 clear or guarded-input replay. A legacy receipt without a host snapshot proves
