@@ -83,13 +83,24 @@ def matches(who, native, environment):
                 return False
             rows = dict(db.execute("SELECT key,value FROM meta WHERE key IN ('binding','config')"))
         binding, config = (json.loads(rows[key]) for key in ("binding", "config"))
+        if not isinstance(binding, dict) or not isinstance(config, dict):
+            return False
         if (type(binding.get("schema_version")) is not int or binding["schema_version"] != 1
                 or type(config.get("schema_version")) is not int or config["schema_version"] != 1
                 or config.get("enabled") is not True):
             return False
+        saved = binding.get("identity")
+        paths = config.get("states")
+        if (not isinstance(saved, dict)
+                or any(not isinstance(saved.get(field), str) or not saved[field] for field in ("pane_id", "source", "agent", "kind", "value"))
+                or saved["source"] != "herdr:" + saved["agent"] or saved["kind"] not in ("id", "path")
+                or saved["kind"] == "path" and not Path(saved["value"]).is_absolute()
+                or not isinstance(binding.get("cwd"), str) or not Path(binding["cwd"]).is_absolute()
+                or not isinstance(paths, list) or any(not isinstance(path, str) or not Path(path).is_absolute() for path in paths)):
+            return False
         identity = {"pane_id": who["pane_id"], **{k: native[k] for k in ("source", "agent", "kind", "value")}}
         if binding.get("identity") != identity or binding.get("cwd") != who["cwd"]:
             return False
-        return delivery_owner(who["pane_id"], config.get("states", []), environment) is None
+        return delivery_owner(who["pane_id"], paths, environment) is None
     except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, ForemanError):
         return False

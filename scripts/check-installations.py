@@ -153,7 +153,7 @@ elif sys.argv[2] == 'observer':
     cache.touch(mode=0o600)
     with sqlite3.connect(cache) as db:
         db.executescript('CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT); PRAGMA user_version=1;')
-        db.execute('INSERT INTO meta VALUES (?,?)', ('config', json.dumps({'schema_version':1,'enabled':True})))
+        db.execute('INSERT INTO meta VALUES (?,?)', ('config', json.dumps({'schema_version':1,'enabled':True,'states':[]})))
         db.execute('INSERT INTO meta VALUES (?,?)', ('binding', json.dumps({'schema_version':1,
             'cwd':str(Path.cwd()), 'name':'private-observer', 'identity':{'source':'herdr:'+sys.argv[3],
             'agent':sys.argv[3], 'kind':'id', 'value':'private-observer', 'pane_id':os.environ['HERDR_PANE_ID']}})))

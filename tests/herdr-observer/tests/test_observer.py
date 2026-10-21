@@ -325,6 +325,14 @@ class ObserverTest(unittest.TestCase):
             checked = self.tick(self.now + offset)
         self.assertFalse(checked["wake_agent"])
 
+    def test_nonweekly_job_cannot_postpone_weekly_cadence(self):
+        job = self.due()["data"]["job"]
+        with self.assertRaisesRegex(ValueError, "not a due weekly report"), self.store.transaction():
+            cli.finish(self.store, job["id"], self.now + collect.MIN_WAKE_SECONDS, "weekly")
+        self.assertEqual(self.record("pending")["id"], job["id"])
+        self.assertIsNone(self.store.get("meta", "schedule"))
+        self.assertEqual(cli.status(self.store, job["created_at"] + 600)["pending"]["age_seconds"], 600)
+
     def test_outage_and_long_gaps_do_not_invent_idle_duration(self):
         self.tick()
         self.client.unavailable = True
@@ -447,6 +455,26 @@ class ObserverTest(unittest.TestCase):
                     self.store.rows("reports")
                 with self.assertRaises(ValueError):
                     cli.status(self.store, self.now)
+
+    def test_role_reader_refuses_malformed_consumed_meta_fields_without_writes(self):
+        who = {"kind": "id", "value": self.observer["agent_session"]["value"], "cwd": "/factory",
+               "pane_id": self.observer["pane_id"], "herdr_env": "1"}
+        env = {"XDG_STATE_HOME": str(self.cache.parent)}
+        originals = {key: self.record(key) for key in ("binding", "config")}
+        cases = [("binding", []), ("config", []), ("binding", {**originals["binding"], "cwd": []}),
+                 ("binding", {**originals["binding"], "identity": []}),
+                 ("config", {**originals["config"], "states": {}}),
+                 ("config", {**originals["config"], "states": [1]}),
+                 ("config", {**originals["config"], "states": ["relative"]})]
+        for key, value in cases:
+            with self.subTest(key=key, value=value):
+                for name, original in originals.items():
+                    self.store.put("meta", name, original)
+                self.store.db.execute("UPDATE meta SET value=? WHERE key=?", (json.dumps(value), key))
+                self.store.db.commit()
+                before = (self.cache / "observer.sqlite3").read_bytes()
+                self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env))
+                self.assertEqual((self.cache / "observer.sqlite3").read_bytes(), before)
 
     def test_private_storage_refuses_links_and_has_database_ceiling(self):
         self.assertEqual(self.cache.stat().st_mode & 0o777, 0o700)

@@ -19,6 +19,12 @@ executing command blocks, read Installed Skill Lookup:
 skills/herdr-foreman/references/bootstrap.md
 ```
 
+`observer.sh` exits 0 with JSON on success. Exit 2 reports refused or invalid
+input or unavailable state; launcher failures also exit nonzero. Errors include
+an actionable stderr diagnostic. On nonzero, finish the selected action after
+reporting the diagnostic. Restore the named input, installation, native context
+or private store, and inspect status before retrying that action.
+
 ## Step 1 — Start Observation
 
 Use a dedicated named native Herdr agent. Keep its model appropriate to periodic

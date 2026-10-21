@@ -156,12 +156,14 @@ def status(store, now):
     current = store.get("meta", "current", {})
     heartbeat = store.get("meta", "heartbeat", {})
     pending = store.get("meta", "pending", {})
+    created = pending.get("created_at")
+    age = max(0, now - created) if isinstance(created, (float, int)) and not isinstance(created, bool) else None
     return {"schema_version": 1, "home": str(store.home), "running": running(store.home),
             "enabled": store.get("meta", "config", {}).get("enabled", False), "heartbeat": heartbeat,
             "reporter_present": current.get("reporter_present"),
             "sample_age_seconds": now - current["at"] if "at" in current else None,
             "coverage": current.get("coverage", []),
-            "pending": {k: pending.get(k) for k in ("id", "reasons", "created_at", "send_status")},
+            "pending": {**{k: pending.get(k) for k in ("id", "reasons", "created_at", "send_status")}, "age_seconds": age},
             "reports": store.rows("reports")[-8:]}
 
 
@@ -171,6 +173,8 @@ def finish(store, job_id, now, kind=None):
         raise ValueError("pending job changed; load next before acknowledging or reporting")
     if "weekly_report_due" in pending["reasons"] and kind != "weekly":
         raise ValueError("this job needs a private weekly report; an acknowledgement cannot replace it")
+    if kind == "weekly" and "weekly_report_due" not in pending["reasons"]:
+        raise ValueError("this job is not a due weekly report; save a warranted urgent report or acknowledge the analysis")
     schedule = store.get("meta", "schedule", {})
     schedule["last_analysis"] = now
     schedule["last_anomaly"] = pending["anomaly"]
