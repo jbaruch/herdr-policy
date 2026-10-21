@@ -7,7 +7,8 @@ completed retrospective.
 
 ## When to run one
 
-Check on active resume, before planning and dispatch, and between report waits.
+Check at a maintenance checkpoint when the result will be used. A dispatch or
+resume does not require another cadence query or synthesis.
 The utility owns the elapsed-time calculation and daily interval. A due daily
 cadence is a maintenance observation, never a selected task's dispatch or
 delivery gate. Record it and complete the retrospective at the next maintenance

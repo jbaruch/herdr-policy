@@ -18,7 +18,7 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_workflow_service as fixture
-from foreman import cli, context_output, decision_budget, progression_runtime, recovery, supervision
+from foreman import cli, context_output, progression_runtime, recovery, supervision
 from foreman import workflow_planning, workflow_readiness as readiness
 from foreman.errors import UsageError
 from foreman.state import add_snapshot, save_state
@@ -43,15 +43,10 @@ class WorkflowReadinessTest(unittest.TestCase):
                 for path in self.f.root.rglob("*") if path.is_file() and ".git" not in path.parts}
 
     def owner_files(self):
-        files = self.files()
-        counter = decision_budget.location(self.f.path)
-        for path in (counter, Path(str(counter) + ".lock"), decision_budget.presence_location(self.f.path)):
-            files.pop(str(path.relative_to(self.f.root)), None)
-        return files
+        return self.files()
 
-    def assert_charge(self, printed):
-        counter = json.loads(decision_budget.location(self.f.path).read_text())
-        self.assertEqual(counter["returned_bytes"], printed)
+    def assert_no_read_counter(self):
+        self.assertFalse(Path(str(self.f.path) + ".context.json").exists())
 
     def invoke(self, *arguments, client=None):
         out, err = io.StringIO(), io.StringIO()
@@ -62,7 +57,7 @@ class WorkflowReadinessTest(unittest.TestCase):
 
     def snapshot(self, headroom):
         state = self.f.owner.state()
-        add_snapshot(state, {"schema_version": 5, "measured_at": self.f.now(), "agents": {
+        add_snapshot(state, {"schema_version": 6, "measurement_context_sha256": None, "reused_agents": [], "measured_at": self.f.now(), "agents": {
             name: {"kind": name, "state": "idle", "headroom_pct": headroom}
             for name in ("claude", "codex", "grok")}, "failed_agents": [], "skipped_agents": []})
         save_state(self.f.path, state)
@@ -356,7 +351,7 @@ class WorkflowReadinessTest(unittest.TestCase):
             self.assertEqual(result["native_foreman"], {"verified": False, "reason": "native_context_unavailable"})
             self.assertLessEqual(len(out.encode()), context_output.OUTPUT_BYTES)
             self.assertEqual(self.owner_files(), before)
-            self.assert_charge(len((out + err).encode()))
+            self.assert_no_read_counter()
 
     def test_cli_verifies_actual_native_identity_instead_of_trusting_environment(self):
         self.f.admit()
@@ -414,7 +409,6 @@ class WorkflowReadinessTest(unittest.TestCase):
 
     def test_unknown_oversized_and_invalid_pages_refuse_without_empty_success(self):
         before = self.owner_files()
-        printed = 0
         for arguments in (("--task", "absent"), ("--task", "x" * 1_025),
                           ("--limit", "0"), ("--offset", "-1")):
             with self.subTest(arguments=arguments[:1]):
@@ -423,8 +417,7 @@ class WorkflowReadinessTest(unittest.TestCase):
                 self.assertEqual((code, out), (1, ""))
                 self.assertIn("error", json.loads(err))
                 self.assertEqual(self.owner_files(), before)
-                printed += len((out + err).encode())
-                self.assert_charge(printed)
+                self.assert_no_read_counter()
 
     def test_unusable_ledger_cannot_look_like_an_empty_queue(self):
         self.f.path.write_text("Unusable private owner fixture")
@@ -434,7 +427,7 @@ class WorkflowReadinessTest(unittest.TestCase):
         self.assertEqual((code, out), (1, ""))
         self.assertIn("unusable ledger is not an empty queue", err)
         self.assertEqual(self.owner_files(), before)
-        self.assert_charge(len((out + err).encode()))
+        self.assert_no_read_counter()
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ from .planner import plan as build_plan
 from .planner import ASSIGNMENT_PLAN_SCHEMA_VERSION, headroom_of
 from .tiers import (COORDINATION_ROUND, FOREMAN_ROLE, JUDGMENT_ROUNDS, MissingTierError,
                     parse_launch_args, parse_tiers, select_tier, worker_launch_args)
-from . import context_output, cost_report, decision_budget, github_context, measurement_retry, selection, successors, tier_routing
+from . import context_output, cost_report, github_context, measurement_retry, selection, successors, tier_routing
 from .launch import configured_running_tier, restart_worker, start_foreman, start_worker, verify_foreman, verify_running, require_empty_shell
 from .state import (
     add_assignment,
@@ -510,7 +510,7 @@ def build_parser():
     cost_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
     cost_parser.add_argument("--offset", type=int, default=0)
     github_context.register_parser(sub, common)
-    load_parser = sub.add_parser("load-set", parents=[common], help="Return current decision context and debit its aggregate read allowance without replaying task history.")
+    load_parser = sub.add_parser("load-set", parents=[common], help="Return bounded current decision context without replaying task history or writing read counters.")
     load_parser.add_argument("--decision", required=True, choices=load_set.DECISIONS)
     load_target = load_parser.add_mutually_exclusive_group(required=True)
     load_target.add_argument("--task", help="Task identity for plan, brief, gate and diagnose.")
@@ -2527,11 +2527,8 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
             args.task, runnable.command("foreman-queue"), runnable.command("supervision-status --compact")), {})
     packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
                             exists=_file_present, supervision_view=supervision_view)
-    state_digest = decision_budget.generation(state, packet, supervision_document)
     if args.read_file is not None:
         packet = load_set.read_evidence(packet, args.read_file, args.question, args.offset)
-    packet = decision_budget.consume(state_path, packet, state_digest,
-                                     (supervision_document["binding"] or {}).get("identity"))
     return packet, None
 
 
@@ -3535,17 +3532,8 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
     def warn(message):
         diagnostic(DIAGNOSTIC_PREFIX + message)
 
-    def context_failure(exc, *, charge):
+    def context_failure(exc):
         text = context_output.error_text(exc, "".join(diagnostics))
-        if charge and args.command in context_output.READ_COMMANDS | {"load-set"}:
-            try:
-                binding = supervision.load(_state_path(args))["binding"]
-                decision_budget.consume_diagnostic(_state_path(args), text,
-                    binding["identity"] if binding is not None else None)
-            except ForemanError as allowance_error:
-                # Return only allowance recovery when the original data-bearing
-                # error cannot be charged. Keep this inside the home guard.
-                text = context_output.error_text(allowance_error)
         stderr.write(text)
         return 1
 
@@ -3614,28 +3602,20 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
                 try:
                     with retro_lock:
                         payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)
-                    if args.command in context_output.READ_COMMANDS:
-                        supervised = supervision.load(_state_path(args))
-                        binding = supervised["binding"]
+                    if context_call:
                         diagnostic_text = "".join(diagnostics)
                         if failure:
                             diagnostic_text += context_output.printed_json(failure)
-                        decision_budget.consume_view(_state_path(args), payload,
-                            binding["identity"] if binding is not None else None,
+                        context_output.enforce_budget(payload,
+                            "Select a narrower task, page or evidence question; this response exceeds its output bound.",
                             diagnostic_text=diagnostic_text)
-                    elif args.command == "load-set" and diagnostics:
-                        binding = supervision.load(_state_path(args))["binding"]
-                        decision_budget.consume_diagnostic(_state_path(args), "".join(diagnostics),
-                            binding["identity"] if binding is not None else None)
                 except ForemanError as exc:
                     if context_call:
-                        return context_failure(exc, charge=True)
+                        return context_failure(exc)
                     raise
     except ForemanError as exc:
         if context_call:
-            # Preflight/route refusal precedes any selected-context handler.
-            # In particular, a failed home guard must create no counter there.
-            return context_failure(exc, charge=False)
+            return context_failure(exc)
         json.dump(exc.to_dict(), stderr, indent=2)
         stderr.write("\n")
         return 1

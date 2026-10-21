@@ -243,7 +243,7 @@ class WorkflowRecoveryTest(unittest.TestCase):
             self.assertEqual(self.case.progress()["pending"]["operation"], "measure")
             def measured(_args, *, client):
                 saved = self.case.owner.state()
-                add_snapshot(saved, {"schema_version": 5, "measured_at": self.case.now(), "agents": {},
+                add_snapshot(saved, {"schema_version": 6, "measurement_context_sha256": None, "reused_agents": [], "measured_at": self.case.now(), "agents": {},
                                      "failed_agents": [], "skipped_agents": []})
                 saved["recovery"]["tasks"]["two"]["scope"] = "Updated by the fixture measurement owner"
                 save_state(self.case.path, saved)

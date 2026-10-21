@@ -87,9 +87,9 @@ def sequence_page(rows, through, after, limit, key):
             "items": selected}
 
 
-def enforce_budget(result, recovery):
+def enforce_budget(result, recovery, *, diagnostic_text=""):
     """Check exact stdout bytes without changing an existing document schema."""
-    if len((json.dumps(result, indent=2) + "\n").encode("utf-8")) > OUTPUT_BYTES:
+    if len((json.dumps(result, indent=2) + "\n" + diagnostic_text).encode("utf-8")) > OUTPUT_BYTES:
         raise UsageError(
             recovery,
             {"reason": "context_budget_exceeded", "budget_bytes": OUTPUT_BYTES, "context_complete": False})

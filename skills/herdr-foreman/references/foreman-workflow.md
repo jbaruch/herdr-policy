@@ -1,430 +1,196 @@
-# Herdr Foreman Skill
+# Herdr Foreman Delivery Loop
 
-Process steps in order. Do not skip ahead.
+The foreman maximizes delivery of authorized, verified work through the available
+crew. Worker utilization helps only when it advances that delivery; starting
+unnecessary work and producing coordination records are not outcomes.
 
-For a supported explicitly admitted schema-2 task workflow, read its contract
-and command reference:
+## Choose the Next Action
 
-```text
-skills/herdr-foreman/references/task-workflow.md
-skills/herdr-foreman/references/progression.md
-```
+1. Fill eligible idle capacity with independent authorized ready work. Dispatch
+   multiple tasks before waiting for one to finish. Reuse current plans, checkouts
+   and assignment inputs; owners revalidate identity, capacity and holds.
+2. Handle each completed delivery as it arrives. Authenticate it, acknowledge its
+   observations, and route that task's next development, verification or release
+   action. Do not wait for unrelated reports or finish assessing the whole fleet.
+3. If work is blocked, address the condition that actually prevents its next
+   effect and continue independent ready tasks. Ask the operator only for missing
+   authority, information or an account the operator must supply.
+4. Watch when work is running and no ready action needs the foreman. Wait for a
+   real dependency; do not fill that wait with mandatory reconstruction or notes.
 
-That scoped contract owns ordinary progression, report handling, context floor
-and continuation. Retain current supervision, assessment and Stop obligations;
-this adapter supplies no release approval. When selecting config-schema-9 native
-capacity limits, read this reference before admission:
+Current safety checks are part of the action they protect. Ownership, unknown
+input delivery, operator holds, contributor exclusion, required independent
+verification and publication confirmation remain binding. A later-stage gate
+never prevents an earlier safe action on an independent task.
 
-```text
-skills/herdr-foreman/references/workflow-capacity.md
-```
+Administrative work has no priority over an available delivery action. Canonical
+owner records already preserve dispatch, observation and delivery facts. Do not
+copy them into narrative logs, run a lesson/retrospective pass, create a stow,
+re-measure valid capacity, or reload unchanged policy before continuing. Do that
+maintenance only for a concrete current need or knowledge otherwise at risk.
+GitHub holds durable change, review and release history.
 
-Legacy rounds follow the steps below in order without skipping ahead.
+Concurrency is the default across independent tasks and responsibilities. Dispatch
+reviewer and tester together once their shared pushed head is ready. Split a large
+authorized scope into independently owned tasks/checkouts when it permits useful
+parallel delivery; preserve real dependencies and contributor exclusions. One
+working developer or reviewer is not a fully utilized factory. Idle capacity needs
+a concrete reason: dependency, authority, eligibility, actual capacity, protected
+ownership or a binding operator limit. Use existing owner facts; no utilization
+report, new approval or busywork assignment is required.
 
-Before any finish with enrolled work, reconcile the whole fleet under
-`skills/herdr-foreman/references/supervision.md`. Continue observation while
-authorized work remains. Finish only after a genuine user pause or a verified
-successor/reset continuation or healthy implemented task executor satisfies
-the Stop gate for its exact obligations. A saved handoff hold
-does not permit Stop on its own. Keep user
-attention visible under `skills/herdr-foreman/references/attention.md`.
+Context is selected for the next action. Never traverse `.hr`, exhaust unrelated
+cursors, or preload the full team contract. Use task-specific `load-set` and its
+selected evidence. Read reports fully before their content is accepted or used to
+clear a gate; authenticating delivery alone does not require accepting a report.
+An omitted or unavailable obligation stays unresolved in its existing owner.
 
-Before any legacy team-round action outside Step 1's bounded factual lookup, read the
-team-round contract in full. It is the
-file `skills/herdr-foreman/references/team-scope.md` points to, and it binds every step below.
-Every worker brief instead names the scoped worker protocol at
-`skills/herdr-foreman/references/worker-context.md`; workers do not load this
-foreman workflow or the full legacy contract.
+A verified completed delivery can end its observation obligation using the saved
+delivery evidence and existing supervision acknowledgment/resolution commands,
+while its report remains unassessed and its task remains open. This grants no
+pane cleanup, acceptance, gate waiver or release. Keep observing genuinely
+pending or unknown deliveries. Never manufacture a user pause or request one to
+escape an internal quota, stopped watcher or policy deadlock.
 
-```text
-skills/herdr-foreman/references/team-operation.md
-```
+Before ending a turn with observation obligations, retain their live implemented
+executor, verified successor/reset continuation or actual operator pause under
+`skills/herdr-foreman/references/supervision.md`. Zero active enrollments does not complete remaining
+authorized work. Continue its next action under the original goal.
 
-You run on the foreman's selected tier: the operator's `coordination` row,
-resolved through `select_tier` and checked against the capability table
-(`skills/herdr-foreman/references/team-operation.md` Foreman Seat).
+## Select the Applicable Contract
 
-Each command resolves `HS` to its installed Herdr skill or that skill in a
-herdr-policy clone. Repeat the resolver in every call. Prose `skills/...`
-paths are relative to the package root.
+An explicitly admitted schema-2 task uses `skills/herdr-foreman/references/task-workflow.md` and
+`skills/herdr-foreman/references/progression.md`. Read `skills/herdr-foreman/references/workflow-capacity.md` when selecting
+native capacity limits. This does not require migrating an already authorized
+legacy task before it can continue.
 
-Read the lookup rule before running these command blocks:
+A legacy task uses only the current action's reference below. The numbered names
+remain stable for saved continuations; they are an index, not a mandatory cycle.
+`skills/herdr-foreman/references/team-operation.md` is the detailed source for a policy question that
+needs it. Workers receive `skills/herdr-foreman/references/worker-context.md` and their assignment,
+never this foreman workflow.
 
-```text
-skills/herdr-foreman/references/bootstrap.md
-```
-
-Use this invocation for each owner query, replacing `<command-and-arguments>`
-with one table row and its actual task or enrollment identity. Repeat the
-lookup for each call; it is the scoped exception in `skills/herdr-foreman/references/bootstrap.md`.
-The co-shipped launcher is `skills/herdr-foreman/foreman.sh`; its JSON reader
-contracts are in `skills/herdr-foreman/state-schema.md`.
-
-```bash
-HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/foreman.sh" <command-and-arguments>
-```
-
-| Command and arguments | When |
-| --- | --- |
-| `load-set --decision plan --task <task>` | Step 5 |
-| `load-set --decision brief --task <task>` | Step 8 |
-| `load-set --decision wake --enrollment <enrollment-id>` | Step 11, per wake event |
-| `load-set --decision gate --task <task>` | Step 12 |
-| `load-set --decision diagnose --task <task>` | Step 13, diagnosis mode |
-| `cost-report --task <task>` | Offline cost lookup in Step 1 |
-| `workflow-readiness --task <task>` | Current workflow readiness in Step 1 |
-
-`load-set` prints schema-3 JSON with a question-specific retrieval menu in `files`.
-Retrieve only the evidence needed for the pending question, within the command's
-budgets. Read every report fully when Team Operation requires it for gating.
-A file with `present: false` remains an unresolved gap. A non-zero exit names a
-refused task, enrollment or unreconciled dispatch on stderr; resolve it first.
-The contract is `skills/herdr-foreman/references/working-memory.md` "Load a
-decision's records".
-
-Reuse policy and reference text actually loaded in this context while its
-revision and applicability remain unchanged. A path, digest or earlier context's
-claim is not loaded text. After replacement, retrieve the references needed for
-the current decision without copying complete policies into handoff captures.
-
-- Run each step's commands as that step documents them
-- Never write a throwaway helper script in a scratch directory
-- Never name a scratch file in a handoff
-- A command sequence you repeat across tasks belongs in a tested script
-  shipped with this skill
-- Record such a sequence as a follow-up
-- Never script such a sequence locally
-
-Load the reference named by the current step before acting. Read its contracts
-in full; execute only the current step and its stated continuation. Do not preload
-later stages or rerun earlier stages on resume. Step numbers in these references
-match this execution plan.
+Use the selected owner's state/config and the installed launcher under
+`skills/herdr-foreman/references/bootstrap.md`. Read current facts through `skills/herdr-foreman/references/decision-context.md`.
+Use `load-set --decision plan|brief|gate|diagnose --task <task>` or
+`load-set --decision wake --enrollment <id>` for missing current decision inputs.
+Reuse text already loaded in this context while its revision and applicability
+remain unchanged. Earlier contexts' claims do not substitute for needed text.
 
 ## Step 1 — Determine the Mode
 
-Delegation in either mode follows `skills/herdr-foreman/references/team-scope.md` Delegation.
-In a team round, use the existing Herdr owner route under
-`skills/herdr-foreman/references/team-operation.md` Delegation.
+Verify the role through bootstrap. Ordinary standalone work uses general coding
+policy. Answer named offline lookups through the skill's selected reference;
+they need no team setup. A live foreman keeps direct coordination ownership and
+uses existing Herdr owners, with no native-agent fallback.
 
-A refusal naming the legacy `teamlead` default home is a one-time operator
-step, not a mode: record it as a
-user-attention blocker naming `foreman migrate-home` (`skills/herdr-foreman/state-schema.md` Home
-Migration), and run nothing else until the operator has stopped every foreman
-and run it.
+## Step 2 — Take the Selected Continuation
 
-Six request kinds are answered offline, need no live Herdr, and finish here
-after the requested operation. Each reference carries its own owner commands and
-their contracts. Use the recorded state override or default, report any non-zero
-diagnostic, and never fabricate missing history. They grant no new task
-authority.
+Choose the next delivery action from the current task, existing assignment or
+saved continuation. Inspect the queue only when selecting new work. A completed
+round does not require restarting preparation. See `skills/herdr-foreman/references/round-setup.md`.
 
-- **Sanitized coordination measurements** — read the command and schema contract:
+## Step 3 — Check Needed Capacity
 
-  ```text
-  skills/herdr-foreman/references/coordination-metrics.md
-  ```
+Use valid current measurements. Probe only failed, missing or expired profiles
+with `measure --retry-failed`; do not re-probe successful providers on every
+retry. A staffing gap affects the responsibilities that need that capacity.
+See `skills/herdr-foreman/references/round-setup.md` and `skills/herdr-foreman/references/model-tiers.md`.
 
-  Return the bounded summary or private-report receipt and finish here. Report
-  any non-zero diagnostic and finish here without starting a live round.
-- **Current workflow readiness** — read `skills/herdr-foreman/references/workflow-capacity.md`
-  Readiness view, invoke the table's `workflow-readiness` entry, and finish here.
-  Omit `--task` for a page of open canonical tasks. Preserve unmeasured values
-  and page coverage; the result grants no dispatch authority.
-- **Catch-up or saved attention** — `skills/herdr-foreman/references/attention.md`. Read all
-  attention pages before claiming completeness.
-- **Lesson curation, saved foreman context, or a foreman handoff** —
-  `skills/herdr-foreman/references/working-memory.md`.
-- **A saved retrospective** — `skills/herdr-foreman/references/retrospectives.md`. Report the note's
-  date, coverage, conclusions, and path.
-- **A task's cost or resource use** — invoke the table's `cost-report` entry,
-  omitting `--task` for the first bounded task page.
+## Step 4 — Check the Selected Work
 
-  Follow the Task Cost contract in
-  `skills/herdr-foreman/references/decision-context.md`. Retain page coverage and
-  unknown quantities; never total unlike resources or claim a saving. Follow
-  a continuation only when the current question needs it. On refusal, report
-  the diagnostic and preserve unread evidence; do not dump the owner file.
-
-For every other request, read `HERDR_ENV` and the controller's attached context before running scripts.
-
-- **Owner-attested remote context**
-  - Read the remote contract in full:
-
-    ```text
-    skills/herdr-foreman/references/remote-context.md
-    ```
-
-  - Verify its owner preflight and supervision binding.
-  - Load the team-round contract.
-  - Use the bound Python owners.
-  - Do not manufacture `HERDR_ENV`.
-  - Do not start another foreman brain.
-  - Native-only shell preflights and reset hooks do not authorize remote operation.
-  - Preserve every remaining stage-local gate.
-  - Run Step 2's remaining gates through the controller's configured owners.
-  - Proceed immediately to Step 5 only when those gates pass.
-
-- **Unset, without a verified remote context** — this skill does not apply. Say so and do the task
-  directly, without roster calls, briefs, provisioning, reports, or simulated
-  worker roles. Finish here.
-- **Set, with a bounded factual lookup**
-  - Read `skills/herdr-foreman/references/team-operation.md` Bounded Factual Lookup.
-  - Answer within that boundary.
-  - Cite the source.
-  - Run no round preflight, roster measurement, enrollment, report gate or context reset for the lookup.
-  - Finish here only with no enrollment requiring supervision or a valid Stop-gate condition; otherwise resume Fleet Supervision at Step 11.
-- **Set, outside Bounded Factual Lookup, with a team task or new retrospective** — Proceed to Step 2.
-- **Set, outside Bounded Factual Lookup, with a lookup, a file inspection, research, a bounded question, a
-  review of existing code, a repository edit, or any other task deliverable** —
-  a round, whatever its size. None of it is foreman work. Staff it in Step 5.
-  Proceed to Step 2.
-- **Set, none of the above applies, and the answer is already in the foreman's
-  context** — say it. Finish here.
-
-## Step 2 — Run the Round Preflight
-
-Run capability migration and the consolidated round preflight. Relay the worktree
-report and warnings verbatim. Exit 0 proceeds immediately to Step 5, or the stow's
-continuation step after a checkpoint or resume. Cadence-only maintenance and unrelated worktrees
-never block the selected task. Exit 1 follows the named owner's recovery; exit 2
-reports the diagnostic and finishes here. Preserve enrolled supervision obligations.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-preflight.md
-```
-
-## Step 3 — Verify Authority for the Repo
-
-For an authority-only check, record namespace evidence. Non-owned repositories
-require explicit per-action permission; otherwise remain read-only or finish here. On non-zero,
-report the diagnostic and finish here. Proceed immediately to Step 4.
-
-```text
-skills/herdr-foreman/references/round-preflight.md
-```
-
-## Step 4 — Measure Headroom
-
-For a headroom-only check, preserve failed measurements and unknown billing;
-recover required seats through their owner route. Proceed immediately to Step 5 when required readings
-are available.
-
-```text
-skills/herdr-foreman/references/round-preflight.md
-```
+Apply `skills/herdr-foreman/references/round-preflight.md` to new or changed work that needs preflight.
+Reuse unchanged preparation for an existing continuation. Actual authority,
+checkout-integrity and tier failures refuse their covered action. Unrelated
+worktrees, maintenance cadence and advisory observations do not hold delivery.
 
 ## Step 5 — Plan the Roles
 
-Load the plan decision's records. Read the waiting queue, choose the needed
-responsibilities, resolve composition triggers, validate any review partition,
-and save the owner's plan and rationale. Preserve developer reservations, task
-identity, cumulative fix count, correction bounds and independent verification.
-Plan only after trigger and partition validation pass. Staff specialists when
-the task's triggers or unresolved judgment require them, not every round.
-Proceed immediately to Step 6.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/role-planning.md
-```
+Reuse a current plan whose inputs have not changed, or select the responsibilities
+this task needs and record its plan through `skills/herdr-foreman/references/role-planning.md`.
+Preserve trigger handling, task identity, reservations, correction bounds and
+independent verification. Idle capacity is no reason to invent an assignment.
 
 ## Step 6 — Build the Review Package
 
-Build the recorded-base-to-pushed-head review package for reviewer and tester
-briefs. Resolve any diagnostic before composition; other roles need no package.
-Proceed immediately to Step 7.
+For reviewer/tester dispatch, bind the package to the recorded base and current
+pushed head under `skills/herdr-foreman/references/role-planning.md`. Other roles need no package.
 
-Read before acting:
+## Step 7 — Prepare the Task Checkout
 
-```text
-skills/herdr-foreman/references/role-planning.md
-```
+Use `skills/herdr-foreman/references/round-setup.md` for the selected task's isolated checkout,
+authority and integrity checks. Reuse an unchanged owned checkout. Clean only
+the task's owned work; unrelated hygiene does not delay its dispatch.
+Read `skills/herdr-foreman/references/coding-policy-integration.md` before relying on an exception.
 
-## Step 7 — Provision the Worktrees
+## Step 8 — Compose the Assignment
 
-Route on Step 2's worktree check before provisioning. Provision every repository
-reader and every checkout named in a brief; an idle task checkout may be reused
-under the one-writer limit. Checkout-free roles inspect supplied immutable
-artifacts and non-repository documentation only, with no Git/gh or live source/API
-inspection. Missing source is BLOCKED for evidence or a provisioned checkout.
-Preserve the task's original authorized base. Never dispatch a missing worktree
-or manually remove another task's checkout. Proceed immediately to Step 8.
+Use current task inputs and the scoped role template under
+`skills/herdr-foreman/references/round-setup.md`. Reuse unchanged frozen briefs. Preserve exact scope,
+report identity, model/effort, contribution exclusions and required evidence.
 
-Read before acting:
+## Step 9 — Reconcile a Required Worker Transition
 
-```text
-skills/herdr-foreman/references/assignment-delivery.md
-```
+Use `skills/herdr-foreman/references/retrospectives.md` and `skills/herdr-foreman/references/dispatch-recovery.md` when an
+existing worker must transition. Preserve outgoing work and unknown deliveries.
+A fresh assignment with no outgoing work needs no retrospective; cadence-only
+maintenance never delays ready work.
 
-## Step 8 — Compose the Briefs
+## Step 10 — Dispatch
 
-Load the brief decision's records. Resolve policy paths and compose complete,
-bounded briefs with fresh report paths and recorded authorization. Accepted
-behavior, reproducible failure and a bounded correction permit a direct developer
-brief. Unsettled behavior, evidence, scope, causal uncertainty or exhausted
-allowances take their named consultation route; return to Step 5 when required.
-The foreman never substitutes substantive judgment. Proceed immediately to Step 9.
+Apply the existing owner plan once under `skills/herdr-foreman/references/round-flow.md`. Preserve
+binding, enrollment, readiness, permission flags and guarded input delivery.
+An unknown send is reconciled, never retried as if absent. A task-specific hold
+leaves independent work eligible; a global operator pause remains binding.
 
-Read before acting:
+## Step 11 — Observe Deliveries
 
-```text
-skills/herdr-foreman/references/assignment-delivery.md
-```
+Use `skills/herdr-foreman/references/fleet-checkpoint.md` and `skills/herdr-foreman/references/supervision.md`. Handle each
+completed delivery independently, batch already handled event acknowledgments,
+and return to ready work. Keep pending events explicit; quiet deadlines and
+screen/status changes never establish delivery or acceptance.
 
-## Step 9 — Label the Layout
+## Step 12 — Assess and Route the Task
 
-Optionally label the team layout once; skip an already named sidebar. Report
-partial label failures and continue immediately to Step 10.
+Read the selected reports fully, classify and assess their contracts, and apply
+`skills/herdr-foreman/references/round-gate.md`. Keep delivery, report acceptance and task completion
+separate. Route blocking findings through the bounded correction path; a release
+needs broad independent reviewer/tester passes at the current pushed tip.
+Other tasks need not wait for this assessment.
 
-Read before acting:
+## Step 13 — Resolve a Contested Decision
 
-```text
-skills/herdr-foreman/references/assignment-delivery.md
-```
+Use `skills/herdr-foreman/references/round-completion.md` for an actually triggered judge round,
+retaining pinned tier, independence, correction limits and verified ruling.
+An uncontested routine continuation needs no judge, new log or checkpoint.
 
-## Step 10 — Dispatch the Briefs
+## Step 14 — Release
 
-Check retrospective cadence and transition coverage, then apply the saved plan
-with the composed briefs and fresh report paths. Preserve task authorization,
-identity and fix count. Apply enrolls before input; reconcile uncertain sends
-before retrying. An applied send is not task acceptance. Unanswered task decisions
-and blockers retain their dispatch gate. Proceed immediately to Step 11.
+Use the compatible general coding-policy release skill and
+`skills/herdr-foreman/references/round-completion.md`. Preserve authority, current-tip independent
+verification, hosted CI, both automated review lanes, merge and all declared
+publication confirmations. Advisory findings do not create a repair round.
 
-Read before acting:
+## Step 15 — Clean the Delivered Task
 
-```text
-skills/herdr-foreman/references/assignment-delivery.md
-```
+Remove only the completed task's owned resources under
+`skills/herdr-foreman/references/round-completion.md` and coding-policy cleanup. Preserve other work
+and unresolved obligations; unrelated cleanup is not a delivery prerequisite.
 
-## Step 11 — Observe the Fleet
+## Step 16 — Record the Outcome
 
-Retain and await the bounded fleet watch's real execution handle, then gate its
-events. A quiet deadline ends only the checkpoint. Acknowledge suppressed events
-with their recorded reason. For each wake event, load its enrollment's records and
-verify report delivery. Persist user attention and acknowledge only handled event
-IDs; do not assess outcomes or close enrollments here. Continue watching every
-observation obligation. Proceed to Step 12 when required reports are delivered or
-their unavailability and recovery are recorded.
+Close a task only after required acceptance, release and cleanup are verified.
+Record new judgments/outcomes once under `skills/herdr-foreman/references/task-ledger.md`; routine
+owner receipts need no parallel narrative. A continuing task stays open.
 
-Read before acting:
+## Step 17 — Continue or Hand Off
 
-```text
-skills/herdr-foreman/references/fleet-checkpoint.md
-```
+Take the task's next action directly. Save a concise stow only for a real context
+transition or knowledge otherwise at risk. An explicitly requested reset uses
+`skills/herdr-foreman/references/working-memory.md` and the Resume Route in
+`skills/herdr-foreman/references/round-completion.md`: selected stow, verified goal/owner handoff,
+complete current hold set, relevant pending events/resets, saved continuation.
+No historical progress, unrelated queue/attention replay or Steps 1–4 restart.
+A reset cannot grant authority, erase obligations or justify a fictitious pause.
 
-## Step 12 — Gate the Round
-
-Load the gate decision's records. Classify reports, read every report in full,
-and record classifier gates before assessment. Contract lines decide acceptance;
-labels and a clean worker exit never replace the verdict. Verify any mechanical
-oracle and partition against the dispatched plan and current tip. Record assessed
-assignment outcomes separately from the task's gate; close enrollments only after
-the owner verifies the ledger and report evidence. Resume Step 11 for remaining
-observation obligations.
-
-Blocking verdicts take the bounded fix loop or a required Step 13 ruling. A
-contradicting classifier gate or weighing nomination goes to Step 13. Exhausted
-approach allowances go through the investigator's assessed report to judge
-diagnosis, without waiting for an operator decision. Advisory findings go in the
-round log; they do not become blocking verdicts. Never weigh findings yourself or
-use a judge report to clear a verdict gate.
-
-Every return to Step 4 crosses Steps 16 and 17 first, with the named continuation
-saved in the stow. An accepted investigation presents findings without inferring
-implementation or release, then goes to Step 15 if cleanup is needed, otherwise
-Step 16. Release requires broad independent reviewer and tester passes at the
-current pushed tip. With release criteria met, proceed immediately to Step 13.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-gate.md
-```
-
-## Step 13 — Run the Judge Round
-
-No judge trigger: proceed immediately to Step 14. Otherwise run the referenced
-judge round, preserving its pinned tier, independence and verified ruling.
-Diagnosis loads the diagnose decision's records. Apply Step 7's checkout contract
-to the read-only judge too. After any ruling, log and checkpoint through Steps 16 and 17
-before its named continuation.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-completion.md
-```
-
-## Step 14 — Release the Pull Request
-
-Release is a fresh assignment, not a prompt into the developer's existing
-context. Follow the Step 7, 8, 10 and 11 release route with fresh report evidence.
-Open verdict gates and source-changing release findings return to Step 12; bot
-disagreements return to Step 13. Verify the reported release against live VCS
-and release gates, record the evidence, then proceed immediately to Step 15.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-completion.md
-```
-
-## Step 15 — Clean Up the Worktree
-
-After merge, fast-forward the shared checkout, remove only the merged task's own
-worktree with `git worktree remove`, then delete its branch. Follow the mandatory
-post-merge order in `rules/agent-worktree-isolation.md`. Re-sweep the round's other
-worktrees through Step 7's referenced sweep contract. Proceed immediately to Step 16.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-completion.md
-```
-
-## Step 16 — Log the Round
-
-Finalize the ledger and remaining obligations. Complete the task only after its
-acceptance, release and cleanup requirements are verified. Close merged or
-abandoned tasks through the owner; resolve any refusal before continuing. Keep
-in-progress tasks open. Preserve lessons and retrospective notes; report outstanding
-attention first, then the outcome and saved paths. Proceed immediately to Step 17.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-completion.md
-```
-
-## Step 17 — Checkpoint the Foreman Context
-
-Stow the handoff, active goal, required reads, gaps and the outcome's continuation
-step. Keep the current foreman context and goal active. Never schedule a reset,
-clear the pane or create a handoff hold merely for a round boundary.
-Run Steps 1 and 2 in this context, then continue at the saved step; resume Step 11 for enrolled observation
-obligations. A checkpoint is not a pause, completed goal or transfer of supervision.
-
-After an explicitly requested restart or replacement, the next context retrieves
-the bounded stow and uses current owner queries for its evidence references,
-explicitly sets `/goal <saved objective>`
-and verifies the goal is active, then reconciles supervision and its relevant
-pages, including every unresumed hold and outstanding reset,
-reads the queue, runs Steps 1 and 2, then takes the stow's continuation step in
-place of Step 5. The queue lists seats only; gating, release and closure resume
-at their saved step. Follow the selected view's continuations before claiming
-completeness. Preserve operator holds; a context reset supplies no permission
-to clear them. An unsatisfied hold or incomplete supervision reconciliation
-prevents the saved continuation. Finish here only with no authorized work remaining or a
-genuine pause or verified continuation satisfying the Stop gate.
-
-Read before acting:
-
-```text
-skills/herdr-foreman/references/round-completion.md
-```
-
-For the daily standup, use `Skill(skill: "herdr-standup")`.
+Use `Skill(skill: "herdr-standup")` for a requested standup.

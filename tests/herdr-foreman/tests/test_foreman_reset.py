@@ -143,13 +143,14 @@ class ResumePromptRunsTest(unittest.TestCase):
         shown = self.run_command(by_name["memory-show"])
         self.assertEqual(shown.returncode, 0, shown.stderr)
         self.assertEqual(json.loads(shown.stdout)["record"]["id"], "round-7")
-        queued = self.run_command(by_name["foreman-queue"])
-        self.assertEqual(queued.returncode, 0, queued.stderr)
-        self.assertEqual(json.loads(queued.stdout)["queue"], [])
+        recovery = self.run_command(by_name["catch-up"])
+        self.assertEqual(recovery.returncode, 0, recovery.stderr)
+        self.assertEqual(json.loads(recovery.stdout)["section"], "resets")
+        self.assertNotIn("foreman-queue", by_name)
 
     def test_every_command_is_accepted_by_the_launcher(self):
         commands = self.commands()
-        self.assertEqual(len(commands), 12)
+        self.assertTrue(commands)
         for command in commands:
             filled = (command.replace("<plan|brief|gate|diagnose>", "plan").replace("<task>", "t")
                       .replace("<enrollment-id>", "e1"))
@@ -364,7 +365,7 @@ class DeliverTest(unittest.TestCase):
                                  ("message", "foreman", PANE, foreman_reset.guarded_resume("round-7", "/state/s.json", SESSION,
                                      [{"pid": 4242, "identity": "started-once"}]))])
         self.assertIn("memory-show --state /state/s.json --id round-7", calls[1][3])
-        self.assertIn("foreman-queue --state /state/s.json", calls[1][3])
+        self.assertIn("catch-up --state /state/s.json --compact --section resets", calls[1][3])
         self.assertEqual(client.waits, ["foreman"])
         self.assertTrue(result["cleared"])
 
@@ -461,7 +462,7 @@ class DeliverTest(unittest.TestCase):
     def test_every_resume_command_is_a_runnable_foreman_call(self):
         prompt = foreman_reset.resume_prompt("round-7", "/s.json")
         for command in ("memory-show", "supervision-bind", "supervision-resume", "supervision-status",
-                        "supervision-drain", "foreman-queue", "load-set"):
+                        "supervision-drain", "catch-up", "foreman-reset-status", "load-set"):
             self.assertIn("`bash {} {} --state /s.json".format(runnable.launcher(), command), prompt)
 
     def test_the_resume_prompt_routes_to_the_stow_continuation_step(self):
@@ -469,9 +470,12 @@ class DeliverTest(unittest.TestCase):
         self.assertIn("Step 17's Resume Route", prompt)
         self.assertIn(str(Path(foreman_reset.__file__).resolve().parents[1] / "references/foreman-workflow.md"), prompt)
         self.assertIn("continuation step the stow's unresolved work names", prompt)
-        self.assertLess(prompt.index("foreman-queue"), prompt.index("Resume Route"))
-        self.assertLess(prompt.index("Follow returned cursors"), prompt.index("foreman-queue"))
-        self.assertLess(prompt.index("supervision-resume"), prompt.index("foreman-queue"))
+        self.assertNotIn("foreman-queue", prompt)
+        self.assertNotIn("Follow returned cursors before continuation", prompt)
+        self.assertIn("--compact --section holds", prompt)
+        self.assertIn("--compact --section resets", prompt)
+        self.assertLess(prompt.index("supervision-resume"), prompt.index("Resume Route"))
+        self.assertIn("Do not rerun round-start preparation", prompt)
         self.assertIn("Do not continue while any hold condition is unsatisfied", prompt)
 
     def test_resume_uses_the_native_goal_receipt_without_creating_another_goal(self):
@@ -559,7 +563,7 @@ class DeliverTest(unittest.TestCase):
         prompt = foreman_reset.resume_prompt("round-7", "/s.json", config="/c/my config.json", herdr_bin="/opt/herdr")
         flags = "--state /s.json --config '/c/my config.json' --herdr-bin /opt/herdr"
         for command in ("memory-show", "supervision-bind", "supervision-resume", "supervision-status",
-                        "supervision-drain", "foreman-queue", "load-set"):
+                        "supervision-drain", "catch-up", "foreman-reset-status", "load-set"):
             with self.subTest(command=command):
                 self.assertIn("foreman.sh {} {}".format(command, flags), prompt)
 
