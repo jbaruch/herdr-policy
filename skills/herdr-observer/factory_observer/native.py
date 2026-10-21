@@ -22,6 +22,7 @@ def identity(row):
         return None
     native = row.get("agent_session")
     if (not isinstance(native, dict)
+            or native.get("pane_id", row["pane_id"]) != row["pane_id"]
             or not isinstance(native.get("agent"), str)
             or native.get("source") != "herdr:" + native["agent"]
             or native.get("kind") not in ("id", "path")

@@ -111,13 +111,17 @@ def start(store, client, states, now):
                 pending["send_status"] = "unknown"
                 store.put("meta", "pending", pending)
         script = Path(__file__).resolve().parents[1] / "observer.py"
+        diagnostic_path = store.home / "collector.stderr"
+        private_file(diagnostic_path)
         try:
-            process = subprocess.Popen([sys.executable, "-B", "-I", str(script), "serve"], cwd=store.home,
-                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                       stderr=subprocess.DEVNULL, start_new_session=True)
+            with os.fdopen(os.open(diagnostic_path, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW), "w", encoding="utf-8") as diagnostic:
+                process = subprocess.Popen([sys.executable, "-B", "-I", str(script), "serve"], cwd=store.home,
+                                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                           stderr=diagnostic, start_new_session=True)
         except OSError:
             raise ValueError("collector could not start; repair the Python installation and inspect status") from None
         return {"ok": True, "status": "starting", "pid": process.pid, "home": str(store.home),
+                "diagnostic_path": str(diagnostic_path),
                 "next": "inspect status; leave the observer idle between analysis prompts"}
     finally:
         guard.close()
@@ -179,7 +183,7 @@ def status(store, now):
             "sample_age_seconds": now - current["at"] if "at" in current else None,
             "coverage": current.get("coverage", []),
             "pending": {**{k: pending.get(k) for k in ("id", "reasons", "created_at", "send_status", "recovery", "attention")}, "age_seconds": age},
-            "retention": store.get("meta", "retention", {}),
+            "retention": store.get("meta", "retention", {}), "diagnostic_path": str(store.home / "collector.stderr"),
             "reports": store.rows("reports")[-8:]}
 
 

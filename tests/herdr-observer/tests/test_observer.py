@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -234,6 +236,43 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(result["status"], "starting")
         self.assertEqual(spawn.call_args.args[0], [sys.executable, "-B", "-I", str(ROOT / "skills/herdr-observer/observer.py"), "serve"])
         self.assertTrue(spawn.call_args.kwargs["start_new_session"])
+        self.assertNotEqual(spawn.call_args.kwargs["stderr"], subprocess.DEVNULL)
+        self.assertEqual(result["diagnostic_path"], str(self.cache / "collector.stderr"))
+        self.assertEqual((self.cache / "collector.stderr").stat().st_mode & 0o777, 0o600)
+
+    def test_collector_stderr_is_bounded_and_fatal_import_keeps_a_private_diagnostic(self):
+        source = ROOT / "skills/herdr-observer/observer.py"
+        spec = importlib.util.spec_from_file_location("observer_entry", source)
+        assert spec is not None and spec.loader is not None
+        entry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(entry)
+        stream = io.StringIO()
+        bounded = entry.BoundedDiagnostics(stream)
+        bounded.write("é" * entry.MAX_DIAGNOSTIC_BYTES)
+        bounded.write("extra")
+        self.assertLessEqual(len(stream.getvalue().encode()), entry.MAX_DIAGNOSTIC_BYTES)
+
+        installed = self.root / "installed/herdr-observer"
+        (installed / "factory_observer").mkdir(parents=True)
+        script = installed / "observer.py"
+        script.write_text(source.read_text())
+        (installed / "factory_observer/__init__.py").write_text("")
+        secret = "PRIVATE_EXCEPTION_VALUE_NEVER_LOG"
+        (installed / "factory_observer/cli.py").write_text("raise RuntimeError(" + repr(secret) + ")\n")
+        peer = installed.parent / "herdr-foreman/foreman/observer_role.py"
+        peer.parent.mkdir(parents=True)
+        peer.write_text("")
+        diagnostic = self.cache / "collector.stderr"
+        private_file(diagnostic)
+        with diagnostic.open("w") as errors:
+            failed = subprocess.run([sys.executable, "-B", "-I", str(script), "serve"],
+                                    stdout=subprocess.PIPE, stderr=errors, timeout=10)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("collector failed (RuntimeError)", diagnostic.read_text())
+        self.assertIn("before restarting", diagnostic.read_text())
+        self.assertNotIn(secret, diagnostic.read_text())
+        self.assertLessEqual(diagnostic.stat().st_size, entry.MAX_DIAGNOSTIC_BYTES)
+        self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
 
     def test_reporter_admission_rejects_unreadable_role_formats_before_writes(self):
         for change in ({"cwd": None}, {"cwd": "relative"}, {"provider": "unsupported"}, {"pane": "other-pane"}):
@@ -415,10 +454,11 @@ class ObserverTest(unittest.TestCase):
             adapter = native.Native()
         for field, value in (("pane_id", 12), ("pane_id", ["pane"]), ("pane_id", ""),
                              ("agent_status", []), ("name", {}), ("cwd", []), ("agent", 42),
-                             ("agent_session", []), ("agent_session", {"value": "session"})):
+                             ("agent_session", []), ("agent_session", {"value": "session"}),
+                             ("agent_session", {**self.worker["agent_session"], "pane_id": "other-pane"})):
             with self.subTest(field=field, value=value):
                 bad = {**self.worker, field: value}
-                if field == "pane_id":
+                if field in ("pane_id", "agent_session"):
                     self.assertIsNone(native.identity(bad))
                 with patch.object(adapter, "call", return_value={"snapshot": {"agents": [bad]}}):
                     with self.assertRaisesRegex(ValueError, "agent row schema unsupported"):

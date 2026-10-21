@@ -13,6 +13,9 @@ refuses links, and restricts directory/file permissions. It creates no `.hr`
 archive, repository output or public history. Retention, database ceiling and
 report limits are owned by the constants in `store.py` (referenced from the
 analysis contract); final reports are retained separately from rolling samples.
+`collector.stderr` keeps one bounded private launch diagnostic and is replaced
+on restart. The entrypoint owns its byte bound. Fatal diagnostics include the
+exception type and stack locations, excluding exception values and local variables.
 
 The migration creates these tables:
 
@@ -82,7 +85,9 @@ bash "$HS/observer.sh" status
 ```
 
 JSON distinguishes a running collector, source age, coverage, pending send status
-and private report paths. It is last-seen evidence, not proof of current native
+and private report/diagnostic paths. If collection exits unexpectedly, inspect
+the private diagnostic before repairing the installation/store and restarting.
+Status is last-seen evidence, not proof of current native
 identity. If the collector stopped, use Start Observation in the invoking skill
 from the original observer to recover.
 If a wake is uncertain, read `next` there; do not resend a native prompt. A
