@@ -5,7 +5,8 @@ description: >
   evidence, inspect collection health, and produce private weekly reports or urgent
   alerts about delivery throughput, coordination overhead, idle capacity, subscription
   balance, model/effort suitability and other improvement opportunities. Use for
-  observer wake prompts and factory efficiency questions. Never gates delivery.
+  Herdr observer wake prompts, observer health checks, factory efficiency reports
+  and observer alerts. Never gates delivery.
 ---
 
 # Herdr Observer Skill
@@ -53,7 +54,8 @@ bash "$HS/observer.sh" next
 ```
 
 Success returns the saved `data.job` that caused this wake, plus a private
-`draft_path` and `latest_sample_at`. Check freshness before time-sensitive
+`draft_path` and `latest_sample_at`. Use `data.job.id` as `ID` and
+`draft_path` as `DRAFT` in the commands below. Check freshness before time-sensitive
 conclusions and retrieve focused newer evidence as needed.
 If no job exists, finish silently. Do not reconstruct the entire
 factory or replay history. For analysis and reporting follow:
@@ -64,7 +66,7 @@ skills/herdr-observer/references/analysis.md
 
 Use the same command lookup for the following operations on `observer.sh`:
 `evidence --agent NAME` returns a bounded focused view with omissions;
-`evidence --hours HOURS` selects one of the CLI's supported windows. Retrieve
+`evidence --help` lists the accepted windows for `evidence --hours HOURS`. Retrieve
 only evidence needed for an open question. The agent makes the judgments;
 candidate signals are questions, never automatic findings.
 
@@ -78,25 +80,16 @@ improvement is supported. Finish here after saving or acknowledging the job.
 
 ## Step 3 — Inspect Observer Health
 
-```bash
-HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/observer.sh" status
-```
+Use Inspect Observer Health in the lifecycle/storage contract, then finish here:
 
-JSON distinguishes a running collector, source age, coverage, pending send status
-and private report paths. It is last-seen evidence, not proof of current native
-identity. If the collector stopped, use Step 1 in the original observer to recover.
-If a wake is uncertain, read `next` there; do not resend a native prompt. A
-replacement requires an explicit stop before registering its own live identity.
-Collection continues while the reporter is busy or missing. Finish here.
+```text
+skills/herdr-observer/references/storage.md
+```
 
 ## Step 4 — Stop Observation
 
-```bash
-HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/observer.sh" stop
-```
+Use Stop Observation in the same contract, then finish here:
 
-This disables future collection and wakes without touching delivery owners or
-private reports. Before replacing the role, use Step 3 until `running` is false.
-Finish here.
+```text
+skills/herdr-observer/references/storage.md
+```

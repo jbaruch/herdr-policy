@@ -60,3 +60,29 @@ the factory after reboot. `status` exposes a dead collector or missing reporter;
 restart from the same observer to retain cursors and pending work. An explicitly
 stopped role can be registered to a replacement session; uncertain pending work
 is preserved for inspection rather than replayed.
+
+## Inspect Observer Health
+
+```bash
+HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
+bash "$HS/observer.sh" status
+```
+
+JSON distinguishes a running collector, source age, coverage, pending send status
+and private report paths. It is last-seen evidence, not proof of current native
+identity. If the collector stopped, use Step 1 in the original observer to recover.
+If a wake is uncertain, read `next` there; do not resend a native prompt. A
+replacement requires an explicit stop before registering its own live identity.
+Collection continues while the reporter is busy or missing. Finish here.
+
+
+## Stop Observation
+
+```bash
+HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
+bash "$HS/observer.sh" stop
+```
+
+This disables future collection and wakes without touching delivery owners or
+private reports. Before replacing the role, use Step 3 until `running` is false.
+Finish here.
