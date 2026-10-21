@@ -90,7 +90,7 @@ def refresh(receipt, host, *, interrupted=False):
         observed = {**current, "status": before["status"]}
     if not same_goal(observed, before):
         raise unavailable("source_goal_changed")
-    if current is not None:
+    if current is not None and before is not None:
         for stored, native in (("carried_tokens", "tokensUsed"), ("carried_seconds", "timeUsedSeconds")):
             if current[native] < before[native]:
                 raise unavailable("source_usage_changed")
@@ -133,6 +133,12 @@ def retire_turn(receipt, host, persist, sleep, clock):
         raise unavailable("invalid_source_thread")
     status = thread.get("status")
     if isinstance(status, dict) and status.get("type") == "active":
+        if receipt["resume_status"] != "active":
+            # No automatic executor is being retired. A manual turn around an
+            # absent/inactive goal must finish without synthetic cancellation.
+            quiescent(host, receipt["source_thread"], sleep, clock)
+            refresh(receipt, host)
+            return
         turns = host.call("thread/turns/list", {"threadId": receipt["source_thread"], "limit": 1,
                                                "sortDirection": "desc", "itemsView": "notLoaded"}).get("data")
         turn = turns[0] if isinstance(turns, list) and len(turns) == 1 else None

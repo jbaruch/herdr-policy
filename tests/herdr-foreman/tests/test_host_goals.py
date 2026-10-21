@@ -147,6 +147,15 @@ class HostGoalTest(unittest.TestCase):
         self.assertEqual(self.host.goals["new"]["status"], "active")
         self.assertEqual(sum(method == "turn/interrupt" for method, _ in self.host.calls), 1)
 
+    def test_no_automatic_goal_does_not_authorize_interrupting_a_manual_turn(self):
+        self.host = GoalHost()
+        self.receipt = transfer.prepare("codex", {"kind": "id", "value": "old"},
+                                        connect=self.host.connect, discover=lambda: "/fixture/codex.sock")
+        self.host.active.add("old")
+        self.deliver(sleep=lambda _: self.host.active.remove("old"))
+        self.assertFalse(any(method == "turn/interrupt" for method, _ in self.host.calls))
+        self.assertEqual(self.host.goals, {})
+
     def test_missing_host_control_refuses_preflight(self):
         with self.assertRaises(GoalError):
             transfer.prepare("codex", {"kind": "id", "value": "old"},
