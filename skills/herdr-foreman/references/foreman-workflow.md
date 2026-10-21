@@ -169,8 +169,9 @@ An uncontested routine continuation needs no judge, new log or checkpoint.
 
 ## Step 14 — Release
 
-Invoke `Skill(skill: "release")` under the compatible coding-policy contract and
-`skills/herdr-foreman/references/round-completion.md`. Preserve authority, current-tip independent
+Dispatch the release worker under `skills/herdr-foreman/references/round-completion.md`.
+Its brief invokes `Skill(skill: "release")` through the compatible coding-policy
+contract. Preserve authority, current-tip independent
 verification, hosted CI, both automated review lanes, merge and all declared
 publication confirmations. Advisory findings do not create a repair round.
 
