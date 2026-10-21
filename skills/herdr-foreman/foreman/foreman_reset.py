@@ -201,7 +201,11 @@ UNTOUCHED_RECOVERY = ("Do not run `{}` again for this stow. Nothing was typed by
 def recovery_instruction(status, result):
     """Failed delivery typed nothing; operator-reconciled uncertainty is not that proof."""
     if "\n" + RESET_RECEIPT_PREFIX in result.get("resume_prompt", ""):
-        return "The input was not admitted. The operator pastes the saved recovery prompt into this same bound native session without clearing or restarting it; its native hook verifies admission before goal restoration."
+        return ("The input was not admitted. Inspect this reset's host_goal target and current supervision binding. "
+                "If no target is journaled and supervision still names the saved source, the operator clears the same pinned runtime "
+                "and pastes the saved recovery prompt. If a target is journaled or supervision already rebound, paste into that "
+                "same incoming native session without clearing or restarting it. Restore an idle, unblocked pane first; "
+                "its native hook verifies admission before goal restoration.")
     if status == "failed" and (result["details"].get("reconciled") != "failed"
                                or result["details"].get("phase") == "unclaimed"):
         return UNTOUCHED_RECOVERY
@@ -1468,6 +1472,9 @@ def deliver(client, agents, pane_id, stow, state, *, native_session, still_ready
             if found is None:
                 raise HerdrError("Herdr reports no foreground process for the foreman's pane {}, so the clear could not be "
                                  "tied to it; nothing was sent. {}".format(pane_id, OPERATOR_RECOVERY), {"pane_id": pane_id})
+            # Persist recovery proof before the first clear effect. A failed
+            # clear or settle must not strand an unadmitted host-goal handoff.
+            arm_resume(state, pane_id, stow, native_session, found)
             processes.append(found)
         elif foreground_processes(client, pane_id) != processes[0]:
             raise SessionChanged("The foreman's pane {} is under another process before typing; nothing more was sent. {}".format(
@@ -1489,8 +1496,6 @@ def deliver(client, agents, pane_id, stow, state, *, native_session, still_ready
         if agent.kind != "codex":
             phase = "clear_native_receipt"
             expected[0] = _cleared_session(client, pane_id, native_session, processes[0], sleep=sleep, clock=clock)
-        phase = "arm_resume"
-        arm_resume(state, pane_id, stow, native_session, processes[0])
         prompt = guarded_resume(stow, state, native_session, processes[0], options=options)
         phase = "resume_input"
         landing = send_message(client, agent, prompt, RESUME_OPENING, pane_id=pane_id, sleep=sleep, warn=warn,

@@ -1426,7 +1426,7 @@ could not take.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `schema_version` | integer, always `4` | Row version |
-| `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before continuation input. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
+| `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before the first clear keystroke. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
 | `host_goal` | null or goal-receipt schema 1 | Legacy null grants no goal authority. New rows carry host preflight and the journal below. The input hook retires the source before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
@@ -1476,7 +1476,10 @@ unfinished restoration remains recoverable through delivered reconciliation.
 An unadmitted Codex terminal failure with foreground proof carries the existing
 guarded resume prompt in `result.resume_prompt`. Native submission in the same
 pinned session verifies it and writes `accepted_session` once before restoration;
-there is no automatic resend or new owner record.
+there is no automatic resend or new owner record. With no journaled target and
+supervision still bound to the source, operator recovery clears that same
+pinned runtime first. Once either target or rebound supervision exists, recovery
+preserves the incoming session without another clear or process restart.
 
 One claimed delivery attempt per pane and stow, never retried automatically.
 Production startup uses a private inherited pipe: the loaded child supplies

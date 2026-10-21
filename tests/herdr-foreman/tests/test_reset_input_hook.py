@@ -18,7 +18,7 @@ from unittest.mock import patch
 ROOT = (Path(__file__).resolve().parents[3] / "skills/herdr-foreman")
 sys.path.insert(0, str(ROOT))
 from foreman import foreman_reset as reset, host_goals, memory, reset_input_hook as hook, supervision as store
-from tests.test_foreman_reset import FakeClient, SESSION, CLEARED, PANE
+from tests.test_foreman_reset import FakeClient, SESSION, CLEARED, PANE, worker
 from tests.goal_fakes import GoalHost, goal
 
 AT = "2026-10-01T00:00:00+00:00"
@@ -27,7 +27,7 @@ FOREGROUND = [{"pid": 4242, "identity": "started-once"}]
 
 
 class ResetHookTest(unittest.TestCase):
-    def setUp(self, kind="codex", source=None):
+    def setUp(self, kind="codex", source=None, arm=True):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
@@ -45,8 +45,9 @@ class ResetHookTest(unittest.TestCase):
         reset.schedule(self.state, self.plan, AT, lambda: CHILD["pid"], native_session=SESSION,
                        probe=lambda pid: CHILD, alive=lambda process: True, host_goal=host_goal)
         reset.claim(self.state, self.plan, CHILD)
-        with patch("foreman.foreman_reset.process_identity", return_value=CHILD):
-            reset.arm_resume(self.state, PANE, "round-7", SESSION, FOREGROUND)
+        if arm:
+            with patch("foreman.foreman_reset.process_identity", return_value=CHILD):
+                reset.arm_resume(self.state, PANE, "round-7", SESSION, FOREGROUND)
         self.payload = {"session_id": CLEARED, "cwd": str(self.directory),
                         "prompt": reset.guarded_resume("round-7", self.state, SESSION, FOREGROUND)}
         self.env = {"HERDR_ENV": "1", "HERDR_PANE_ID": PANE}
@@ -312,6 +313,42 @@ class ResetHookTest(unittest.TestCase):
         self.assertEqual(self.invoke(payload={**self.payload, "prompt": prompt}, probe=lambda _: None)["decision"], "block")
         with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
             self.assertEqual(self.reconcile()["host_goal"]["phase"], "verified")
+
+    def test_clear_and_settle_failures_save_recovery_proof_before_pane_effects(self):
+        for phase in ("clear_command", "clear_settle"):
+            self.setUp(source=goal(SESSION["value"]), arm=False)
+            client = FakeClient(["idle"], kind="codex")
+            ticks = iter(range(100))
+            def clear(*args, **kwargs):
+                kwargs["before_input"]()
+                row = json.loads(reset.record_path(self.state).read_text())["resets"][0]
+                self.assertEqual(row["foreground"], FOREGROUND)
+                client.cleared = True
+                if phase == "clear_command":
+                    raise reset.HerdrError("fixture uncertain clear", {})
+                return {"screen_changed": True}
+            def identify(pid):
+                return CHILD if pid == os.getpid() else client.identify(pid)
+            with self.subTest(phase=phase), patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                    patch("foreman.foreman_reset.send_command", side_effect=clear), \
+                    patch("foreman.foreman_reset.settled_clear", side_effect=reset.HerdrError("fixture unsettled clear", {})), \
+                    patch("foreman.foreman_reset.send_message") as send:
+                with self.assertRaises(reset.DeliveryInterrupted) as ended:
+                    reset.deliver(client, [worker("codex-a", "codex")], PANE, "round-7", self.state,
+                                  native_session=SESSION, sleep=lambda _: None, clock=lambda: next(ticks))
+                send.assert_not_called()
+            result = reset.failure(ended.exception, "round-7", str(self.state))
+            reset.finish(self.state, self.plan, "interrupted", result)
+            row = json.loads(reset.record_path(self.state).read_text())["resets"][0]
+            self.assertEqual(row["result"]["details"]["phase"], phase)
+            prompt = row["result"]["resume_prompt"]
+            self.assertIn(reset.RESET_RECEIPT_PREFIX, prompt)
+            self.assertIn("no target is journaled", reset.recovery_instruction(row["status"], row["result"]))
+            self.assertIsNone(self.host.goal(CLEARED))
+            self.assertEqual(self.invoke(payload={**self.payload, "prompt": prompt}, probe=lambda _: None),
+                             hook.acceptance(recovered=True))
+            with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+                self.assertEqual(self.reconcile()["host_goal"]["phase"], "verified")
 
     def assert_concurrent_rebind_blocked(self):
         replacement = {**self.who, "value": "unrelated-session"}

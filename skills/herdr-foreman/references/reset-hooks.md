@@ -11,7 +11,8 @@ Claude's complete matching native long-paste frame is removed before exact
 input comparison; mismatched frames and extra inner content remain refused.
 
 The input envelope is a locator, not authority. The claimed deliverer first
-saves its original foreground pins in the reset owner's current row. The
+saves its original foreground pins in the reset owner's current row before
+the first clear keystroke, so clear/settle failures retain recovery proof. The
 hook first reads and verifies an existing candidate without creating a lock;
 the locked read repeats that proof. It verifies the row, its live child, the
 unchanged stow and complete prompt,
@@ -38,8 +39,12 @@ Reconciliation requires matching durable native admission and verifies the live
 Herdr pane/session under the existing binding boundary before goal RPCs. An
 operator's delivery assertion alone cannot activate an unadmitted target.
 After an interrupted, unadmitted Codex input, the existing saved recovery prompt
-is guarded too: the operator pastes it into the same pinned native session
-without clearing. Its hook verifies the saved input, foreground and binding,
+is guarded too. Inspect its host-goal target and current supervision binding.
+With no journaled target and supervision still on the source, the operator
+clears the same pinned runtime before pasting. Once a target is journaled or
+supervision has rebound, paste into that same incoming session without clearing
+or restarting it. Restore an idle, unblocked pane first.
+Its hook verifies the saved input, foreground and binding,
 then records admission once; the admitted continuation finishes reconciliation.
 No automated input is repeated and no new recovery record is added.
 The existing daemon's `appServerVersion` must match `SUPPORTED_CODEX_VERSIONS`
