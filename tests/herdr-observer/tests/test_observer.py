@@ -100,9 +100,9 @@ class ObserverTest(unittest.TestCase):
         self.save_owner()
         with self.store.transaction():
             self.store.put("meta", "config", {"enabled": True, "started_at": self.now,
-                                              "states": [str(self.owner)], "owner_root": str(self.owner.parent)})
+                                              "states": [str(self.owner)], "owner_root": str(self.owner.parent), "binary": "fixture"})
             self.store.put("meta", "binding", {"identity": native.identity(self.observer),
-                                               "name": "observer", "cwd": "/factory"})
+                                               "name": "observer", "cwd": "/factory", "at": self.now})
 
     def record(self, key):
         value = self.store.get("meta", key)
@@ -197,16 +197,17 @@ class ObserverTest(unittest.TestCase):
         self.assertFalse(first["already_acknowledged"])
         schedule = self.record("schedule")
         with self.store.transaction():
-            self.store.put("meta", "pending", {"id": "newer-job"})
+            self.store.put("meta", "pending", {**job, "id": native.fingerprint("newer-job")})
             repeated = cli.acknowledge(self.store, job["id"], self.now + 2000)
         self.assertTrue(repeated["already_acknowledged"])
-        self.assertEqual(self.record("pending")["id"], "newer-job")
+        self.assertEqual(self.record("pending")["id"], native.fingerprint("newer-job"))
         self.assertEqual(self.record("schedule"), schedule)
         with self.store.transaction():
-            self.store.put("meta", "acknowledgements", {"jobs": [{}]})
-        with self.assertRaisesRegex(ValueError, "restore.*acknowledgement receipts"):
+            self.store.db.execute("UPDATE meta SET value=? WHERE key='acknowledgements'",
+                                  (json.dumps({"schema_version": 1, "jobs": [{}]}),))
+        with self.assertRaisesRegex(ValueError, "restore"):
             cli.acknowledge(self.store, job["id"], self.now + 3000)
-        self.assertEqual(self.record("pending")["id"], "newer-job")
+        self.assertEqual(self.record("pending")["id"], native.fingerprint("newer-job"))
 
     def test_native_session_moves_panes_without_replaying_log_costs(self):
         self.log()
@@ -669,6 +670,52 @@ class ObserverTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     cli.status(self.store, self.now)
 
+    def test_record_formats_refuse_partial_receipts_and_malformed_projections_without_rewriting(self):
+        job = self.due()["data"]["job"]
+        source = next(row for row in self.store.rows("sources") if row.get("kind") != "quota")
+        bucket = self.store.rows("bins")[0]
+        report = {"id": job["id"], "kind": "urgent", "path": str(self.cache / "reports" / (job["id"] + ".md")),
+                  "at": self.now, "sha256": "a" * 64, "notification": "sent"}
+        cases = [("reports", job["id"], {"id": job["id"]}),
+                 ("reports", job["id"], {**report, "path": "/unrelated/report.md"}),
+                 ("reports", job["id"], {**report, "sha256": "invalid"}),
+                 ("meta", "acknowledgements", {"jobs": [{"id": job["id"]}]}),
+                 ("meta", "binding", {**self.record("binding"), "at": "yesterday"}),
+                 ("meta", "config", {**self.record("config"), "states": ["relative"]}),
+                 ("meta", "current", {**self.record("current"), "agents": [{"role": "worker"}]}),
+                 ("meta", "pending", {**job, "id": "../../escape"}),
+                 ("meta", "heartbeat", {"at": float("nan"), "collection_seconds": 1}),
+                 ("meta", "schedule", {"last_analysis": self.now, "last_anomaly": True}),
+                 ("meta", "closures", {"by_owner": {"owner": False}}),
+                 ("meta", "retention", {"at": self.now, "bins_evicted": 0, "sources_evicted": 0, "telemetry_floor": []}),
+                 ("sources", source["key"], {**source, "offset": "100"}),
+                 ("bins", "malformed-bin", {**bucket, "metrics": {"tool_calls": "100"}})]
+        for table, key, value in cases:
+            with self.subTest(table=table, key=key, value=value), self.store.transaction():
+                self.store.db.execute("SAVEPOINT malformed")
+                try:
+                    with self.assertRaisesRegex(ValueError, "record shape"):
+                        self.store.put(table, key, value, self.now)
+                    raw = json.dumps({**value, "schema_version": 1})
+                    if table == "meta":
+                        self.store.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, raw))
+                    else:
+                        self.store.db.execute("INSERT OR REPLACE INTO " + table + " VALUES (?,?,?)", (key, self.now, raw))
+                    with self.assertRaisesRegex(ValueError, "record shape"):
+                        self.store.get(table, key)
+                    if table != "meta":
+                        with self.assertRaisesRegex(ValueError, "record shape"):
+                            self.store.rows(table)
+                    if table == "reports":
+                        with patch.dict(os.environ, {"HERDR_PANE_ID": self.observer["pane_id"]}):
+                            with self.assertRaisesRegex(ValueError, "record shape"):
+                                cli.report(self.store, self.client, key, "urgent", "/unused", self.now)
+                    self.assertEqual(self.store.db.execute("SELECT value FROM " + table + " WHERE key=?", (key,)).fetchone()[0], raw)
+                finally:
+                    self.store.db.execute("ROLLBACK TO malformed")
+                    self.store.db.execute("RELEASE malformed")
+        self.assertEqual(self.client.notifications, 0)
+
     def test_role_reader_refuses_malformed_consumed_meta_fields_without_writes(self):
         who = {"kind": "id", "value": self.observer["agent_session"]["value"], "cwd": "/factory",
                "pane_id": self.observer["pane_id"], "herdr_env": "1"}
@@ -704,12 +751,14 @@ class ObserverTest(unittest.TestCase):
         self.assertLessEqual(self.store.db.execute("PRAGMA max_page_count").fetchone()[0], 8192)
 
     def test_byte_pressure_reclaims_space_before_a_new_insert(self):
+        row = {"at": self.now, "key": "pressure", "name": "pressure", "provider": "codex", "role": "worker",
+               "metrics": {}, "profiles": {}, "locators": []}
         self.store.db.execute("PRAGMA max_page_count=128")
         filled = False
         for index in range(200):
             try:
                 with self.store.transaction():
-                    self.store.put("bins", str(index), {"payload": "x" * 8192}, self.now + index)
+                    self.store.put("bins", str(index), {**row, "payload": "x" * 8192}, self.now + index)
             except sqlite3.OperationalError:
                 filled = True
                 break
@@ -717,7 +766,7 @@ class ObserverTest(unittest.TestCase):
         with self.store.transaction():
             self.store.prune(self.now + 200)
         with self.store.transaction():
-            self.store.put("bins", "fresh", {"payload": "y" * 8192}, self.now + 201)
+            self.store.put("bins", "fresh", {**row, "payload": "y" * 8192}, self.now + 201)
         fresh = self.store.get("bins", "fresh")
         assert fresh is not None
         self.assertEqual(fresh["payload"], "y" * 8192)
@@ -729,7 +778,8 @@ class ObserverTest(unittest.TestCase):
         self.tick(self.now + 60)
         with self.store.transaction():
             self.store.db.execute("DELETE FROM sources WHERE key=?", (native.session_key(native.identity(self.foreman)),))
-            self.store.put("meta", "retention", {"telemetry_floor": self.now + 120})
+            self.store.put("meta", "retention", {"telemetry_floor": self.now + 120, "at": self.now + 120,
+                                                  "bins_evicted": 0, "sources_evicted": 1})
         self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "fresh", "name": "exec"}, 121)])
         self.tick(self.now + 180)
         self.assertEqual(collect.evidence(self.store, self.now + 180)["total_metrics"]["tool_calls"], 2)

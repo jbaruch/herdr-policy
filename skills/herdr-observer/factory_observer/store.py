@@ -3,6 +3,7 @@
 All JSON records contain schema_version=1. This cache never grants task authority.
 Only Store writes/migrates it. Foreman's observer_role reader accepts migration 1
 read-only and reads meta.binding and meta.config; incompatible/missing data means no role.
+Table/key-specific field formats live in schema.py and gate every read and write.
 See references/storage.md for lifecycle and the public CLI's writer/reader contract.
 """
 
@@ -12,6 +13,8 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+
+from . import schema
 
 
 SCHEMA = 1
@@ -95,19 +98,22 @@ class Store:
         row = self.db.execute("SELECT value FROM " + table + " WHERE key=?", (key,)).fetchone()
         if row is None:
             return default
-        return self.decode(row[0])
+        return self.decode(row[0], table, key)
 
-    @staticmethod
-    def decode(raw):
-        value = json.loads(raw)
+    def decode(self, raw, table, key):
+        return self.validate(json.loads(raw), table, key)
+
+    def validate(self, value, table, key):
         if not isinstance(value, dict) or type(value.get("schema_version")) is not int or value["schema_version"] != SCHEMA:
             raise ValueError("observer record schema is unsupported; update the plugin")
+        if not schema.valid(table, key, value, self.home, SCHEMA):
+            raise ValueError("observer record shape is unsupported; restore the original private " + table + " cache before retrying")
         return value
 
     def put(self, table, key, value, at: float = 0):
         if table not in ("meta", "sources", "bins", "reports"):
             raise ValueError("unknown observer table")
-        raw = json.dumps({**value, "schema_version": SCHEMA}, separators=(",", ":"))
+        raw = json.dumps(self.validate({**value, "schema_version": SCHEMA}, table, key), separators=(",", ":"))
         if table == "meta":
             self.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, raw))
         else:
@@ -116,8 +122,8 @@ class Store:
     def rows(self, table, since=0):
         if table not in ("sources", "bins", "reports"):
             raise ValueError("unknown observer table")
-        return [self.decode(row[0]) for row in self.db.execute(
-            "SELECT value FROM " + table + " WHERE at>=? ORDER BY at", (since,))]
+        return [self.decode(row[1], table, row[0]) for row in self.db.execute(
+            "SELECT key,value FROM " + table + " WHERE at>=? ORDER BY at", (since,))]
 
     def prune(self, now):
         removed_counts = {"bins": 0, "sources": 0}

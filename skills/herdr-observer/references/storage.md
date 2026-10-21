@@ -6,6 +6,9 @@ The `herdr-observer` runtime is the sole writer of its local cache. `Store` in
 `schema_version: 1`. Unknown migrations/records are refused without rewriting.
 No older observer schema exists. The cache supplies evidence and scheduling,
 never delivery authority.
+`Store` validates table/key-specific formats from `factory_observer/schema.py`
+on every read and write. Partial receipts, malformed required fields and unknown
+record kinds are refused without rewriting. Compatible extra fields survive.
 
 The root is `herdr-observer` under `XDG_STATE_HOME`, falling back to
 `~/.local/state`. The runtime requires owned directories and regular files,

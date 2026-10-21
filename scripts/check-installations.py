@@ -238,7 +238,7 @@ def verify_observer_runtime(project, foreman_skill, environment):
     """Execute the complete observer payload from a native or Tessl installation."""
     observer = foreman_skill.with_name(foreman_skill.name.removesuffix("herdr-foreman") + "herdr-observer")
     required = ("observer.py", "observer.sh", "factory_observer/cli.py", "factory_observer/collect.py",
-                "factory_observer/native.py", "factory_observer/sources.py", "factory_observer/store.py",
+                "factory_observer/native.py", "factory_observer/sources.py", "factory_observer/store.py", "factory_observer/schema.py",
                 "references/analysis.md", "references/storage.md")
     if any(not (observer / name).is_file() for name in required):
         raise BehaviorFailure("installed observer payload is incomplete; repair both package manifests")
