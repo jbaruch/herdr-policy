@@ -64,19 +64,35 @@ factory or replay history. For analysis and reporting follow:
 skills/herdr-observer/references/analysis.md
 ```
 
-Use the same command lookup for the following operations on `observer.sh`:
-`evidence --agent NAME` returns a bounded focused view with omissions;
-`evidence --hours HOURS` accepts the `evidence_hours` values returned by `next`. Retrieve
-only evidence needed for an open question. The agent makes the judgments;
-candidate signals are questions, never automatic findings.
+Retrieve only evidence needed for an open question. Set `HOURS` to a value in
+`evidence_hours` returned by `next`; set `NAME` to the observed agent name. Omit
+`--agent NAME` for a fleet view. Success returns bounded evidence with omissions.
 
-Write a warranted report only to the returned private draft, then run
-`report --job ID --kind weekly --file DRAFT` for a due weekly report, or
-`report --job ID --kind urgent --file DRAFT` for an earlier alert. Success returns
-the private path and notification receipt. An already saved report is idempotent.
-For a nonweekly analysis with nothing worth reporting, run `ack --job ID` and
-finish silently. A due weekly report includes coverage gaps even when no
-improvement is supported. Finish here after saving or acknowledging the job.
+```bash
+HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
+bash "$HS/observer.sh" evidence --hours HOURS --agent NAME
+```
+
+The agent makes the judgments; candidate signals are questions, never automatic
+findings. Write a warranted report only to the returned private draft. Set
+`KIND` to `weekly` for a due weekly report or `urgent` for an earlier alert.
+A due weekly report includes coverage gaps even when no improvement is supported.
+
+```bash
+HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
+bash "$HS/observer.sh" report --job ID --kind KIND --file DRAFT
+```
+
+Success returns the private path and notification receipt. An already saved
+report is idempotent. Finish here after saving. For a nonweekly analysis with
+nothing worth reporting, acknowledge the saved job instead:
+
+```bash
+HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
+bash "$HS/observer.sh" ack --job ID
+```
+
+Success returns the acknowledgement receipt. Finish silently here.
 
 ## Step 3 — Inspect Observer Health
 
