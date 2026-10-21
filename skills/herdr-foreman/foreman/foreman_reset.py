@@ -67,7 +67,7 @@ import select
 import shlex
 import subprocess
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .assign import SETTLE_STATES
@@ -896,7 +896,7 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
     if outcome not in RECONCILE_OUTCOMES:
         raise UsageError("Reconcile outcome is delivered or failed.", {"outcome": outcome})
     path = record_path(state_path)
-    with state_lock(path):
+    with state_lock(path), ExitStack() as boundary:
         document = _records(path)
         row = _row(document, plan)
         if row is None:
@@ -923,7 +923,8 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
         if outcome == "delivered":
             goal = row["host_goal"]
             if goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified":
-                bound = (supervision.load(state_path)["binding"] or {}).get("identity", {})
+                data = boundary.enter_context(supervision.effect_boundary(state_path))
+                bound = data["binding"]["identity"]
                 if (bound.get("kind") != "id" or bound.get("value") != goal["target_thread"]
                         or bound.get("pane_id") != row["pane_id"]):
                     raise UsageError("The incoming host-goal executor is not the bound foreman. Restore its verified native binding before reconciling; no goal was changed.", {})

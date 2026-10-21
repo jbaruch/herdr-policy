@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -183,6 +184,46 @@ class ResetHookTest(unittest.TestCase):
             result = reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: False)
         self.assertEqual(result["host_goal"]["phase"], "verified")
         self.assertEqual(self.host.goals[CLEARED]["tokenBudget"], None)
+        self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
+
+    def test_a_rebind_before_the_transfer_boundary_refuses_without_touching_goals(self):
+        self.setUp(source=goal(SESSION["value"]))
+        original = store.bind
+        replacement = {**self.who, "value": "unrelated-session"}
+        def race(*args, **kwargs):
+            binding = original(*args, **kwargs)
+            original(self.state, replacement, AT, root=self.root)
+            return binding
+        with patch("foreman.reset_input_hook.store.bind", side_effect=race):
+            self.assertEqual(self.invoke()["decision"], "block")
+        self.assertIsNotNone(self.host.goal(SESSION["value"]))
+        self.assertIsNone(self.host.goal(CLEARED))
+        self.assertEqual(store.load(self.state)["binding"]["identity"], replacement)
+        self.assertIsNone(reset.accepted_resume(self.state, PANE, "round-7", SESSION))
+
+    def assert_concurrent_rebind_blocked(self):
+        replacement = {**self.who, "value": "unrelated-session"}
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(store.bind, self.state, replacement, AT, root=self.root)
+            with self.assertRaisesRegex(reset.ForemanError, "Another foreman command"):
+                future.result(timeout=5)
+
+    def test_input_acceptance_serializes_a_concurrent_rebind_through_host_transfer(self):
+        self.setUp(source=goal(SESSION["value"]))
+        self.host.before_clear = self.assert_concurrent_rebind_blocked
+        self.assertEqual(self.invoke(), hook.acceptance())
+        self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
+        self.assertEqual(reset.accepted_resume(self.state, PANE, "round-7", SESSION), {"kind": "id", "value": CLEARED})
+
+    def test_reconciliation_serializes_a_concurrent_rebind_through_host_transfer(self):
+        self.setUp(source=goal(SESSION["value"]))
+        with patch("foreman.reset_input_hook.host_goals.transfer", side_effect=OSError("fixture interruption")):
+            self.assertEqual(self.invoke()["decision"], "block")
+        self.host.before_clear = self.assert_concurrent_rebind_blocked
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            result = reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: False)
+        self.assertEqual(result["status"], "reconciled")
+        self.assertEqual(result["host_goal"]["phase"], "verified")
         self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
 
     def test_legacy_codex_reset_without_host_preflight_is_refused_before_rebinding(self):
