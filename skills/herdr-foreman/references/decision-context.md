@@ -5,8 +5,8 @@ or one evidence excerpt only when the next decision needs them. Reuse unchanged
 inputs; owner effect checks still verify live authority, pins and holds.
 
 Each response, including diagnostics, remains bounded by `OUTPUT_BYTES` in
-`foreman/context_output.py`; evidence reads also obey `READ_BYTES` in
-`foreman/load_set.py`. Narrow an oversized response by task, page or question.
+`skills/herdr-foreman/foreman/context_output.py`; evidence reads also obey `READ_BYTES` in
+`skills/herdr-foreman/foreman/load_set.py`. Narrow an oversized response by task, page or question.
 Unread evidence remains unresolved; excerpts never establish a complete review.
 
 There is no cumulative task/session read allowance, no counter write and no
@@ -112,15 +112,7 @@ required complete review or its current-head binding.
 
 ## Scope and rollout
 
-This allowance covers the named CLI context APIs and their data-bearing
-responses. It does not meter arbitrary filesystem reads, other tools, policy
-loading or model input outside these APIs. It is not a global token meter,
-actual-model-exposure collector or evidence of ROI. Preserve each refusal;
-repeating it or changing API spelling is no recovery.
-
-Earlier Herdr readers do not enforce the expanded command set. Upgrade the
-foreman readers under the existing handoff before claiming aggregate coverage;
-view/counter presence alone proves no cutover. The counter schema remains 1
-and preserves existing charges. Historical reads made by older binaries are
-not retroactively measured. This exposure control grants no task acceptance,
-live migration or pilot proof.
+These bounds cover individual named CLI responses, not other tools, arbitrary
+filesystem reads or total model input. They are not a token meter or ROI proof.
+Upgrade through the existing ownership/handoff contract. A view or retired
+counter file proves no cutover, acceptance or live migration.

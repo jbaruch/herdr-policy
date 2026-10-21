@@ -74,7 +74,7 @@ selected knowledge through `KNOWLEDGE` in the consultation brief or
 Before releasing a useful session, capture decisions, rejected alternatives,
 unresolved evidence and lessons that would otherwise disappear. Link the outgoing
 report, report-contract assessment and retrospective from the task handoff. A warm session
-can support follow-up under `references/dispatch-recovery.md`; it is never the
+can support follow-up under `skills/herdr-foreman/references/dispatch-recovery.md`; it is never the
 only copy of valuable knowledge. Give a fresh worker the durable sources without
 claiming that recalled context proves present competence or independence.
 
@@ -146,9 +146,9 @@ At `phase: retired`, the native hook has admitted the continuation without
 creating a target goal. After reading the saved scope and holds, finish it with
 `foreman-reset-reconcile --outcome delivered` for that pane/stow. The model
 receives its continuation instructions before automatic target work can start.
-An unfinished admitted restoration remains in catch-up and refuses the bound
-successor's Stop, even if prompt delivery completed. Reconciliation finishes the
-existing transfer; it needs no pause, new reset or repeated input.
+An unfinished admitted restoration remains in catch-up even if prompt delivery
+completed; it never counts as verified takeover. Reconciliation finishes the
+existing transfer before dispatch, with no pause, new reset or repeated input.
 
 Native Claude/Grok report `not_applicable` for the Codex goal scheduler and
 create no host goal. An external scheduler is outside that receipt's proof.

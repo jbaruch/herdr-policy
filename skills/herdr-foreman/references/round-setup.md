@@ -196,7 +196,7 @@ post-push verification.
 For a follow-up that will use `--retain-specialist`, plan the consultation alone
 with its original requirements and worker. Use exclusions to preserve that
 worker; a changed candidate requires a fresh handoff. Follow the owner checks in
-`references/dispatch-recovery.md` instead of treating a warm pane as dispatch proof.
+`skills/herdr-foreman/references/dispatch-recovery.md` instead of treating a warm pane as dispatch proof.
 
 `--roles` keys the output document. Configured `role_costs` calibrate its costs.
 `skills/herdr-foreman/foreman/composition.py` owns capability, contribution and familiarity evidence;
@@ -210,7 +210,7 @@ round choice never overrides a model. Supply the fix number when planning
 fixes; pass that same number at dispatch. Register the original task/base with
 `foreman task` and use the same `--task` on plan and apply. Authorized extra
 fixes also share `--correction-plan` and `--work`; their owner-managed bounds
-are documented in `references/dispatch-recovery.md`. Keep YOLO mode and supported
+are documented in `skills/herdr-foreman/references/dispatch-recovery.md`. Keep YOLO mode and supported
 UI options across worker restarts. The config, round-input, and
 billing-evidence contracts are in:
 

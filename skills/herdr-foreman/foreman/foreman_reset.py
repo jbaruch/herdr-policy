@@ -830,24 +830,6 @@ def _goal_pending(row):
             and goal["runtime"] == "codex" and goal["phase"] != "verified")
 
 
-def goal_restoration(state_path, who):
-    """Read only the current pane's admitted but unfinished host transfer."""
-    try:
-        document, _ = _load(record_path(state_path), migrate_legacy=False)
-    except (ResetRecordOlder, ResetRecordNewer, ResetRecordUnusable):
-        # Only a readable current receipt links this session to an admitted
-        # transfer. Original reset/handoff checks still refuse unusable proof
-        # where a reset actually supplies continuation coverage.
-        return None
-    if document is None:
-        return None
-    row = next((row for row in reversed(document["resets"]) if row["pane_id"] == who.get("pane_id")), None)
-    if (row is not None and _goal_pending(row)
-            and row["accepted_session"] == {key: who.get(key) for key in ("kind", "value")}):
-        return reconcile_command(state_path, row["pane_id"], row["stow"], "delivered")
-    return None
-
-
 def outstanding(state_path, *, alive=_alive):
     """The foreman resets that still need the operator, read from the record alone.
 

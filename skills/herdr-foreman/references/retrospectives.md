@@ -26,7 +26,7 @@ apply after a retrospective.
 
 A retained specialist follow-up still reports the daily cadence. Use
 `context: "retain"` in its check request; the continuation owner verifies the
-unchanged engagement under `references/dispatch-recovery.md`. A changed specialty
+unchanged engagement under `skills/herdr-foreman/references/dispatch-recovery.md`. A changed specialty
 or engagement uses the normal fresh assignment and transition path.
 
 One retrospective can cover the daily cadence and a batch of planned transitions.

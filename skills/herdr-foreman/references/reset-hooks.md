@@ -35,7 +35,7 @@ to restore the original lifecycle. A blocked hook can never activate automatic
 target work. Goal activation and its recovery therefore happen after the
 continuation instructions have reached the model, without a synthetic pause.
 The existing daemon's `appServerVersion` must match `SUPPORTED_CODEX_VERSIONS`
-in `foreman/codex_goals.py` (currently `0.163.0`), checked at discovery and each
+in `skills/herdr-foreman/foreman/codex_goals.py` (currently `0.163.0`), checked at discovery and each
 connection to the saved socket. An unknown version or changed daemon refuses
 before goal RPCs. Renew the supported set with the installed app-server JSON
 schema, existing protocol/handoff regressions and an owned paused-goal smoke;
