@@ -5,7 +5,9 @@ The existing reset owner record and exact foreground identities authorize the
 input; its envelope is merely a locator. The hook atomically rebinds existing
 supervision to the native payload's new session, without acknowledging events,
 resuming holds or accepting tasks. An old session, replacement, changed stow,
-dead/unclaimed deliverer or replay blocks the prompt. No new durable store.
+dead/unclaimed automatic deliverer or replay blocks the prompt. Saved terminal
+operator recovery instead verifies the current binding and foreground pins.
+No new durable store.
 """
 
 import json
@@ -103,8 +105,13 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
             def validate(data):
                 bound = (data["binding"] or {}).get("identity", {})
                 expected = row["native_session"]
-                if row["status"] in reset.TERMINAL_FAILURES and goal is not None and goal.get("target_thread") is not None:
-                    expected = {"kind": "id", "value": goal["target_thread"]}
+                if row["status"] in reset.TERMINAL_FAILURES and goal is not None:
+                    if goal.get("target_thread") is not None:
+                        expected = {"kind": "id", "value": goal["target_thread"]}
+                    elif {key: bound.get(key) for key in ("kind", "value")} == {key: who[key] for key in ("kind", "value")}:
+                        # Binding committed, then the target journal write died.
+                        # Native payload + foreground pins authenticate this receiver.
+                        expected = {key: who[key] for key in ("kind", "value")}
                 if (any(bound.get(key) != who[key] for key in ("cwd", "herdr_env", "pane_id"))
                         or {key: bound.get(key) for key in ("kind", "value")} != expected):
                     raise UsageError("The reset's original binding already changed; preserve it and inspect the reset.", {})

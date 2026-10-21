@@ -281,6 +281,38 @@ class ResetHookTest(unittest.TestCase):
         self.assertEqual(store.load(self.state)["binding"]["identity"], replacement)
         self.assertIsNone(reset.accepted_resume(self.state, PANE, "round-7", SESSION))
 
+    def test_operator_recovery_finishes_a_binding_committed_before_its_target_journal(self):
+        self.setUp(source=goal(SESSION["value"]))
+        save = hook.save_state
+        def interrupted(path, document):
+            if document["resets"][0]["host_goal"]["target_thread"] is not None:
+                raise OSError("fixture death before target persistence")
+            save(path, document)
+        with patch("foreman.reset_input_hook.save_state", side_effect=interrupted):
+            self.assertEqual(self.invoke()["decision"], "block")
+        row = json.loads(reset.record_path(self.state).read_text())["resets"][0]
+        self.assertIsNone(row["host_goal"]["target_thread"])
+        self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
+        ended = reset.failure(reset.StateError("Native input never admitted.", {}), "round-7", str(self.state))
+        reset.finish(self.state, self.plan, "interrupted", ended)
+        self.assertEqual(self.invoke(probe=lambda _: None), hook.acceptance(recovered=True))
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            self.assertEqual(self.reconcile()["host_goal"]["phase"], "verified")
+
+    def test_dead_deliverer_replay_keeps_native_recovery_admissible(self):
+        self.setUp(source=goal(SESSION["value"]))
+        with patch("foreman.reset_input_hook.host_goals.transfer", side_effect=OSError("fixture lost child")):
+            self.assertEqual(self.invoke()["decision"], "block")
+        with self.assertRaises(reset.ResetEnded) as ended:
+            reset.replay(self.state, self.plan, alive=lambda _: False)
+        prompt = ended.exception.details["resume_prompt"]
+        self.assertIn(reset.RESET_RECEIPT_PREFIX, prompt)
+        self.assertEqual(self.invoke(payload={**self.payload, "prompt": prompt}, probe=lambda _: None),
+                         hook.acceptance(recovered=True))
+        self.assertEqual(self.invoke(payload={**self.payload, "prompt": prompt}, probe=lambda _: None)["decision"], "block")
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            self.assertEqual(self.reconcile()["host_goal"]["phase"], "verified")
+
     def assert_concurrent_rebind_blocked(self):
         replacement = {**self.who, "value": "unrelated-session"}
         with ThreadPoolExecutor(max_workers=1) as executor:

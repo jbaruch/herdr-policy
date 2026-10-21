@@ -647,6 +647,7 @@ def _settle(document, row, state_path, alive):
         lost = StateError("The reset deliverer for stow {} exited without finishing.".format(row["stow"]), {"process": row["process"]})
         row.update(status="failed" if row["status"] == "scheduled" else "interrupted",
                    result=failure(lost, row["stow"], state, **row["options"]))
+        _guard_recovery(row, state_path)
     return None, changed
 
 
@@ -1061,6 +1062,7 @@ def fail_unclaimed(state_path, plan, result, *, sleep=time.sleep, clock=time.mon
                                       {"record": str(path)})
         if row["status"] == "scheduled":
             row.update(status="failed", result=result)
+            _guard_recovery(row, state_path)
             save_state(path, document)
         return row["status"]
 
