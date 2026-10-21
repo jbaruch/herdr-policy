@@ -108,6 +108,23 @@ class ResetHookTest(unittest.TestCase):
     def test_normal_prompts_do_not_read_or_write_owner_state(self):
         self.assertIsNone(self.invoke(payload={"prompt": "Fix the test"}, env={}))
 
+    def test_goal_receipt_cannot_change_the_reset_source_or_accepted_target(self):
+        for field in ("source_thread", "target_thread"):
+            self.setUp(source=goal(SESSION["value"]))
+            if field == "target_thread":
+                self.assertEqual(self.invoke(), hook.acceptance())
+            path = reset.record_path(self.state)
+            document = json.loads(path.read_text())
+            row = document["resets"][0]
+            row["host_goal"][field] = "different-thread"
+            if field == "source_thread":
+                row["host_goal"]["source_goal"]["threadId"] = "different-thread"
+            self.assertFalse(reset._valid_row(row))
+            path.write_text(json.dumps(document))
+            before = list(self.host.calls)
+            self.assertEqual(self.invoke()["decision"], "block")
+            self.assertEqual(self.host.calls, before)
+
     def test_a_forged_locator_cannot_create_directories_or_lock_files(self):
         foreign = self.directory / "never-created" / "owner.json"
         prompt = reset.guarded_resume("round-7", foreign, SESSION, FOREGROUND)

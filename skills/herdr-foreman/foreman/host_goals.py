@@ -32,7 +32,7 @@ def valid(value):
         return False
     if value.get("runtime") in ("claude", "grok"):
         return set(value) == {"schema_version", "runtime", "phase"} and value["phase"] == "not_applicable"
-    return (set(value) == FIELDS and value.get("runtime") == "codex"
+    shape = (set(value) == FIELDS and value.get("runtime") == "codex"
             and isinstance(value["socket"], str) and os.path.isabs(value["socket"])
             and isinstance(value["source_thread"], str) and bool(value["source_thread"])
             and (value["source_goal"] is None or valid_goal(value["source_goal"], value["source_thread"]))
@@ -44,6 +44,25 @@ def valid(value):
                  {"active", "paused", "blocked", "usageLimited", "budgetLimited"})
             and isinstance(value["phase"], str) and value["phase"] in PHASES
             and all(type(value[key]) is int and value[key] >= 0 for key in ("carried_tokens", "carried_seconds")))
+    if not shape:
+        return False
+    phase, source, target = value["phase"], value["source_goal"], value["target_thread"]
+    if target == value["source_thread"] or phase != "prepared" and target is None:
+        return False
+    if value["target_created_at"] is not None and phase not in ("restored", "verified"):
+        return False
+    if phase == "prepared" and value["retiring_turn"] is not None:
+        return False
+    if source is None:
+        return (value["target_created_at"] is None and value["retiring_turn"] is None
+                and value["carried_tokens"] == value["carried_seconds"] == 0)
+    if phase in ("restored", "verified") and value["target_created_at"] is None:
+        return False
+    return (source["status"] != "complete"
+            and (source["status"] == value["resume_status"]
+                 or source["status"] == "paused" and value["resume_status"] == "active" and value["retiring_turn"] is not None)
+            and value["carried_tokens"] >= source["tokensUsed"]
+            and value["carried_seconds"] >= source["timeUsedSeconds"])
 
 
 def same_goal(left, right):

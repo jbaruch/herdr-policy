@@ -25,6 +25,7 @@ SESSION_BUDGET_SEC = 45
 MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_HEADER_BYTES = 16384
 MAX_NOTIFICATIONS = 128
+SUPPORTED_CODEX_VERSIONS = ("0.163.0",)
 
 
 class GoalError(StateError):
@@ -47,6 +48,8 @@ def control_socket():
     if (result.returncode or not isinstance(value, dict) or value.get("status") != "running"
             or not isinstance(value.get("socketPath"), str) or not os.path.isabs(value["socketPath"])):
         raise unavailable("daemon_unavailable")
+    if value.get("appServerVersion") not in SUPPORTED_CODEX_VERSIONS:
+        raise unavailable("unsupported_goal_protocol")
     return value["socketPath"]
 
 
@@ -63,6 +66,8 @@ class AppServer:
 
     def __enter__(self):
         try:
+            if not os.path.samefile(control_socket(), self.path):
+                raise unavailable("daemon_socket_changed")
             # Codex's stable control path may link to its current daemon socket.
             info = os.stat(self.path)
             if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():

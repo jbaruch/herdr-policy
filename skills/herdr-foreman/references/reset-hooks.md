@@ -34,7 +34,13 @@ reads its scope and holds, then uses `foreman-reset-reconcile --outcome delivere
 to restore the original lifecycle. A blocked hook can never activate automatic
 target work. Goal activation and its recovery therefore happen after the
 continuation instructions have reached the model, without a synthetic pause.
-Codex 0.163's installed `ThreadGoalClearParams` supports `threadId` and
+The existing daemon's `appServerVersion` must match `SUPPORTED_CODEX_VERSIONS`
+in `foreman/codex_goals.py` (currently `0.163.0`), checked at discovery and each
+connection to the saved socket. An unknown version or changed daemon refuses
+before goal RPCs. Renew the supported set with the installed app-server JSON
+schema, existing protocol/handoff regressions and an owned paused-goal smoke;
+never start, upgrade or restart a daemon as reset recovery.
+Codex 0.163.0's installed `ThreadGoalClearParams` supports `threadId` and
 `origin`, with no conditional generation or compare-and-clear transaction.
 The Herdr supervision lock serializes its handoff owners, and the transfer
 rechecks the live goal after its last journal write, immediately before clear.

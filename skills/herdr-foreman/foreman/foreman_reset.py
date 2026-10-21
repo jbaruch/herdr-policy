@@ -555,6 +555,11 @@ def _valid_row(row, version=RESET_SCHEMA_VERSION):
         return False
     if version >= 4 and not host_goals.valid(row["host_goal"]):
         return False
+    if version >= 4 and row["host_goal"] is not None and row["host_goal"]["runtime"] == "codex":
+        goal, source, accepted = row["host_goal"], row["native_session"], row["accepted_session"]
+        if (source is None or source["kind"] != "id" or goal["source_thread"] != source["value"]
+                or accepted is not None and (accepted["kind"] != "id" or goal["target_thread"] != accepted["value"])):
+            return False
     options = row["options"]
     if not (isinstance(options, dict) and set(options) <= OPTION_FIELDS
             and all(isinstance(value, str) and value for value in options.values())):

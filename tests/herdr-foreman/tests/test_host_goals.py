@@ -189,6 +189,18 @@ class HostGoalTest(unittest.TestCase):
                               connect=lambda _: self.fail("must not control another runtime"))
             self.assertEqual(receipt["phase"], "not_applicable")
 
+    def test_impossible_phase_authority_never_becomes_handoff_proof(self):
+        for changes in ({"target_thread": "old"}, {"phase": "retired"},
+                        {"phase": "verified"}, {"phase": "verified", "target_thread": "new"},
+                        {"target_created_at": 200}, {"retiring_turn": "turn-before-quiesce"},
+                        {"carried_tokens": 0}, {"resume_status": "blocked"}):
+            with self.subTest(changes=changes):
+                receipt = {**self.receipt, **changes}
+                self.assertFalse(transfer.valid(receipt))
+                with self.assertRaises(GoalError):
+                    transfer.transfer(receipt, "new", self.persist, connect=self.host.connect)
+                self.assertFalse(any(method == "thread/goal/clear" for method, _ in self.host.calls))
+
 
 if __name__ == "__main__":
     unittest.main()

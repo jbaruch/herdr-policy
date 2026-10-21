@@ -133,6 +133,7 @@ class CodexGoalRPCTest(unittest.TestCase):
     def peer(self, **options):
         peer = SocketHost(**options)
         self.addCleanup(peer.close)
+        self.enterContext(patch("foreman.codex_goals.control_socket", return_value=peer.path))
         return peer
 
     def test_real_socket_transfer_preserves_budget_and_one_continuing_executor(self):
@@ -196,10 +197,18 @@ class CodexGoalRPCTest(unittest.TestCase):
                 with AppServer(str(Path(directory) / "missing.sock")):
                     self.fail("missing server admitted")
 
+    def test_a_changed_daemon_socket_refuses_before_sending_any_rpc(self):
+        first = self.peer()
+        second = self.peer()
+        with self.assertRaisesRegex(GoalError, "daemon_socket_changed"):
+            with AppServer(first.path):
+                self.fail("different daemon admitted")
+        self.assertEqual(first.host.calls + second.host.calls, [])
+
     def test_discovery_uses_only_daemon_version_and_rejects_stopped_or_bad_output(self):
         class Result:
             returncode = 0
-            stdout = b'{"status":"running","socketPath":"/fixture/codex.sock"}'
+            stdout = b'{"status":"running","socketPath":"/fixture/codex.sock","appServerVersion":"0.163.0"}'
         with patch("foreman.codex_goals.subprocess.run", return_value=Result()) as run:
             self.assertEqual(control_socket(), "/fixture/codex.sock")
             self.assertEqual(run.call_args.args[0], ["codex", "app-server", "daemon", "version"])
@@ -208,6 +217,18 @@ class CodexGoalRPCTest(unittest.TestCase):
             result.stdout = data
             with patch("foreman.codex_goals.subprocess.run", return_value=result), self.assertRaises(GoalError):
                 control_socket()
+
+    def test_unknown_or_incompatible_protocol_version_refuses_during_read_only_discovery(self):
+        for version in (None, "0.162.0", "0.164.0", [], True):
+            with self.subTest(version=version):
+                class Result:
+                    returncode = 0
+                    stdout = json.dumps({"status": "running", "socketPath": "/fixture/codex.sock",
+                                         "appServerVersion": version}).encode()
+                with patch("foreman.codex_goals.subprocess.run", return_value=Result()) as run:
+                    with self.assertRaisesRegex(GoalError, "unsupported_goal_protocol"):
+                        control_socket()
+                    self.assertEqual(run.call_args.args[0], ["codex", "app-server", "daemon", "version"])
 
 
 if __name__ == "__main__":

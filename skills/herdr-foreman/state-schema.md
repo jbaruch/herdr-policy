@@ -1463,6 +1463,10 @@ Only a matching verified generation carries accounting into the next reset.
 receipt under the per-response output bound; it prints no objective or
 history. A missing or ambiguous selection refuses. Its output is a receipt,
 not a substitute for live host/owner verification.
+Codex receipts bind `source_thread` to the row's original native session and
+any accepted session to `target_thread`. Non-prepared phases require a distinct
+target; restored/verified goals require their created generation. An absent
+source goal carries no generation, usage or interrupted-turn authority.
 
 One claimed delivery attempt per pane and stow, never retried automatically.
 Production startup uses a private inherited pipe: the loaded child supplies
