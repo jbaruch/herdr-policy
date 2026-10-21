@@ -76,7 +76,7 @@ def verify_runtime_payload(skill):
                 "references/coordination-metrics.md",
                 "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py", "foreman/github_context.py",
                 "references/foreman-context.md", "references/worker-context.md",
-                "references/context-recovery.md", "references/workflow-worker.md",
+                "references/context-recovery.md", "references/observer-context.md", "foreman/observer_role.py", "references/workflow-worker.md",
                 "references/foreman-workflow.md", "references/bootstrap.md",
                 "references/team-scope.md", "references/coding-policy-integration.md")
     if any(not (skill / name).is_file() for name in required) or (skill / "tests").exists():
@@ -102,10 +102,13 @@ def verify_role_context(project, skill, hook, environment, adapter: str | None =
     pane_file = binary / "pane.json"
     (binary / "herdr").write_text(
         "#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n"
-        "if sys.argv[1:] != ['pane','get','private-fixture-pane']: raise SystemExit(64)\n"
         "pane=json.loads(Path(__file__).with_name('pane.json').read_text())\n"
         "if pane.get('unavailable'): raise SystemExit(75)\n"
-        "print(json.dumps({'result':{'pane':pane}}))\n")
+        "if sys.argv[1:] == ['agent','get','private-observer']:\n"
+        "    print(json.dumps({'result':{'agent':{**pane,'name':'private-observer'}}}))\n"
+        "elif sys.argv[1:3] == ['pane','get'] and sys.argv[3:] in (['private-fixture-pane'],['private-observer-pane']):\n"
+        "    print(json.dumps({'result':{'pane':pane}}))\n"
+        "else: raise SystemExit(64)\n")
     (binary / "herdr").chmod(0o755)
     environment = {**environment, "PATH": str(binary) + os.pathsep + environment.get("PATH", ""),
                    "XDG_STATE_HOME": str(fixture / "state"), "XDG_CONFIG_HOME": str(fixture / "config"),
@@ -145,6 +148,19 @@ elif sys.argv[2] == 'worker':
         'native_session':None}, at)
     supervision.refine(owner, 'private-assignment', 'private-fixture-pane',
         {'source':'herdr:'+kind,'agent':kind,'kind':'id','value':'private-worker','pane_id':'private-fixture-pane'}, at)
+elif sys.argv[2] == 'observer':
+    import json, sqlite3
+    root = Path(os.environ['XDG_STATE_HOME']) / 'herdr-observer'
+    root.mkdir(mode=0o700)
+    cache = root / 'observer.sqlite3'
+    cache.touch(mode=0o600)
+    with sqlite3.connect(cache) as db:
+        db.executescript('CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT); PRAGMA user_version=1;')
+        db.execute('INSERT INTO meta VALUES (?,?)', ('config', json.dumps({'schema_version':1,'enabled':True,'states':[]})))
+        db.execute('INSERT INTO meta VALUES (?,?)', ('binding', json.dumps({'schema_version':1,
+            'cwd':str(Path.cwd()), 'name':'private-observer', 'identity':{'source':'herdr:'+sys.argv[3],
+            'agent':sys.argv[3], 'kind':'id', 'value':'private-observer', 'pane_id':os.environ['HERDR_PANE_ID']}})))
+    db.close()
 else:
     raise SystemExit('Unsupported private fixture setup')
 """
@@ -209,6 +225,33 @@ else:
     native["value"] = "unbound-session"
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     observe("unbound-session", None)
+    environment["HERDR_PANE_ID"] = "private-observer-pane"
+    seed("observer")
+    native["value"] = "private-observer"
+    native["pane_id"] = "private-observer-pane"
+    pane_file.write_text(json.dumps({"pane_id": "private-observer-pane", "agent_session": native}))
+    observe("private-observer", "Verified Herdr Observer", absent=("Herdr Foreman Operating Context", "Herdr Worker Context"))
+    observe("other-observer-session", None)
+
+
+def verify_observer_runtime(project, foreman_skill, environment):
+    """Execute the complete observer payload from a native or Tessl installation."""
+    observer = foreman_skill.with_name(foreman_skill.name.removesuffix("herdr-foreman") + "herdr-observer")
+    required = ("observer.py", "observer.sh", "factory_observer/cli.py", "factory_observer/collect.py",
+                "factory_observer/native.py", "factory_observer/sources.py", "factory_observer/store.py", "factory_observer/schema.py",
+                "references/analysis.md", "references/storage.md")
+    if any(not (observer / name).is_file() for name in required):
+        raise BehaviorFailure("installed observer payload is incomplete; repair both package manifests")
+    before = {str(path.relative_to(observer)) for path in observer.rglob("*")}
+    selected = {**environment, "XDG_STATE_HOME": str(project / "observer-private-state")}
+    selected.pop("HERDR_ENV", None)
+    selected.pop("HERDR_PANE_ID", None)
+    result = json.loads(command("bash", str(observer / "observer.sh"), "status", env=selected,
+                                cwd=project, check_behavior=True))
+    if result.get("running") is not False or result.get("enabled") is not False or result.get("reports") != []:
+        raise BehaviorFailure("installed observer status created activity or omitted its initial health")
+    if before != {str(path.relative_to(observer)) for path in observer.rglob("*")}:
+        raise BehaviorFailure("observer execution modified the installed payload")
 
 
 def verify_workflow_readiness(project, skill, environment):
@@ -292,6 +335,7 @@ def exercise(project, agent, host, herdr_source, coding_source):
                    "PYTHONDONTWRITEBYTECODE": "1", "WORKTREE_ROOT": str(project / "private-worktrees")}
     for key in ("HERDR_ENV", "HERDR_PANE_ID", "PYTHONPATH"):
         environment.pop(key, None)
+    verify_observer_runtime(project, skill, environment)
     # Run the installed identity reader with development sources absent from
     # its interpreter path. The old package-root assumption failed here even
     # though the package had realized successfully.
@@ -387,7 +431,7 @@ raise SystemExit("Installed progression did not reach its policy-selection bound
     if progression != {"schema_version": 1, "version": identity["version"], "digest": identity["digest"], "authority_entered": False}:
         raise BehaviorFailure("{}: installed progression selects a different policy identity".format(agent))
     skill_commands = {"herdr-policy": verify_skill_commands(
-        project, host, "herdr-policy", "HS", ("herdr-foreman", "herdr-standup"), environment)}
+        project, host, "herdr-policy", "HS", ("herdr-foreman", "herdr-standup", "herdr-observer"), environment)}
     if coding_source:
         skill_commands["coding-policy"] = verify_skill_commands(
             project, host, "coding-policy", "KS", ("release", "adopt-fork-pr", "onboard-repo", "migrate-to-plugin"), environment)
@@ -455,6 +499,7 @@ raise SystemExit("Installed progression did not reach its policy-selection bound
             "measurements": "pass", "private_measurement_report": "pass", "measurement_capture": "pass",
             "workflow_readiness": "pass",
             "role_context": "pass",
+            "observer_runtime": "pass",
             "skill_commands": skill_commands,
             "removal": "pass", "user_content": "preserved"}
 

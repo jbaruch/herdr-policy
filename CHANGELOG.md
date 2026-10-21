@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0 — 2026-10-21
+
+- Add an independent factory observer with bounded incremental collection, periodic analysis, private weekly reports and earlier alerts when warranted (#61). Assess coordination ROI, parallel delivery, subscription balance, model/effort suitability and open-ended improvement opportunities without adding delivery gates or worker report requests.
+- Keep operational evidence, drafts and reports in private local storage. Store counters and source locators instead of transcript copies, preserve unsupported/missing telemetry as unknown, coalesce wakes, and retain uncertain sends with bounded reconciliation and generic attention notices. Include the observer's own overhead and separate merged from abandoned closures.
+- Ship the same observer through Tessl and ACR. Preserve delivery ownership across foreman outages and reuse cross-agent SessionStart routing for an exact native observer registration without loading foreman workflow; ordinary sessions remain silent.
+
 ## 0.13.2 — 2026-10-20
 
 - Replace the foreman's mandatory round cycle with a delivery loop: dispatch ready authorized work, handle deliveries independently, and address actual blockers before routine administration. Keep legacy step names as an action index rather than a replay requirement (#57, #60).

@@ -102,7 +102,7 @@ class SkillBootstrapTest(unittest.TestCase):
                 if kind in bootstraps:
                     self.assertEqual(bootstrap, bootstraps[kind])
                 bootstraps[kind] = bootstrap
-        self.assertEqual(set(bootstraps), {"herdr-foreman", "herdr-standup"})
+        self.assertEqual(set(bootstraps), {"herdr-foreman", "herdr-standup", "herdr-observer"})
 
     def test_legacy_missing_or_unquoted_bootstraps_cannot_escape_discovery(self):
         item = self.representative("herdr-foreman")
@@ -132,7 +132,7 @@ class SkillBootstrapTest(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout), (0, "all-global\n"), result.stderr)
 
     def test_project_local_lookup_precedes_global(self):
-        for kind in ("herdr-foreman", "herdr-standup"):
+        for kind in ("herdr-foreman", "herdr-standup", "herdr-observer"):
             item = self.representative(kind)
             self.stub(self.project / OWN_ROOT / kind, item[4], item[3], "local")
             self.stub(self.fixture_home / OWN_ROOT / kind, item[4], item[3], "global")
@@ -140,14 +140,14 @@ class SkillBootstrapTest(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout), (0, "local\n"), result.stderr)
 
     def test_global_lookup_works_with_nonexecutable_files(self):
-        for kind in ("herdr-foreman", "herdr-standup"):
+        for kind in ("herdr-foreman", "herdr-standup", "herdr-observer"):
             item = self.representative(kind)
             self.stub(self.fixture_home / OWN_ROOT / kind, item[4], item[3], "global")
             result = self.execute(item)
             self.assertEqual((result.returncode, result.stdout), (0, "global\n"), result.stderr)
 
     def test_source_clone_requires_one_of_the_exact_own_origins(self):
-        for kind in ("herdr-foreman", "herdr-standup"):
+        for kind in ("herdr-foreman", "herdr-standup", "herdr-observer"):
             item = self.representative(kind)
             self.stub(self.project / "skills" / kind, item[4], item[3], "source")
             for origin in ACCEPTED_ORIGINS:
@@ -176,7 +176,7 @@ class SkillBootstrapTest(unittest.TestCase):
 
     def test_recorded_native_reference_forms_work_without_a_tessl_tree(self):
         for host in (".codex/skills", ".claude/skills", ".cursor/skills", ".agents/skills"):
-            for kind in ("herdr-foreman", "herdr-standup"):
+            for kind in ("herdr-foreman", "herdr-standup", "herdr-observer"):
                 with self.subTest(host=host, kind=kind):
                     item = self.representative(kind)
                     native = host + "/acr__jbaruch__herdr-policy__" + kind

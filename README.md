@@ -18,6 +18,17 @@ General coding and release policy belongs to [jbaruch/coding-policy](https://git
 | --- | --- |
 | [herdr-foreman](skills/herdr-foreman/SKILL.md) | Dispatch, supervise and accept team work |
 | [herdr-standup](skills/herdr-standup/SKILL.md) | Collect bounded status from idle workers |
+| [herdr-observer](skills/herdr-observer/SKILL.md) | Observe factory efficiency and produce private reports |
+
+The observer uses a lightweight detached collector while its native agent sleeps
+between analyses. It watches current factory topology, incremental native logs
+and existing subscription measurements, then reports weekly or alerts sooner
+when warranted. Conclusions cover coordination, parallel delivery, provider load,
+model/effort suitability and other opportunities, with explicit coverage gaps.
+Reports stay in private local storage; Herdr notifications contain no operational
+details. It adds no delivery gate or worker reporting loop. Start the role in a
+dedicated named Herdr agent through its skill; inspect its health after launch.
+See [the private storage and recovery contract](skills/herdr-observer/references/storage.md).
 
 ## Bounded task context
 
@@ -30,7 +41,7 @@ These limits are not measured throughput or token savings.
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.13.2** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.14.0** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr

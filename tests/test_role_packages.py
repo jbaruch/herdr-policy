@@ -59,7 +59,7 @@ class RolePackagesTest(unittest.TestCase):
         manifest = json.loads((package / ".tessl-plugin/plugin.json").read_text())
         self.assertEqual(manifest["rules"], ["rules/herdr-scope.md"])
         self.assertLessEqual((package / manifest["rules"][0]).stat().st_size, 2304)
-        for kind in ("herdr-foreman", "herdr-standup"):
+        for kind in ("herdr-foreman", "herdr-standup", "herdr-observer"):
             self.assertTrue((package / "skills" / kind / "references").is_dir())
         for adapter in ("claude-code", "codex"):
             command = manifest["nativeHooks"][adapter]["SessionStart"][0]["hooks"][0]["command"]
@@ -70,6 +70,7 @@ class RolePackagesTest(unittest.TestCase):
             with self.subTest(adapter=adapter):
                 consumer = self.root / adapter
                 consumer.mkdir()
+                CHECK.verify_observer_runtime(consumer, skill, self.environment)
                 CHECK.verify_role_context(consumer, skill, skill / "native-hook.sh", self.environment, adapter)
                 CHECK.command("/bin/bash", str(skill / "native-hook.sh"), "session-start", adapter,
                               env={**self.environment, "PATH": str(consumer)}, cwd=consumer,

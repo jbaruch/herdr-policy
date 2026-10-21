@@ -10,14 +10,14 @@ import os
 from pathlib import Path
 
 from . import config, context_output, launch, progression_owner, report_delivery
-from . import supervision, tiers, workflow_capacity
+from . import observer_role, supervision, tiers, workflow_capacity
 from .errors import ForemanError, StateError, UsageError
 from .state import default_state_path, load_state_checked
 
 
 CONTEXT_BYTES = 4_096
 ROLE_FILES = {"foreman": "foreman-context.md", "worker": "worker-context.md",
-              "recovery": "context-recovery.md"}
+              "observer": "observer-context.md", "recovery": "context-recovery.md"}
 
 
 SELECTION_ENV = {"state_path": "FOREMAN_CONTEXT_STATE", "config_path": "FOREMAN_CONTEXT_CONFIG"}
@@ -148,7 +148,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
         pane = client.pane_get(pane_id)
         native = pane.get("agent_session")
         if (pane.get("pane_id") != pane_id or not isinstance(native, dict)
-                or native.get("agent") not in ("claude", "codex", "grok")
+                or not isinstance(native.get("agent"), str)
+                or native.get("agent") not in report_delivery.DISPLAY_PREFIXES
                 or native.get("source") != "herdr:" + native["agent"]
                 or native.get("kind") not in ("id", "path")
                 or not isinstance(native.get("value"), str) or not native["value"]
@@ -186,6 +187,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
             if any(row["resumed_at"] is None for row in data["holds"]):
                 return _result("recovery", "operator_hold", skill, verified=True, owner=selected)
             return _result("worker", "enrolled_native_worker", skill, verified=True, owner=selected)
+        if observer_role.matches(who, native, environment, client=client):
+            return _result("observer", "registered_native_observer", skill, verified=True)
         if data["binding"] is not None:
             return _result("unverified", "caller_is_not_bound_foreman", skill)
         unfinished, _integration = workflow_capacity.work_sets(state, data)
