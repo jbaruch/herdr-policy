@@ -19,7 +19,7 @@ The migration creates these tables:
 | Table | Key and value contract |
 | --- | --- |
 | `meta` | Named records: `binding` (exact native identity, agent name, cwd, registration time), `config` (enabled, collection start, selected owner paths, native binary), `current` (last sample, coverage, quota observations, anomaly continuity), `heartbeat` (service time/health), `pending` (one analysis job, frozen payload, reasons and send status), `schedule` (last analysis/weekly report and anomaly fingerprint), `closures` (bounded per-owner event sequence watermarks). |
-| `sources` | Native identity key; byte cursor/file identity, current model/effort, numeric usage baseline, bounded tool/message hashes, coverage and source locator. Quota keys retain bounded observations with their original measurement/reset identities. No prompt, output or reasoning bodies. |
+| `sources` | Pane-independent native session key; byte cursor/file identity, current model/effort, numeric usage baseline, bounded tool/message hashes, coverage and source locator. Quota keys retain bounded observations with their original measurement/reset identities. No prompt, output or reasoning bodies. |
 | `bins` | Identity, role/task and UTC hour key; sampled status duration, native counters/proxies, model/effort totals and source byte locators. No transcript bodies. |
 | `reports` | Generated job ID; private report path, kind, time, content digest and generic notification result. |
 
@@ -27,8 +27,11 @@ Only this skill's CLI/collector writes these records. `status` and `evidence`
 return last-seen data; `next`, `ack` and `report` require the registered live
 observer. The shared SessionStart hook's
 `skills/herdr-foreman/foreman/observer_role.py` reader accepts migration/record 1
-read-only, reads only `binding` and `config`, and returns no role for missing,
-incompatible or untrusted storage. It never migrates the database.
+read-only, reads only `binding` and `config` from this cache, and returns no role
+for missing, incompatible or untrusted storage. It also checks current supervision
+ownership through that owner's reader, including during foreman outages. Foreman
+and worker contracts take precedence over observer registration. No reader here
+migrates a store or clears ownership.
 
 The collector owns one service lock and continuously reads Herdr topology,
 selected current owner metadata, existing quota snapshots and matching native

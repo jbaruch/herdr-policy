@@ -29,6 +29,11 @@ def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
 
 
+def session_key(who):
+    """Telemetry follows the native session; pane identity still guards effects."""
+    return fingerprint({k: who[k] for k in ("source", "agent", "kind", "value")})
+
+
 class Native:
     def __init__(self, binary="herdr"):
         if os.environ.get("HERDR_ENV") != "1" or not os.environ.get("HERDR_PANE_ID"):

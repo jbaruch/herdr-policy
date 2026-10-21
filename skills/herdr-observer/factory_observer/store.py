@@ -92,8 +92,12 @@ class Store:
         row = self.db.execute("SELECT value FROM " + table + " WHERE key=?", (key,)).fetchone()
         if row is None:
             return default
-        value = json.loads(row[0])
-        if not isinstance(value, dict) or value.get("schema_version") != SCHEMA:
+        return self.decode(row[0])
+
+    @staticmethod
+    def decode(raw):
+        value = json.loads(raw)
+        if not isinstance(value, dict) or type(value.get("schema_version")) is not int or value["schema_version"] != SCHEMA:
             raise ValueError("observer record schema is unsupported; update the plugin")
         return value
 
@@ -109,7 +113,7 @@ class Store:
     def rows(self, table, since=0):
         if table not in ("sources", "bins", "reports"):
             raise ValueError("unknown observer table")
-        return [json.loads(row[0]) for row in self.db.execute(
+        return [self.decode(row[0]) for row in self.db.execute(
             "SELECT value FROM " + table + " WHERE at>=? ORDER BY at", (since,))]
 
     def prune(self, now):

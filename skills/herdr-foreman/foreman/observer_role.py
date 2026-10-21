@@ -5,11 +5,66 @@ is owned by factory_observer/store.py. A missing, incompatible or insecure cache
 establishes no observer role. This reader creates no files or SQLite journals.
 """
 
+from contextlib import closing
 import json
+from itertools import islice
 import os
 from pathlib import Path
 import sqlite3
 import stat
+
+from . import supervision
+from .errors import ForemanError, StateError
+
+
+MAX_BINDINGS = 4096
+MAX_RECEIPT_BYTES = 16384
+
+
+def delivery_owner(pane_id, state_paths=(), environment=None):
+    """Current ownership, even when the foreman is offline; never migrate it.
+
+The supervision owner validates leases/enrollments. Index files are only
+locators. A reserved pane, including an unresolved native handoff, cannot be
+repurposed by registering an observer. No live foreman is required to retain it.
+"""
+    environment = os.environ if environment is None else environment
+    root = Path(environment.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "foreman"
+    paths = {Path(path) for path in state_paths} | {root / "state.json"}
+    hint = environment.get("FOREMAN_CONTEXT_STATE")
+    if hint:
+        if not Path(hint).is_absolute():
+            raise StateError("Restore the absolute current owner locator before registering an observer.", {})
+        paths.add(Path(hint))
+    index = root / "supervision-bindings"
+    if index.exists():
+        entries = list(islice(index.iterdir(), MAX_BINDINGS + 1))
+        if len(entries) > MAX_BINDINGS:
+            raise StateError("Resolve the supervision binding index coverage before registering an observer.", {})
+        for entry in entries:
+            if entry.suffix != ".json":
+                continue
+            descriptor = os.open(entry, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(descriptor, "rb") as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise StateError("Restore regular supervision binding receipts before registering an observer.", {})
+                raw = stream.read(MAX_RECEIPT_BYTES + 1)
+            if len(raw) > MAX_RECEIPT_BYTES:
+                raise StateError("Restore bounded supervision binding receipts before registering an observer.", {})
+            receipt = json.loads(raw)
+            if (not isinstance(receipt, dict) or type(receipt.get("schema_version")) is not int
+                    or receipt["schema_version"] != 1 or not isinstance(receipt.get("state_path"), str)
+                    or not Path(receipt["state_path"]).is_absolute()):
+                raise StateError("Restore versioned supervision binding receipts before registering an observer.", {})
+            paths.add(Path(receipt["state_path"]))
+    for path in sorted(paths):
+        data = supervision.load(path)
+        if data["binding"] is not None and data["binding"]["identity"].get("pane_id") == pane_id:
+            return {"role": "foreman", "state_path": str(path)}
+        for member in data["members"]:
+            if member["active"] and supervision.expected_assignment(member)["pane_id"] == pane_id:
+                return {"role": "worker", "state_path": str(path)}
+    return None
 
 
 def matches(who, native, environment):
@@ -23,14 +78,18 @@ def matches(who, native, environment):
             expected = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
             if not expected or info.st_uid != os.getuid() or info.st_mode & 0o077 or (not directory and info.st_nlink != 1):
                 return False
-        with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1) as db:
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.1)) as db:
             if db.execute("PRAGMA user_version").fetchone()[0] != 1:
                 return False
             rows = dict(db.execute("SELECT key,value FROM meta WHERE key IN ('binding','config')"))
         binding, config = (json.loads(rows[key]) for key in ("binding", "config"))
-        if binding.get("schema_version") != 1 or config.get("schema_version") != 1 or config.get("enabled") is not True:
+        if (type(binding.get("schema_version")) is not int or binding["schema_version"] != 1
+                or type(config.get("schema_version")) is not int or config["schema_version"] != 1
+                or config.get("enabled") is not True):
             return False
         identity = {"pane_id": who["pane_id"], **{k: native[k] for k in ("source", "agent", "kind", "value")}}
-        return binding.get("identity") == identity and binding.get("cwd") == who["cwd"]
-    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error):
+        if binding.get("identity") != identity or binding.get("cwd") != who["cwd"]:
+            return False
+        return delivery_owner(who["pane_id"], config.get("states", []), environment) is None
+    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, ForemanError):
         return False

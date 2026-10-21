@@ -13,7 +13,7 @@
     },
     {
       "root": "skills/herdr-observer",
-      "extraPaths": ["skills/herdr-observer"]
+      "extraPaths": ["skills/herdr-observer", "skills/herdr-foreman"]
     },
     {
       "root": "tests/herdr-foreman",

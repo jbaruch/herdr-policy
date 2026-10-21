@@ -33,7 +33,7 @@
 - Success returns schema 1 with `role`, `verified`, `reason`, `context`, `reference` and `state_path`; every authority field is false.
 - `skills/herdr-foreman/foreman/role_context.py` owns role selection and preflight. A role hint establishes no authority; an explicit foreign remote `--state` is refused.
 - Known outages, changed ownership and operator holds retain a recovery capsule. Unverified sessions receive no foreman contract.
-- Ordinary native sessions with `HERDR_ENV` unset read no owner or controller. The observer receives only its capsule after an exact live match to its own private registration; it does not load foreman state or workflow.
+- Ordinary native sessions with `HERDR_ENV` unset read no owner or controller. Observer routing preserves current delivery ownership, then matches its private native registration; it loads no foreman workflow.
 - Each co-shipped capsule is at most 4096 UTF-8 bytes; structured stdout is at most 16 KiB. Missing, unreadable or oversized contracts fail visibly without partial instructions.
 - This reader creates no binding, task authority, admission, report, acknowledgement or dispatch.
 - The shared SessionStart hook accepts at most 16 KiB of native JSON, verifies session identity and preserves the consumer cwd.

@@ -11,6 +11,8 @@ from pathlib import Path
 import time
 
 from . import native, sources
+from foreman import observer_role
+from foreman.errors import ForemanError
 
 
 POLL_SECONDS = 60
@@ -158,7 +160,7 @@ def tick(store, client, now=None, user_home=None):
     for row in roster:
         who = native.identity(row)
         if who is not None:
-            physical.setdefault(native.fingerprint({k: v for k, v in who.items() if k != "pane_id"}), []).append(row)
+            physical.setdefault(native.session_key(who), []).append(row)
     duplicates = [{"session": key, "panes": [row["pane_id"] for row in rows]}
                   for key, rows in physical.items() if len(rows) > 1]
     live = [rows[0] for rows in physical.values() if len(rows) == 1]
@@ -182,15 +184,16 @@ def tick(store, client, now=None, user_home=None):
         if who is None:
             continue
         key = native.fingerprint(who)
+        session = native.session_key(who)
         role = roles.get(key, {"role": "unassigned", "task": None})
-        if native.matches(binding, raw):
+        if native.matches(binding, raw) and key not in roles:
             role = {"role": "observer", "task": None}
         status = raw.get("agent_status", "unknown")
         if status == "done":
             status = "idle"
         if status not in ("idle", "working", "blocked"):
             status = "unknown"
-        row = {"key": key, "name": raw.get("name") or raw["pane_id"], "pane_id": raw["pane_id"],
+        row = {"key": key, "session_key": session, "name": raw.get("name") or raw["pane_id"], "pane_id": raw["pane_id"],
                "provider": who["agent"], "role": role["role"], "task": role["task"], "status": status,
                "assigned_at": role.get("assigned_at")}
         prior = old_agents.get(key)
@@ -198,7 +201,7 @@ def tick(store, client, now=None, user_home=None):
             # Attribute an interval to its start state, not a newly observed state.
             bin_update(store, prior, previous["at"], {prior["status"] + "_seconds": delta,
                                                     "sample_seconds": delta})
-        cursor = store.get("sources", key, {"provider": who["agent"], "key": key})
+        cursor = store.get("sources", session, {"provider": who["agent"], "key": session})
         path = Path(cursor["path"]) if cursor.get("path") else None
         if path is None and now >= cursor.get("retry_at", 0):
             try:
@@ -236,7 +239,7 @@ def tick(store, client, now=None, user_home=None):
         cursor["gap_history"] = history[-32:]
         if log_gaps:
             bin_update(store, row, now, {"log_gap_samples": 1})
-        store.put("sources", key, cursor, now)
+        store.put("sources", session, cursor, now)
         sampled.append({**row, "log_coverage": log_gaps, "model": cursor.get("model"), "effort": cursor.get("effort")})
     # Unique closure receipts, not idle/completion_seq, supply this throughput proxy.
     recorded = store.get("meta", "closures", {"by_owner": {}})
@@ -338,6 +341,12 @@ def dispatch(store, client, checked):
     binding = store.get("meta", "binding")
     if not store.get("meta", "config", {}).get("enabled"):
         return {"wake_agent": False, "data": {"reason": "observer_disabled"}}
+    try:
+        owner = observer_role.delivery_owner(binding["identity"]["pane_id"], store.get("meta", "config").get("states", []))
+    except (ForemanError, OSError, ValueError):
+        return {"wake_agent": False, "data": {"reason": "observer_ownership_unavailable"}}
+    if owner is not None:
+        return {"wake_agent": False, "data": {"reason": "observer_has_delivery_ownership"}}
     if not pending or pending["id"] != checked["data"]["job"]["id"] or pending["send_status"] != "new":
         return {"wake_agent": False, "data": {"reason": "job_changed"}}
     # Revalidate this exact reporter just before sending; no worker can be targeted.

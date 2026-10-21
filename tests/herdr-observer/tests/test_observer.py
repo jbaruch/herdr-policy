@@ -9,7 +9,6 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from unittest.mock import patch
 
@@ -19,7 +18,7 @@ sys.path.insert(0, str(ROOT / "skills/herdr-foreman"))
 
 from factory_observer import cli, collect, native, sources
 from factory_observer.store import Store, private_directory, private_file
-from foreman import observer_role, role_context
+from foreman import observer_role, role_context, supervision
 
 
 def stamp(at):
@@ -64,6 +63,9 @@ class ObserverTest(unittest.TestCase):
         self.cache = self.root / "state/herdr-observer"
         self.store = Store(self.cache)
         self.addCleanup(self.store.close)
+        environment = patch.dict(os.environ, {"XDG_STATE_HOME": str(self.cache.parent)})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.now = 1760000000.0
         self.foreman = agent("coordinator", "11111111-1111-4111-8111-111111111111", "working")
         self.worker = agent("developer", "22222222-2222-4222-8222-222222222222")
@@ -77,13 +79,12 @@ class ObserverTest(unittest.TestCase):
                      "snapshots": [{"schema_version": 6, "measured_at": stamp(self.now), "agents": {
                          "grok": {"kind": "grok", "window_group": "account-a", "headroom_pct": 90,
                                   "windows": {"weekly": {"used_pct": 10, "remaining_pct": 90, "resets": "cycle-a"}}}}}]}
-        native_id = native.identity(self.foreman)
-        assert native_id is not None
-        self.supervised = {"schema_version": 1, "binding": {"identity": {
-            "kind": native_id["kind"], "value": native_id["value"], "pane_id": native_id["pane_id"],
-            "cwd": "/factory", "herdr_env": "1"}}, "holds": [], "members": [{"active": True,
-            "assignment": {"agent": "developer", "task": "work", "pane_id": self.worker["pane_id"],
-                           "native_session": self.worker["agent_session"]}, "refinements": []}]}
+        supervision.bind(self.owner, supervision.identity(self.foreman["agent_session"]["value"], "/factory", "1",
+                         pane_id=self.foreman["pane_id"]), stamp(self.now))
+        supervision.enroll(self.owner, {"id": "assignment", "agent": "developer", "task": "work",
+                          "report": str(self.root / "worker-report.md"), "pane_id": self.worker["pane_id"],
+                          "native_session": self.worker["agent_session"]}, stamp(self.now))
+        self.supervised = supervision.load(self.owner)
         self.save_owner()
         with self.store.transaction():
             self.store.put("meta", "config", {"enabled": True, "started_at": self.now,
@@ -152,6 +153,103 @@ class ObserverTest(unittest.TestCase):
         self.worker["agent_status"] = "working"
         self.assertFalse(self.due()["wake_agent"])
         self.assertIsNone(self.record("current")["stall_since"])
+
+    def test_native_session_moves_panes_without_replaying_log_costs(self):
+        self.log()
+        self.tick()
+        self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "a", "name": "exec"}),
+                          self.event("compacted", {}, 2)])
+        self.tick(self.now + 60)
+        self.foreman["pane_id"] = "replacement-pane"
+        self.supervised["binding"]["identity"]["pane_id"] = "replacement-pane"
+        self.save_owner()
+        self.tick(self.now + 120)
+        metrics = collect.evidence(self.store, self.now + 120)["total_metrics"]
+        self.assertEqual(metrics["tool_calls"], 1)
+        self.assertEqual(metrics["compactions"], 1)
+        self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "b", "name": "exec"}, 121)])
+        self.tick(self.now + 180)
+        self.assertEqual(collect.evidence(self.store, self.now + 180)["total_metrics"]["tool_calls"], 2)
+
+    def test_running_start_merges_explicit_state_sources(self):
+        additional = self.root / "additional/state.json"
+        with patch.dict(os.environ, {"HERDR_PANE_ID": self.observer["pane_id"]}), patch("factory_observer.cli.running", return_value=True):
+            result = cli.start(self.store, self.client, [str(additional)], self.now)
+        self.assertTrue(result["already_running"])
+        self.assertEqual(set(result["states"]), {str(self.owner), str(additional)})
+        self.assertEqual(set(self.record("config")["states"]), {str(self.owner), str(additional)})
+
+    def test_worker_admission_refused_when_its_foreman_is_offline(self):
+        self.client.agents.remove(self.foreman)
+        with patch.dict(os.environ, {"HERDR_PANE_ID": self.worker["pane_id"]}):
+            with self.assertRaisesRegex(ValueError, "delivery ownership"):
+                cli.start(self.store, self.client, [str(self.owner)], self.now)
+        self.assertEqual(self.record("binding")["name"], "observer")
+
+    def test_later_worker_enrollment_takes_precedence_over_observer_registration(self):
+        pending = self.due()
+        supervision.enroll(self.owner, {"id": "observer-reassigned", "agent": "observer", "task": "other-work",
+                          "report": str(self.root / "other-report.md"), "pane_id": self.observer["pane_id"],
+                          "native_session": self.observer["agent_session"]}, stamp(self.now))
+        who = {"kind": "id", "value": self.observer["agent_session"]["value"], "cwd": "/factory",
+               "pane_id": self.observer["pane_id"], "herdr_env": "1"}
+        env = {"XDG_STATE_HOME": str(self.cache.parent)}
+        self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env))
+        self.assertFalse(collect.dispatch(self.store, self.client, pending)["wake_agent"])
+        self.assertEqual(self.client.prompts, [])
+        with patch.dict(os.environ, {"HERDR_PANE_ID": self.observer["pane_id"]}):
+            with self.assertRaisesRegex(ValueError, "delivery ownership"):
+                cli.verify(self.store, self.client)
+
+    def test_service_lifecycle_uses_explicit_ticks_and_stop_signal(self):
+        def stop_after_sample(_seconds):
+            self.assertEqual(self.record("heartbeat")["at"], self.now)
+            self.assertTrue(self.record("current")["healthy"])
+            with self.store.transaction():
+                config = self.record("config")
+                config["enabled"] = False
+                self.store.put("meta", "config", config)
+        with self.store.transaction():
+            config = self.record("config")
+            config["binary"] = "fixture"
+            self.store.put("meta", "config", config)
+        with patch("factory_observer.cli.native.Native", return_value=self.client), \
+                patch("factory_observer.cli.time.time", return_value=self.now), \
+                patch("factory_observer.cli.time.sleep", side_effect=stop_after_sample), \
+                patch("factory_observer.collect.sources.locate", return_value=None):
+            result = cli.serve(self.store)
+        self.assertTrue(result["stopped"])
+        self.assertFalse(cli.running(self.cache))
+
+    def test_start_launches_the_isolated_co_shipped_service(self):
+        with patch.dict(os.environ, {"HERDR_PANE_ID": self.observer["pane_id"]}), \
+                patch("factory_observer.cli.shutil.which", return_value="/fixture/herdr"), \
+                patch("factory_observer.cli.subprocess.Popen") as spawn:
+            spawn.return_value.pid = 4242
+            result = cli.start(self.store, self.client, [], self.now)
+        self.assertEqual(result["status"], "starting")
+        self.assertEqual(spawn.call_args.args[0], [sys.executable, "-I", str(ROOT / "skills/herdr-observer/observer.py"), "serve"])
+        self.assertTrue(spawn.call_args.kwargs["start_new_session"])
+
+    def test_collector_records_recoverable_io_failures_and_keeps_its_loop(self):
+        def stop_after_tick(_seconds):
+            with self.store.transaction():
+                config = self.record("config")
+                config["enabled"] = False
+                self.store.put("meta", "config", config)
+        for error in (OSError("unreadable"), sqlite3.OperationalError("locked")):
+            with self.subTest(error=type(error).__name__):
+                with self.store.transaction():
+                    config = self.record("config")
+                    config.update(enabled=True, binary="fixture")
+                    self.store.put("meta", "config", config)
+                with patch("factory_observer.cli.native.Native", return_value=self.client), \
+                        patch("factory_observer.cli.collect.tick", side_effect=error), \
+                        patch("factory_observer.cli.time.time", return_value=self.now), \
+                        patch("factory_observer.cli.time.sleep", side_effect=stop_after_tick):
+                    result = cli.serve(self.store)
+                self.assertTrue(result["stopped"])
+                self.assertIn("collection_or_wake_failed", self.record("heartbeat")["error"])
 
     def test_blocked_coordinator_with_open_work_gets_an_early_analysis(self):
         self.foreman["agent_status"] = "blocked"
@@ -319,7 +417,7 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(sum(b["metrics"].get("tool_calls", 0) for b in batches), 1)
         self.assertEqual(sources.read_log(path, cursor, now=self.now + 10, since=self.now)[0], [])
 
-    def test_role_hook_exact_binding_no_owner_load_and_no_schema_migration(self):
+    def test_role_hook_exact_binding_no_foreman_workflow_and_no_schema_migration(self):
         who = {"kind": "id", "value": self.observer["agent_session"]["value"], "cwd": "/factory",
                "pane_id": self.observer["pane_id"], "herdr_env": "1"}
         env = {"XDG_STATE_HOME": str(self.cache.parent), "HERDR_ENV": "1", "HERDR_PANE_ID": who["pane_id"]}
@@ -328,7 +426,7 @@ class ObserverTest(unittest.TestCase):
         class PaneClient:
             def pane_get(self, pane):
                 return row
-        with patch("foreman.supervision.load", side_effect=AssertionError("observer must not read delivery state")):
+        with patch("foreman.progression_owner.verify_foreman", side_effect=AssertionError("observer must not run foreman workflow")):
             selected = role_context.select(ROOT / "skills/herdr-foreman", client=PaneClient(),
                                            environment=env, cwd="/factory", binding_root=self.root / "empty-bindings")
         self.assertEqual(selected["role"], "observer")
@@ -339,6 +437,16 @@ class ObserverTest(unittest.TestCase):
         self.store.db.commit()
         self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env))
         self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], 99)
+
+    def test_all_row_readers_refuse_newer_and_nonobject_records(self):
+        for value in ({"schema_version": 99}, [], {"schema_version": True}):
+            with self.subTest(value=value):
+                self.store.db.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?)", ("invalid", self.now, json.dumps(value)))
+                self.store.db.commit()
+                with self.assertRaises(ValueError):
+                    self.store.rows("reports")
+                with self.assertRaises(ValueError):
+                    cli.status(self.store, self.now)
 
     def test_private_storage_refuses_links_and_has_database_ceiling(self):
         self.assertEqual(self.cache.stat().st_mode & 0o777, 0o700)
@@ -353,51 +461,20 @@ class ObserverTest(unittest.TestCase):
         self.assertLessEqual(self.store.db.execute("PRAGMA max_page_count").fetchone()[0], 8192)
 
 
-class DaemonTest(unittest.TestCase):
-    def test_installed_entrypoint_starts_collects_and_stops_without_live_services(self):
+class EntryPointTest(unittest.TestCase):
+    def test_isolated_entrypoint_reports_initial_health_without_live_services(self):
         with tempfile.TemporaryDirectory(prefix="private observer ") as name:
             root = Path(name)
-            fixture_bin = root / "bin"
-            fixture_bin.mkdir()
-            fake = fixture_bin / "herdr"
-            fake.write_text("#!" + sys.executable + "\nimport json,os,sys\n"
-                            "from pathlib import Path\n"
-                            "with open(os.environ['OBSERVER_FIXTURE_CALLS'],'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n"
-                            "if sys.argv[1:]==['api','snapshot']: print(json.dumps({'ok':True,'result':{'snapshot':json.loads(Path(os.environ['OBSERVER_FIXTURE_SNAPSHOT']).read_text())}}))\n"
-                            "else: print(json.dumps({'ok':True,'result':{}}))\n")
-            fake.chmod(0o700)
-            row = agent("observer", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind="grok")
-            snapshot = root / "snapshot.json"
-            snapshot.write_text(json.dumps({"agents": [row]}))
-            environment = {**os.environ, "XDG_STATE_HOME": str(root / "state"), "HERDR_ENV": "1",
-                           "HERDR_PANE_ID": row["pane_id"], "PATH": str(fixture_bin) + os.pathsep + os.environ["PATH"],
-                           "OBSERVER_FIXTURE_CALLS": str(root / "calls.jsonl"), "OBSERVER_FIXTURE_SNAPSHOT": str(snapshot)}
-            entry = ROOT / "skills/herdr-observer/observer.sh"
-            def invoke(action):
-                result = subprocess.run(["bash", str(entry), action], env=environment, cwd=root,
-                                        capture_output=True, text=True, timeout=10)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                return json.loads(result.stdout)
-            try:
-                self.assertEqual(invoke("start")["status"], "starting")
-                deadline = time.monotonic() + 8
-                health = invoke("status")
-                while not health["heartbeat"] and time.monotonic() < deadline:
-                    time.sleep(0.1)
-                    health = invoke("status")
-                self.assertTrue(health["running"])
-                self.assertIn("at", health["heartbeat"])
-                self.assertNotIn("error", health["heartbeat"])
-                self.assertTrue(invoke("start")["already_running"])
-            finally:
-                invoke("stop")
-                deadline = time.monotonic() + 8
-                while invoke("status")["running"] and time.monotonic() < deadline:
-                    time.sleep(0.1)
-                self.assertFalse(invoke("status")["running"])
-            calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
-            self.assertTrue(calls)
-            self.assertTrue(all(call == ["api", "snapshot"] for call in calls), calls)
+            environment = {**os.environ, "XDG_STATE_HOME": str(root / "state")}
+            environment.pop("HERDR_ENV", None)
+            environment.pop("HERDR_PANE_ID", None)
+            result = subprocess.run(["bash", str(ROOT / "skills/herdr-observer/observer.sh"), "status"],
+                                    env=environment, cwd=root, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            status = json.loads(result.stdout)
+            self.assertFalse(status["running"])
+            self.assertFalse(status["enabled"])
+            self.assertEqual(status["heartbeat"], {})
 
 
 if __name__ == "__main__":

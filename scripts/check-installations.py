@@ -102,7 +102,7 @@ def verify_role_context(project, skill, hook, environment, adapter: str | None =
     pane_file = binary / "pane.json"
     (binary / "herdr").write_text(
         "#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n"
-        "if sys.argv[1:] != ['pane','get','private-fixture-pane']: raise SystemExit(64)\n"
+        "if sys.argv[1:3] != ['pane','get'] or sys.argv[3:] not in (['private-fixture-pane'],['private-observer-pane']): raise SystemExit(64)\n"
         "pane=json.loads(Path(__file__).with_name('pane.json').read_text())\n"
         "if pane.get('unavailable'): raise SystemExit(75)\n"
         "print(json.dumps({'result':{'pane':pane}}))\n")
@@ -156,7 +156,8 @@ elif sys.argv[2] == 'observer':
         db.execute('INSERT INTO meta VALUES (?,?)', ('config', json.dumps({'schema_version':1,'enabled':True})))
         db.execute('INSERT INTO meta VALUES (?,?)', ('binding', json.dumps({'schema_version':1,
             'cwd':str(Path.cwd()), 'name':'private-observer', 'identity':{'source':'herdr:'+sys.argv[3],
-            'agent':sys.argv[3], 'kind':'id', 'value':'private-observer', 'pane_id':'private-fixture-pane'}})))
+            'agent':sys.argv[3], 'kind':'id', 'value':'private-observer', 'pane_id':os.environ['HERDR_PANE_ID']}})))
+    db.close()
 else:
     raise SystemExit('Unsupported private fixture setup')
 """
@@ -221,9 +222,11 @@ else:
     native["value"] = "unbound-session"
     pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
     observe("unbound-session", None)
+    environment["HERDR_PANE_ID"] = "private-observer-pane"
     seed("observer")
     native["value"] = "private-observer"
-    pane_file.write_text(json.dumps({"pane_id": "private-fixture-pane", "agent_session": native}))
+    native["pane_id"] = "private-observer-pane"
+    pane_file.write_text(json.dumps({"pane_id": "private-observer-pane", "agent_session": native}))
     observe("private-observer", "Verified Herdr Observer", absent=("Herdr Foreman Operating Context", "Herdr Worker Context"))
     observe("other-observer-session", None)
 

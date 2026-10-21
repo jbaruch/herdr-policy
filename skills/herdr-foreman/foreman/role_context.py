@@ -159,8 +159,6 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
                                    kind=native["kind"], pane_id=pane_id)
         if payload is not None and who not in incoming:
             return _result("unverified", "hook_session_mismatch", skill)
-        if observer_role.matches(who, native, environment):
-            return _result("observer", "registered_native_observer", skill, verified=True)
         binding = _binding(who, binding_root)
         if binding is not None:
             selected = Path(binding["state_path"])
@@ -188,6 +186,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
             if any(row["resumed_at"] is None for row in data["holds"]):
                 return _result("recovery", "operator_hold", skill, verified=True, owner=selected)
             return _result("worker", "enrolled_native_worker", skill, verified=True, owner=selected)
+        if observer_role.matches(who, native, environment):
+            return _result("observer", "registered_native_observer", skill, verified=True)
         if data["binding"] is not None:
             return _result("unverified", "caller_is_not_bound_foreman", skill)
         unfinished, _integration = workflow_capacity.work_sets(state, data)

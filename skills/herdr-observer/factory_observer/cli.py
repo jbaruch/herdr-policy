@@ -19,6 +19,8 @@ import time
 
 from . import collect, native, sources
 from .store import MAX_REPORT_BYTES, Store, default_home, private_directory, private_file
+from foreman import observer_role
+from foreman.errors import ForemanError
 
 
 def lock(home, name):
@@ -47,7 +49,17 @@ def verify(store, client):
     config = store.get("meta", "config")
     if not binding or not config or not config["enabled"] or not native.matches(binding, current):
         raise ValueError("this is not the enabled observer session; use its original pane or explicitly start a replacement")
+    require_unowned(current["pane_id"], config.get("states", []))
     return binding
+
+
+def require_unowned(pane_id, paths):
+    try:
+        owner = observer_role.delivery_owner(pane_id, paths)
+    except (ForemanError, OSError, ValueError):
+        raise ValueError("restore readable current supervision owners before registering or using this observer") from None
+    if owner is not None:
+        raise ValueError("use a dedicated observer pane; this pane retains foreman or worker delivery ownership")
 
 
 def start(store, client, states, now):
@@ -59,18 +71,26 @@ def start(store, client, states, now):
         row = native.current(snapshot)
         previous = store.get("meta", "binding")
         config = store.get("meta", "config", {})
+        requested = [Path(p).expanduser() for p in states]
+        if any(not path.is_absolute() for path in requested):
+            raise ValueError("supply absolute owner state paths with --state")
+        selected = sorted(set(config.get("states", [])) | {str(path.absolute()) for path in requested})
+        require_unowned(row["pane_id"], selected)
         if running(store.home):
             if previous and native.matches(previous, row) and config.get("enabled"):
-                return {"ok": True, "already_running": True, "home": str(store.home)}
+                with store.transaction():
+                    latest = store.get("meta", "config")
+                    if not latest or not latest["enabled"]:
+                        raise ValueError("observer was stopped during configuration; inspect status before restarting")
+                    latest["states"] = selected
+                    store.put("meta", "config", latest)
+                return {"ok": True, "already_running": True, "home": str(store.home), "states": selected}
             raise ValueError("another collector is running; stop it and wait for status to confirm before replacing its observer")
         if previous and not native.matches(previous, row) and config.get("enabled"):
             raise ValueError("observer identity changed; stop the old registration before starting this replacement")
         root = default_home().parent / "foreman"
-        selected = [str(Path(p).expanduser().absolute()) for p in states]
         paths, _ = sources.owner_paths(root, selected)
-        roles, _, _, _, _ = sources.owners(paths, snapshot["agents"])
-        if native.fingerprint(native.identity(row)) in roles:
-            raise ValueError("use a dedicated observer pane; this agent already owns foreman or worker delivery duties")
+        require_unowned(row["pane_id"], paths)
         binary = getattr(client, "binary", "herdr")
         executable = shutil.which(binary)
         if not executable:
@@ -79,7 +99,7 @@ def start(store, client, states, now):
         with store.transaction():
             store.put("meta", "binding", binding)
             store.put("meta", "config", {"enabled": True, "started_at": config.get("started_at", now),
-                                          "states": selected or config.get("states", []),
+                                          "states": selected,
                                           "owner_root": str(root), "binary": executable})
             pending = store.get("meta", "pending", {})
             if pending.get("id") and (not previous or not native.matches(previous, row)):
@@ -105,21 +125,27 @@ def serve(store):
     try:
         due = 0
         while True:
-            config = store.get("meta", "config", {})
-            if not config.get("enabled"):
-                return {"ok": True, "stopped": True}
             now = time.time()
-            if now >= due:
-                client = native.Native(config["binary"])
-                try:
+            try:
+                config = store.get("meta", "config", {})
+                if not config.get("enabled"):
+                    return {"ok": True, "stopped": True}
+                if now >= due:
+                    client = native.Native(config["binary"])
                     started = time.monotonic()
                     with store.db:
                         checked = collect.tick(store, client)
                         store.put("meta", "heartbeat", {"at": now, "collection_seconds": time.monotonic() - started})
                     collect.dispatch(store, client, checked)
-                except ValueError:
+                    due = time.time() + collect.POLL_SECONDS
+            except (ValueError, OSError, sqlite3.Error):
+                # Storage may itself be unavailable. Retain the service and
+                # retry on its next tick; status still exposes heartbeat age.
+                try:
                     with store.db:
-                        store.put("meta", "heartbeat", {"at": now, "error": "collection_or_wake_failed; inspect status and native connectivity"})
+                        store.put("meta", "heartbeat", {"at": now, "error": "collection_or_wake_failed; inspect storage and native connectivity"})
+                except (OSError, sqlite3.Error):
+                    print("herdr-observer: cannot save health; inspect private storage and free space", file=sys.stderr)
                 due = time.time() + collect.POLL_SECONDS
             time.sleep(min(5, max(0.1, due - time.time())))
     finally:
