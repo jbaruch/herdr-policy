@@ -820,6 +820,29 @@ def reconcile_command(state_path, pane_id, stow, outcome):
 TERMINAL_FAILURES = frozenset({"failed", "interrupted"})
 
 
+def _goal_pending(row):
+    goal = row["host_goal"]
+    return (row["accepted_session"] is not None and goal is not None
+            and goal["runtime"] == "codex" and goal["phase"] != "verified")
+
+
+def goal_restoration(state_path, who):
+    """Read only the current pane's admitted but unfinished host transfer."""
+    try:
+        document, _ = _load(record_path(state_path), migrate_legacy=False)
+    except ResetRecordOlder:
+        # Older records cannot contain this two-phase host transfer. Their
+        # original supervision/reset-coverage checks still apply separately.
+        return None
+    if document is None:
+        return None
+    row = next((row for row in reversed(document["resets"]) if row["pane_id"] == who.get("pane_id")), None)
+    if (row is not None and _goal_pending(row)
+            and row["accepted_session"] == {key: who.get(key) for key in ("kind", "value")}):
+        return reconcile_command(state_path, row["pane_id"], row["stow"], "delivered")
+    return None
+
+
 def outstanding(state_path, *, alive=_alive):
     """The foreman resets that still need the operator, read from the record alone.
 
@@ -852,7 +875,12 @@ def outstanding(state_path, *, alive=_alive):
         latest[row["pane_id"]] = row
     items = []
     for row in latest.values():
-        if row["status"] in TERMINAL_FAILURES:
+        if _goal_pending(row):
+            prompt = None
+            needed = ("The admitted continuation has not finished its host-goal restoration. Preserve its saved scope and holds; "
+                      "run `{}` from the bound successor. No reset or repeated input is needed.".format(
+                          reconcile_command(state_path, row["pane_id"], row["stow"], "delivered")))
+        elif row["status"] in TERMINAL_FAILURES:
             prompt = row["result"]["resume_prompt"]
             needed = row["result"]["message"].replace(OPERATOR_RECOVERY, "").strip() + " " + recovery_instruction(row["status"], row["result"])
             if row["status"] == "interrupted":

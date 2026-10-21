@@ -18,6 +18,7 @@ from unittest.mock import patch
 ROOT = (Path(__file__).resolve().parents[3] / "skills/herdr-foreman")
 sys.path.insert(0, str(ROOT))
 from foreman import foreman_reset as reset, host_goals, memory, reset_input_hook as hook, supervision as store
+from foreman import supervision_hook
 from tests.test_foreman_reset import FakeClient, SESSION, CLEARED, PANE
 from tests.goal_fakes import GoalHost, goal
 
@@ -191,6 +192,22 @@ class ResetHookTest(unittest.TestCase):
         self.assertEqual(self.host.continuations, [])
         self.assertIsNone(self.host.goal(CLEARED))
         self.assertFalse(any(method == "thread/goal/set" for method, _ in self.host.calls))
+
+    def test_an_unfinished_admitted_goal_stays_visible_and_refuses_stop_until_restored(self):
+        self.setUp(source=goal(SESSION["value"]))
+        self.assertEqual(self.invoke(), hook.acceptance())
+        before = reset.record_path(self.state).read_bytes()
+        outstanding = reset.outstanding(self.state, alive=lambda _: False)
+        self.assertIn("host-goal restoration", outstanding[0]["needed"])
+        payload = {"cwd": str(self.directory), "session_id": CLEARED}
+        stopped = supervision_hook.check(payload, self.env, AT, root=self.root)
+        self.assertEqual(stopped["decision"], "block")
+        self.assertIn("foreman-reset-reconcile", stopped["reason"])
+        self.assertEqual(reset.record_path(self.state).read_bytes(), before)
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: False)
+        self.assertEqual(reset.outstanding(self.state), [])
+        self.assertIsNone(supervision_hook.check(payload, self.env, AT, root=self.root))
 
     def test_a_lost_activation_response_occurs_only_after_input_was_admitted(self):
         self.setUp(source=goal(SESSION["value"]))

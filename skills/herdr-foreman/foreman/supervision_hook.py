@@ -73,6 +73,9 @@ def check(payload, environ, at, *, root=None, probe=runtime.process_identity):
                     return block("This foreman's native binding handoff is incomplete. Retry `{}` for the same owner state before stopping.".format(
                         runnable.command("supervision-bind")))
                 continue
+            goal_repair = foreman_reset.goal_restoration(binding["state_path"], who)
+            if goal_repair is not None:
+                return block("This admitted continuation still owes the user's host-goal restoration. Read its saved scope and holds, then run `{}` from this bound successor before stopping. No pause, reset or repeated input is required.".format(goal_repair))
             events = store.pending(data)
             active = [row["id"] for row in data["members"] if row["active"]]
             if not events and store.current_holds(data, "waiting_for_user"):

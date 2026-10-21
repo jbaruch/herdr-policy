@@ -141,6 +141,9 @@ At `phase: retired`, the native hook has admitted the continuation without
 creating a target goal. After reading the saved scope and holds, finish it with
 `foreman-reset-reconcile --outcome delivered` for that pane/stow. The model
 receives its continuation instructions before automatic target work can start.
+An unfinished admitted restoration remains in catch-up and refuses the bound
+successor's Stop, even if prompt delivery completed. Reconciliation finishes the
+existing transfer; it needs no pause, new reset or repeated input.
 
 Native Claude/Grok report `not_applicable` for the Codex goal scheduler and
 create no host goal. An external scheduler is outside that receipt's proof.
