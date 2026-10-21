@@ -18,7 +18,7 @@ The migration creates these tables:
 
 | Table | Key and value contract |
 | --- | --- |
-| `meta` | Named records: `binding` (exact native identity, agent name, cwd, registration time), `config` (enabled, collection start, selected owner paths, native binary), `current` (last sample, coverage, quota observations, anomaly continuity), `heartbeat` (service time/health), `pending` (one analysis job, frozen payload, reasons and send status), `schedule` (last analysis/weekly report and anomaly fingerprint), `closures` (bounded per-owner event sequence watermarks). |
+| `meta` | Named records: `binding` (exact native identity, agent name, cwd, registration time), `config` (enabled, collection start, selected owner paths, native binary), `current` (last sample, coverage, quota observations, anomaly continuity), `heartbeat` (service time/health), `pending` (one analysis job, frozen payload, reasons, original send status, last wake time, reconciliation and attention receipts), `schedule` (last analysis/weekly report and anomaly fingerprint), `closures` (bounded per-owner event sequence watermarks), `retention` (eviction counts/time and the coverage floor for evicted source baselines). |
 | `sources` | Pane-independent native session key; byte cursor/file identity, current model/effort, numeric usage baseline, bounded tool/message hashes, coverage and source locator. Quota keys retain bounded observations with their original measurement/reset identities. No prompt, output or reasoning bodies. |
 | `bins` | Identity, role/task and UTC hour key; sampled status duration, native counters/proxies, model/effort totals and source byte locators. No transcript bodies. |
 | `reports` | Generated job ID; private report path, kind, time, content digest and generic notification result. |
@@ -42,9 +42,19 @@ files stay where their runtimes own them. No telemetry is uploaded.
 
 A precheck emits `wake_agent` and `data`. It saves the same payload as one pending
 job before waking only the exact registered idle observer. Wakes are coalesced
-while the agent is busy. Persisted send intent prevents automatic replay after
-lost responses or crashes; `sending` and `unknown` require reading `next` in the
-original observer. Neither is proof a turn ran. Collection continues meanwhile.
+while the agent is busy. Persisted send intent preserves uncertainty after lost
+responses or crashes; neither `sending` nor `unknown` proves a turn ran. Stale
+jobs use journaled reconciliation and generic attention notifications. The
+reconciliation asks the same verified idle observer to inspect the original job;
+it repeats no factory work. Report/ack idempotency stays bound to that job ID.
+Collection continues independently. The analysis contract points to the runtime's
+cadence and bounds; recovery does not create a model polling loop.
+
+The service commits age/count/byte-pressure eviction before new samples. It
+preserves pending jobs, schedules and report receipts while trimming cached bins
+and source projections. A source-baseline eviction advances the coverage floor;
+a resumed session cannot re-charge its evicted history. Evidence and status show
+retention exclusions. Merged, abandoned and unknown closure counters stay separate.
 
 Only the supplied private `draft_path` is used for report drafts. `report` saves
 a bounded UTF-8 Markdown file under `reports/`, records its receipt before a
@@ -70,7 +80,8 @@ bash "$HS/observer.sh" status
 
 JSON distinguishes a running collector, source age, coverage, pending send status
 and private report paths. It is last-seen evidence, not proof of current native
-identity. If the collector stopped, use Step 1 in the original observer to recover.
+identity. If the collector stopped, use Start Observation in the invoking skill
+from the original observer to recover.
 If a wake is uncertain, read `next` there; do not resend a native prompt. A
 replacement requires an explicit stop before registering its own live identity.
 Collection continues while the reporter is busy or missing. Finish here.
@@ -84,5 +95,5 @@ bash "$HS/observer.sh" stop
 ```
 
 This disables future collection and wakes without touching delivery owners or
-private reports. Before replacing the role, use Step 3 until `running` is false.
+private reports. Before replacing the role, inspect health until `running` is false.
 Finish here.

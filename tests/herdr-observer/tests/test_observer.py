@@ -38,6 +38,8 @@ class Client:
         self.agents = agents
         self.prompts = []
         self.notifications = 0
+        self.attentions = 0
+        self.recoveries = 0
         self.unavailable = False
         self.uncertain = False
 
@@ -46,13 +48,15 @@ class Client:
             raise ValueError("unavailable")
         return {"agents": self.agents}
 
-    def prompt(self, name):
+    def prompt(self, name, *, recovery=False):
         self.prompts.append(name)
+        self.recoveries += int(recovery)
         if self.uncertain:
             raise ValueError("response lost")
 
-    def notify(self):
+    def notify(self, *, attention=False):
         self.notifications += 1
+        self.attentions += int(attention)
 
 
 class ObserverTest(unittest.TestCase):
@@ -228,8 +232,37 @@ class ObserverTest(unittest.TestCase):
             spawn.return_value.pid = 4242
             result = cli.start(self.store, self.client, [], self.now)
         self.assertEqual(result["status"], "starting")
-        self.assertEqual(spawn.call_args.args[0], [sys.executable, "-I", str(ROOT / "skills/herdr-observer/observer.py"), "serve"])
+        self.assertEqual(spawn.call_args.args[0], [sys.executable, "-B", "-I", str(ROOT / "skills/herdr-observer/observer.py"), "serve"])
         self.assertTrue(spawn.call_args.kwargs["start_new_session"])
+
+    def test_reporter_admission_rejects_unreadable_role_formats_before_writes(self):
+        for change in ({"cwd": None}, {"cwd": "relative"}, {"provider": "unsupported"}, {"pane": "other-pane"}):
+            with self.subTest(change=change):
+                row = deepcopy(self.observer)
+                if "cwd" in change:
+                    row["cwd"] = change["cwd"]
+                if "provider" in change:
+                    assert isinstance(change["provider"], str)
+                    row["agent_session"]["agent"] = change["provider"]
+                    row["agent_session"]["source"] = "herdr:" + change["provider"]
+                if "pane" in change:
+                    row["agent_session"]["pane_id"] = change["pane"]
+                before = self.record("binding")
+                with patch.dict(os.environ, {"HERDR_PANE_ID": self.observer["pane_id"]}):
+                    with self.assertRaises(ValueError):
+                        cli.start(self.store, Client([row]), [], self.now)
+                self.assertEqual(self.record("binding"), before)
+
+    def test_service_retries_collision_with_short_lived_health_probe(self):
+        guard = cli.lock(self.cache, "service.lock")
+        self.assertIsNotNone(guard)
+        with self.store.transaction():
+            config = self.record("config")
+            config["enabled"] = False
+            self.store.put("meta", "config", config)
+        with patch("factory_observer.cli.lock", side_effect=[None, guard]), patch("factory_observer.cli.time.sleep") as sleep:
+            self.assertTrue(cli.serve(self.store)["stopped"])
+        sleep.assert_called_once_with(cli.SERVICE_LOCK_RETRY_SECONDS)
 
     def test_collector_records_recoverable_io_failures_and_keeps_its_loop(self):
         def stop_after_tick(_seconds):
@@ -280,6 +313,40 @@ class ObserverTest(unittest.TestCase):
         collect.dispatch(self.store, self.client, later)
         self.assertEqual(self.client.prompts, ["observer"])
         self.assertEqual(self.record("current")["at"], self.now + collect.MIN_WAKE_SECONDS + 60)
+
+    def test_stale_wake_gets_bounded_reconciliation_and_private_attention(self):
+        checked = self.due()
+        created = checked["data"]["job"]["created_at"]
+        self.client.uncertain = True
+        collect.dispatch(self.store, self.client, checked, created)
+        self.assertEqual(self.record("pending")["send_status"], "unknown")
+        later = created + collect.STALE_PENDING_SECONDS + 60
+        ready = self.tick(later)
+        self.assertTrue(ready["wake_agent"])
+        self.assertTrue(ready["recovery"])
+        collect.signal_pending(self.store, self.client, later)
+        collect.signal_pending(self.store, self.client, later)
+        self.assertEqual(self.client.attentions, 1)
+        self.client.uncertain = False
+        collect.dispatch(self.store, self.client, ready, later)
+        self.assertEqual(self.client.recoveries, 1)
+        self.assertEqual(self.record("pending")["send_status"], "unknown")
+        self.assertEqual(self.record("pending")["recovery"]["status"], "sent")
+        self.assertFalse(self.tick(later + collect.STALE_PENDING_SECONDS + 60)["wake_agent"])
+        with self.store.transaction():
+            cli.finish(self.store, ready["data"]["job"]["id"], later + 60)
+        weekly = self.tick(self.now + collect.WEEK_SECONDS)
+        self.assertIn("weekly_report_due", weekly["data"]["job"]["reasons"])
+
+    def test_lost_turn_after_successful_send_has_the_same_recovery_path(self):
+        checked = self.due()
+        created = checked["data"]["job"]["created_at"]
+        collect.dispatch(self.store, self.client, checked, created)
+        self.assertEqual(self.record("pending")["send_status"], "sent")
+        ready = self.tick(created + collect.STALE_PENDING_SECONDS + 60)
+        self.assertTrue(ready["recovery"])
+        self.observer["agent_status"] = "working"
+        self.assertFalse(collect.dispatch(self.store, self.client, ready)["wake_agent"])
 
     def test_identity_change_busy_observer_and_stop_never_prompt_workers(self):
         checked = self.due()
@@ -343,6 +410,27 @@ class ObserverTest(unittest.TestCase):
         self.assertNotIn("idle_seconds", metrics)
         self.assertIn("sample_gap_not_extrapolated", self.record("current")["coverage"])
 
+    def test_malformed_native_rows_become_recoverable_snapshot_gaps(self):
+        with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": self.observer["pane_id"]}):
+            adapter = native.Native()
+        for field, value in (("pane_id", 12), ("pane_id", ["pane"]), ("pane_id", ""),
+                             ("agent_status", []), ("name", {}), ("cwd", []), ("agent", 42),
+                             ("agent_session", []), ("agent_session", {"value": "session"})):
+            with self.subTest(field=field, value=value):
+                bad = {**self.worker, field: value}
+                if field == "pane_id":
+                    self.assertIsNone(native.identity(bad))
+                with patch.object(adapter, "call", return_value={"snapshot": {"agents": [bad]}}):
+                    with self.assertRaisesRegex(ValueError, "agent row schema unsupported"):
+                        adapter.snapshot()
+                    with self.store.transaction():
+                        result = collect.tick(self.store, adapter, self.now, self.root)
+                self.assertFalse(result["wake_agent"])
+                self.assertFalse(self.record("current")["healthy"])
+        unknown = {"pane_id": "unknown-pane", "agent_status": "idle", "agent_session": None}
+        with patch.object(adapter, "call", return_value={"snapshot": {"agents": [unknown]}}):
+            self.assertEqual(adapter.snapshot()["agents"], [unknown])
+
     def test_duplicate_native_sessions_excluded_and_unknown_runtime_visible(self):
         duplicate = deepcopy(self.worker)
         duplicate["pane_id"] = "other-pane"
@@ -361,6 +449,20 @@ class ObserverTest(unittest.TestCase):
         self.tick(self.now + 60)
         self.tick(self.now + 120)
         self.assertEqual(collect.evidence(self.store, self.now + 120)["total_metrics"]["recorded_task_closures"], 1)
+
+    def test_abandoned_closure_does_not_hide_a_stall_or_count_as_merged(self):
+        self.tick()
+        for offset in range(60, collect.MIN_WAKE_SECONDS, 60):
+            self.tick(self.now + offset)
+        self.data["recovery"]["events"].append({"kind": "task_closed", "sequence": 1, "task": "work",
+                                                "at": stamp(self.now + collect.MIN_WAKE_SECONDS - 1),
+                                                "details": {"outcome": "abandoned"}})
+        self.save_owner()
+        checked = self.tick(self.now + collect.MIN_WAKE_SECONDS)
+        self.assertTrue(checked["wake_agent"])
+        metrics = collect.evidence(self.store, self.now + collect.MIN_WAKE_SECONDS)["total_metrics"]
+        self.assertEqual(metrics["abandoned_task_closures"], 1)
+        self.assertNotIn("merged_task_closures", metrics)
 
     def test_claude_usage_stream_updates_and_tool_ids_are_not_double_counted(self):
         cursor = {"provider": "claude"}
@@ -487,6 +589,37 @@ class ObserverTest(unittest.TestCase):
             private_file(link)
         self.assertEqual(target.read_text(), "leave unchanged")
         self.assertLessEqual(self.store.db.execute("PRAGMA max_page_count").fetchone()[0], 8192)
+
+    def test_byte_pressure_reclaims_space_before_a_new_insert(self):
+        self.store.db.execute("PRAGMA max_page_count=128")
+        filled = False
+        for index in range(200):
+            try:
+                with self.store.transaction():
+                    self.store.put("bins", str(index), {"payload": "x" * 8192}, self.now + index)
+            except sqlite3.OperationalError:
+                filled = True
+                break
+        self.assertTrue(filled)
+        with self.store.transaction():
+            self.store.prune(self.now + 200)
+        with self.store.transaction():
+            self.store.put("bins", "fresh", {"payload": "y" * 8192}, self.now + 201)
+        fresh = self.store.get("bins", "fresh")
+        assert fresh is not None
+        self.assertEqual(fresh["payload"], "y" * 8192)
+        self.assertGreater(self.record("retention")["bins_evicted"], 0)
+        self.assertEqual(self.record("binding")["name"], "observer")
+
+    def test_evicted_source_baseline_does_not_replay_old_log_costs(self):
+        self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "old", "name": "exec"})])
+        self.tick(self.now + 60)
+        with self.store.transaction():
+            self.store.db.execute("DELETE FROM sources WHERE key=?", (native.session_key(native.identity(self.foreman)),))
+            self.store.put("meta", "retention", {"telemetry_floor": self.now + 120})
+        self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "fresh", "name": "exec"}, 121)])
+        self.tick(self.now + 180)
+        self.assertEqual(collect.evidence(self.store, self.now + 180)["total_metrics"]["tool_calls"], 2)
 
 
 class EntryPointTest(unittest.TestCase):

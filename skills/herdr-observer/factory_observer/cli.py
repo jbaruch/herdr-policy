@@ -23,6 +23,11 @@ from foreman import observer_role
 from foreman.errors import ForemanError
 
 
+SERVICE_LOCK_ATTEMPTS = 3
+SERVICE_LOCK_RETRY_SECONDS = 0.1
+EVIDENCE_HOURS = (1, 24, 168, 336)
+
+
 def lock(home, name):
     path = home / name
     private_file(path)
@@ -107,7 +112,7 @@ def start(store, client, states, now):
                 store.put("meta", "pending", pending)
         script = Path(__file__).resolve().parents[1] / "observer.py"
         try:
-            process = subprocess.Popen([sys.executable, "-I", str(script), "serve"], cwd=store.home,
+            process = subprocess.Popen([sys.executable, "-B", "-I", str(script), "serve"], cwd=store.home,
                                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                        stderr=subprocess.DEVNULL, start_new_session=True)
         except OSError:
@@ -119,7 +124,13 @@ def start(store, client, states, now):
 
 
 def serve(store):
-    guard = lock(store.home, "service.lock")
+    guard = None
+    for attempt in range(SERVICE_LOCK_ATTEMPTS):
+        guard = lock(store.home, "service.lock")
+        if guard is not None:
+            break
+        if attempt + 1 < SERVICE_LOCK_ATTEMPTS:
+            time.sleep(SERVICE_LOCK_RETRY_SECONDS)
     if guard is None:
         return {"ok": True, "already_running": True}
     try:
@@ -133,10 +144,14 @@ def serve(store):
                 if now >= due:
                     client = native.Native(config["binary"])
                     started = time.monotonic()
+                    # Commit eviction before any insert can exhaust the cap.
+                    with store.db:
+                        store.prune(now)
                     with store.db:
                         checked = collect.tick(store, client)
                         store.put("meta", "heartbeat", {"at": now, "collection_seconds": time.monotonic() - started})
-                    collect.dispatch(store, client, checked)
+                    collect.signal_pending(store, client, now)
+                    collect.dispatch(store, client, checked, now)
                     due = time.time() + collect.POLL_SECONDS
             except (ValueError, OSError, sqlite3.Error):
                 # Storage may itself be unavailable. Retain the service and
@@ -163,7 +178,8 @@ def status(store, now):
             "reporter_present": current.get("reporter_present"),
             "sample_age_seconds": now - current["at"] if "at" in current else None,
             "coverage": current.get("coverage", []),
-            "pending": {**{k: pending.get(k) for k in ("id", "reasons", "created_at", "send_status")}, "age_seconds": age},
+            "pending": {**{k: pending.get(k) for k in ("id", "reasons", "created_at", "send_status", "recovery", "attention")}, "age_seconds": age},
+            "retention": store.get("meta", "retention", {}),
             "reports": store.rows("reports")[-8:]}
 
 
@@ -238,7 +254,7 @@ def parser():
     for name in ("status", "stop", "next", "collect", "serve"):
         actions.add_parser(name)
     view = actions.add_parser("evidence")
-    view.add_argument("--hours", type=int, default=168, choices=(1, 24, 168, 336))
+    view.add_argument("--hours", type=int, default=168, choices=EVIDENCE_HOURS)
     view.add_argument("--agent")
     ack = actions.add_parser("ack")
     ack.add_argument("--job", required=True)
@@ -283,7 +299,7 @@ def main(argv=None):
                         draft = private_directory(store.home / "drafts") / (pending["id"] + ".md")
                         private_file(draft)
                     output = {"wake_agent": False, "data": {"job": pending}, "draft_path": str(draft) if draft else None,
-                              "latest_sample_at": store.get("meta", "current", {}).get("at")}
+                              "latest_sample_at": store.get("meta", "current", {}).get("at"), "evidence_hours": EVIDENCE_HOURS}
                 elif args.action == "ack":
                     with store.transaction():
                         finish(store, args.job, now)
@@ -294,6 +310,8 @@ def main(argv=None):
                 else:
                     if running(store.home):
                         raise ValueError("the collector already owns sampling; inspect next or evidence instead")
+                    with store.db:
+                        store.prune(now)
                     with store.db:
                         output = collect.tick(store, client)
         print(json.dumps(output, ensure_ascii=False))

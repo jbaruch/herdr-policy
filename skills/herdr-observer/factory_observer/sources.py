@@ -137,11 +137,12 @@ def owners(paths, live):
                 if event.get("kind") == "task_closed":
                     closures.append({"owner": path, "task": event.get("task"), "at": event.get("at"),
                                      "sequence": event.get("sequence"),
+                                     "outcome": (event.get("details") or {}).get("outcome"),
                                      "id": fingerprint([path, event.get("sequence"), event.get("at")])})
             contexts.append({"owner": path, "holds": held,
                              "active_assignments": sum(1 for m in supervised.get("members", []) if m.get("active")),
                              "eligible_backlog": None,
-                             "closure_semantics": "recorded task_closed events; user value and deployment unverified"})
+                             "closure_semantics": "merged, abandoned and unknown task_closed outcomes are separate; user value and deployment unverified"})
         except (OSError, ValueError, TypeError, AttributeError, KeyError):
             gaps.append("owner_evidence_unavailable")
     return roles, quota, closures, contexts, sorted(set(gaps))

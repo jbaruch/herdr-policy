@@ -21,6 +21,8 @@ MAX_SOURCES = 2048
 MAX_REPORTS = 64
 MAX_DB_PAGES = 8192
 MAX_REPORT_BYTES = 65536
+CACHE_PRESSURE_RATIO = 0.75
+EVICTION_BATCH = 64
 
 
 def default_home():
@@ -101,7 +103,7 @@ class Store:
             raise ValueError("observer record schema is unsupported; update the plugin")
         return value
 
-    def put(self, table, key, value, at=0):
+    def put(self, table, key, value, at: float = 0):
         if table not in ("meta", "sources", "bins", "reports"):
             raise ValueError("unknown observer table")
         raw = json.dumps({**value, "schema_version": SCHEMA}, separators=(",", ":"))
@@ -117,6 +119,7 @@ class Store:
             "SELECT value FROM " + table + " WHERE at>=? ORDER BY at", (since,))]
 
     def prune(self, now):
+        removed_counts = {"bins": 0, "sources": 0}
         for table, maximum in (("bins", MAX_BINS), ("sources", MAX_SOURCES), ("reports", MAX_REPORTS)):
             if table == "reports":
                 removed = self.db.execute(
@@ -124,8 +127,35 @@ class Store:
                 for row in removed:
                     # Filenames are generated report IDs, never paths from report prose.
                     (self.home / "reports" / (row[0] + ".md")).unlink(missing_ok=True)
-            self.db.execute("DELETE FROM " + table + " WHERE key IN (SELECT key FROM " + table
-                            + " ORDER BY at DESC LIMIT -1 OFFSET ?)", (maximum,))
+            removed = self.db.execute("DELETE FROM " + table + " WHERE key IN (SELECT key FROM " + table
+                                      + " ORDER BY at DESC LIMIT -1 OFFSET ?)", (maximum,)).rowcount
+            if table in removed_counts:
+                removed_counts[table] += removed
             if table != "reports":
-                self.db.execute("DELETE FROM " + table + " WHERE at<?", (now - RETENTION_SECONDS,))
+                removed_counts[table] += self.db.execute("DELETE FROM " + table + " WHERE at<?", (now - RETENTION_SECONDS,)).rowcount
+        limit = self.db.execute("PRAGMA max_page_count").fetchone()[0] * CACHE_PRESSURE_RATIO
+        # Preserve schedules, uncertain jobs and report receipts. Bins and source
+        # projections are cache; evict oldest data before the next write burst.
+        while self.used_pages() > limit:
+            for table in ("bins", "sources"):
+                count = self.db.execute("DELETE FROM " + table + " WHERE key IN (SELECT key FROM " + table
+                                        + " ORDER BY at LIMIT ?)", (EVICTION_BATCH,)).rowcount
+                if count:
+                    removed_counts[table] += count
+                    break
+            else:
+                break
+        if any(removed_counts.values()):
+            retention = self.get("meta", "retention", {"bins_evicted": 0, "sources_evicted": 0, "telemetry_floor": 0})
+            retention["bins_evicted"] += removed_counts["bins"]
+            retention["sources_evicted"] += removed_counts["sources"]
+            retention["at"] = now
+            if removed_counts["sources"]:
+                # A resumed session whose cursor was evicted must not charge its
+                # old transcript again. Fresh cursors start at this coverage floor.
+                retention["telemetry_floor"] = now
+            self.put("meta", "retention", retention)
         self.db.execute("PRAGMA incremental_vacuum(32)")
+
+    def used_pages(self):
+        return self.db.execute("PRAGMA page_count").fetchone()[0] - self.db.execute("PRAGMA freelist_count").fetchone()[0]

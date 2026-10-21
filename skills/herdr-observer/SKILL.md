@@ -66,7 +66,7 @@ skills/herdr-observer/references/analysis.md
 
 Use the same command lookup for the following operations on `observer.sh`:
 `evidence --agent NAME` returns a bounded focused view with omissions;
-`evidence --help` lists the accepted windows for `evidence --hours HOURS`. Retrieve
+`evidence --hours HOURS` accepts the `evidence_hours` values returned by `next`. Retrieve
 only evidence needed for an open question. The agent makes the judgments;
 candidate signals are questions, never automatic findings.
 

@@ -148,7 +148,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
         pane = client.pane_get(pane_id)
         native = pane.get("agent_session")
         if (pane.get("pane_id") != pane_id or not isinstance(native, dict)
-                or native.get("agent") not in ("claude", "codex", "grok")
+                or not isinstance(native.get("agent"), str)
+                or native.get("agent") not in report_delivery.DISPLAY_PREFIXES
                 or native.get("source") != "herdr:" + native["agent"]
                 or native.get("kind") not in ("id", "path")
                 or not isinstance(native.get("value"), str) or not native["value"]

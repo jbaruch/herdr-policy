@@ -24,6 +24,8 @@ DISCOVERY_RETRY_SECONDS = 5 * 60
 MAX_VIEW_ROWS = 32
 MAX_JOB_BYTES = 48 * 1024
 MAX_PROFILES_PER_BIN = 16
+STALE_PENDING_SECONDS = 30 * 60
+SEND_STATES = frozenset({"new", "sending", "sent", "unknown"})
 
 
 def add(target, values):
@@ -100,6 +102,7 @@ def evidence(store, now, *, hours=168, agent=None):
     hours_view = dict(list(sorted(per_hour.items(), key=lambda entry: float(entry[0])))[-24:])
     result = {"schema_version": 1, "as_of": now, "bucket_start": start, "bucket_seconds": 3600,
             "total_metrics": totals, "by_role": group_rows(rows, "role"),
+            "retention": store.get("meta", "retention", {}), "earliest_retained_bucket": min((r["at"] for r in rows), default=None),
             "by_provider": group_rows(rows, "provider"), "by_hour": hours_view, "comparisons": comparisons,
             "by_agent": agents[:MAX_VIEW_ROWS], "profiles": all_profiles[:MAX_VIEW_ROWS],
             "source_locators": locators[-MAX_VIEW_ROWS:], "current": current,
@@ -116,6 +119,44 @@ def evidence(store, now, *, hours=168, agent=None):
                                "hour buckets overlap partial requested boundary hours",
                                "observer overhead is included under the observer role"]}
     return result
+
+
+def stale_pending(pending, now):
+    if not pending.get("id"):
+        return False
+    if not isinstance(pending.get("send_status"), str) or pending["send_status"] not in SEND_STATES:
+        raise ValueError("restore the original pending observer send receipt before recovery")
+    if "recovery" in pending and not isinstance(pending["recovery"], dict):
+        raise ValueError("restore the original pending observer recovery receipt")
+    at = pending.get("last_wake_at", pending.get("created_at"))
+    if not isinstance(at, (float, int)) or isinstance(at, bool) or not 0 <= at <= 10**12:
+        raise ValueError("restore the pending observer notification timestamp")
+    return now - at >= STALE_PENDING_SECONDS
+
+
+def signal_pending(store, client, now):
+    """One generic attention notice per stale job, journaled before notification."""
+    if not store.get("meta", "config", {}).get("enabled"):
+        return
+    pending = store.get("meta", "pending", {})
+    if not stale_pending(pending, now) or "attention" in pending:
+        return
+    with store.transaction():
+        current = store.get("meta", "pending", {})
+        if current.get("id") != pending["id"] or "attention" in current:
+            return
+        current["attention"] = {"at": now, "status": "sending"}
+        store.put("meta", "pending", current)
+    status = "sent"
+    try:
+        client.notify(attention=True)
+    except ValueError:
+        status = "unknown"
+    with store.transaction():
+        current = store.get("meta", "pending", {})
+        if current.get("id") == pending["id"]:
+            current["attention"]["status"] = status
+            store.put("meta", "pending", current)
 
 
 def anomaly(current):
@@ -201,7 +242,10 @@ def tick(store, client, now=None, user_home=None):
             # Attribute an interval to its start state, not a newly observed state.
             bin_update(store, prior, previous["at"], {prior["status"] + "_seconds": delta,
                                                     "sample_seconds": delta})
-        cursor = store.get("sources", session, {"provider": who["agent"], "key": session})
+        cursor = store.get("sources", session)
+        new_cursor = cursor is None
+        cursor = cursor if cursor is not None else {"provider": who["agent"], "key": session}
+        since = max(config["started_at"], store.get("meta", "retention", {}).get("telemetry_floor", 0)) if new_cursor else config["started_at"]
         path = Path(cursor["path"]) if cursor.get("path") else None
         if path is None and now >= cursor.get("retry_at", 0):
             try:
@@ -217,7 +261,7 @@ def tick(store, client, now=None, user_home=None):
         else:
             cursor["path"] = str(path)
             try:
-                batches, log_gaps, consumed = sources.read_log(path, cursor, now=now if fixed_clock else None, since=config["started_at"],
+                batches, log_gaps, consumed = sources.read_log(path, cursor, now=now if fixed_clock else None, since=since,
                                                              budget=min(budget, sources.LOG_CHUNK))
                 budget -= consumed
                 for batch in batches:
@@ -250,13 +294,20 @@ def tick(store, client, now=None, user_home=None):
         if type(sequence) is not int or sequence < 0:
             gaps.append("closure_sequence_unknown")
             continue
+        at = sources.instant(closure["at"])
+        if at is None or at > now:
+            gaps.append("closure_timestamp_unavailable_or_ahead")
+            continue
         prior_sequence = previous_sequences.get(closure["owner"], -1)
         recorded["by_owner"][closure["owner"]] = max(recorded["by_owner"].get(closure["owner"], -1), sequence)
-        at = sources.instant(closure["at"])
         if at is not None and config["started_at"] <= at <= now and sequence > prior_sequence:
+            outcome = closure.get("outcome")
+            outcome_metric = ({"merged": "merged_task_closures", "abandoned": "abandoned_task_closures"}.get(outcome, "closure_outcome_unknown")
+                              if isinstance(outcome, str) else "closure_outcome_unknown")
             bin_update(store, {"key": "outcomes", "name": "recorded-task-closures", "provider": "owner",
-                               "role": "outcome", "task": closure["task"]}, at, {"recorded_task_closures": 1})
-            new_closure = True
+                               "role": "outcome", "task": closure["task"]}, at,
+                       {"recorded_task_closures": 1, outcome_metric: 1})
+            new_closure = new_closure or outcome == "merged"
     recorded["by_owner"] = dict(list(recorded["by_owner"].items())[-sources.MAX_FACTORIES:])
     store.put("meta", "closures", recorded)
     coordinators = [r for r in sampled if r["role"] == "foreman"]
@@ -276,7 +327,7 @@ def tick(store, client, now=None, user_home=None):
                                      for r in roster if native.identity(r) is None][:MAX_VIEW_ROWS],
                "stall_since": stall_since, "log_bytes_read": sources.LOG_BUDGET - budget}
     store.put("meta", "current", current)
-    store.prune(now)
+    store.prune(now if fixed_clock else time.time())
     return precheck(store, current, binding, live, now if fixed_clock else time.time())
 
 
@@ -329,16 +380,25 @@ def precheck(store, current, binding, live, now):
         store.put("meta", "pending", pending)
     observer = [row for row in live if native.matches(binding, row)]
     ready = len(observer) == 1 and observer[0].get("agent_status") in ("idle", "done")
-    return {"wake_agent": bool(pending.get("id") and pending["send_status"] == "new" and ready),
+    recover = bool(pending.get("id") and pending["send_status"] != "new"
+                   and "recovery" not in pending and stale_pending(pending, now))
+    return {"wake_agent": bool(pending.get("id") and (pending["send_status"] == "new" or recover) and ready),
+            "recovery": recover,
             "data": {"job": pending} if pending.get("id") else {"reason": "no_analysis_due"}}
 
 
-def dispatch(store, client, checked):
-    """Persist intent before native input. A lost response never causes a second send."""
+def dispatch(store, client, checked, now=None):
+    """Journal the initial wake and at most one explicit reconciliation request.
+
+Recovery preserves the original send receipt and job; it never repeats factory
+work. Private report/ack operations remain idempotent on that original job ID.
+"""
     if not checked["wake_agent"]:
         return checked
     pending = store.get("meta", "pending")
     binding = store.get("meta", "binding")
+    recovery = checked.get("recovery", False)
+    now = time.time() if now is None else now
     if not store.get("meta", "config", {}).get("enabled"):
         return {"wake_agent": False, "data": {"reason": "observer_disabled"}}
     try:
@@ -347,25 +407,38 @@ def dispatch(store, client, checked):
         return {"wake_agent": False, "data": {"reason": "observer_ownership_unavailable"}}
     if owner is not None:
         return {"wake_agent": False, "data": {"reason": "observer_has_delivery_ownership"}}
-    if not pending or pending["id"] != checked["data"]["job"]["id"] or pending["send_status"] != "new":
+    if (not pending or pending["id"] != checked["data"]["job"]["id"]
+            or not recovery and pending["send_status"] != "new"
+            or recovery and ("recovery" in pending or not stale_pending(pending, now))):
         return {"wake_agent": False, "data": {"reason": "job_changed"}}
     # Revalidate this exact reporter just before sending; no worker can be targeted.
     rows = client.snapshot()["agents"]
     ready = [row for row in rows if native.matches(binding, row) and row.get("agent_status") in ("idle", "done")]
     if len(ready) != 1:
         return {"wake_agent": False, "data": {"reason": "observer_not_ready"}}
-    pending["send_status"] = "sending"
     with store.transaction():
         saved = store.get("meta", "pending", {})
-        if saved.get("id") != pending["id"] or saved.get("send_status") != "new":
+        if (saved.get("id") != pending["id"] or not recovery and saved.get("send_status") != "new"
+                or recovery and "recovery" in saved):
             return {"wake_agent": False, "data": {"reason": "job_changed"}}
+        pending = saved
+        if recovery:
+            pending["recovery"] = {"at": now, "status": "sending"}
+        else:
+            pending["send_status"] = "sending"
+        pending["last_wake_at"] = now
         store.put("meta", "pending", pending)
+    status = "sent"
     try:
-        client.prompt(binding["name"])
-        pending["send_status"] = "sent"
+        client.prompt(binding["name"], recovery=recovery)
     except ValueError:
-        pending["send_status"] = "unknown"
+        status = "unknown"
     with store.transaction():
-        if store.get("meta", "pending", {}).get("id") == pending["id"]:
-            store.put("meta", "pending", pending)
-    return {"wake_agent": True, "data": {"job_id": pending["id"], "send_status": pending["send_status"]}}
+        current = store.get("meta", "pending", {})
+        if current.get("id") == pending["id"]:
+            if recovery:
+                current["recovery"]["status"] = status
+            else:
+                current["send_status"] = status
+            store.put("meta", "pending", current)
+    return {"wake_agent": True, "data": {"job_id": pending["id"], "send_status": status, "recovery": recovery}}

@@ -46,11 +46,8 @@ Reports and alerts are private. Write only to the supplied private draft and
 save through the observer command. Never post them, excerpts or private findings
 to GitHub, plugin issues, public artifacts or other channels. Omit credentials;
 paraphrase evidence rather than copying raw transcripts. Generic Herdr
-notifications contain no operational details. See the owner contract:
-
-```text
-skills/herdr-observer/references/storage.md
-```
+notifications contain no operational details. Storage repair uses the contract
+directly referenced by the invoking skill.
 
 A weekly report should be concise: observed scope/coverage; outcomes and effort
 trends with meaningful comparisons; the strongest supported findings across the

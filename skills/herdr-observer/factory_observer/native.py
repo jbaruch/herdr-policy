@@ -7,7 +7,10 @@ CLI diagnostics and transcript text are deliberately not copied into failures.
 import hashlib
 import json
 import os
+from pathlib import Path
 import subprocess
+
+from foreman import report_delivery
 
 
 TIMEOUT = 20
@@ -15,8 +18,10 @@ MAX_RESPONSE = 8 * 1024 * 1024
 
 
 def identity(row):
+    if not isinstance(row, dict) or not isinstance(row.get("pane_id"), str) or not row["pane_id"]:
+        return None
     native = row.get("agent_session")
-    if (not isinstance(native, dict) or not row.get("pane_id")
+    if (not isinstance(native, dict)
             or not isinstance(native.get("agent"), str)
             or native.get("source") != "herdr:" + native["agent"]
             or native.get("kind") not in ("id", "path")
@@ -64,16 +69,28 @@ class Native:
         if (not isinstance(snapshot, dict) or not isinstance(snapshot.get("agents"), list)
                 or not all(isinstance(row, dict) for row in snapshot["agents"])):
             raise ValueError("Herdr snapshot schema unsupported; update the observer adapter")
+        for row in snapshot["agents"]:
+            if (not isinstance(row.get("pane_id"), str) or not row["pane_id"]
+                    or not isinstance(row.get("agent_status"), str)
+                    or any(row.get(field) is not None and not isinstance(row[field], str)
+                           for field in ("name", "cwd", "agent"))
+                    or row.get("agent_session") is not None and identity(row) is None):
+                raise ValueError("Herdr agent row schema unsupported; update the observer adapter")
         return snapshot
 
-    def prompt(self, name):
+    def prompt(self, name, *, recovery=False):
+        instruction = ('Reconcile the pending observer notification. Read the original job through next; '
+                       'acknowledge or report that same job once. Do not repeat completed reports or factory work. '
+                       if recovery else 'Observer evidence is ready. ')
         return self.call("agent", "prompt", name,
-                         'Observer evidence is ready. Invoke Skill(skill: "herdr-observer") for the pending analysis. '
+                         instruction + 'Invoke Skill(skill: "herdr-observer") for the pending analysis. '
                          'Keep findings private; do not coordinate factory work.')
 
-    def notify(self):
-        self.call("notification", "show", "Herdr observer report ready",
-                  "--body", "A private local report is available. Ask the observer to show it.", "--sound", "none")
+    def notify(self, *, attention=False):
+        title = "Herdr observer needs attention" if attention else "Herdr observer report ready"
+        body = ("A private observer analysis remains pending. Inspect observer health."
+                if attention else "A private local report is available. Ask the observer to show it.")
+        self.call("notification", "show", title, "--body", body, "--sound", "none")
 
 
 def current(snapshot):
@@ -81,7 +98,15 @@ def current(snapshot):
     matches = [row for row in snapshot["agents"] if row.get("pane_id") == pane and row.get("name")]
     if len(matches) != 1 or identity(matches[0]) is None:
         raise ValueError("current pane must have one named native agent with a verified session")
-    return matches[0]
+    row = matches[0]
+    session = row["agent_session"]
+    if (not isinstance(row["name"], str) or not isinstance(row.get("cwd"), str) or not Path(row["cwd"]).is_absolute()
+            or session["agent"] not in report_delivery.DISPLAY_PREFIXES
+            or session.get("pane_id", pane) != pane
+            or session["kind"] == "path" and not Path(session["value"]).is_absolute()
+            or session["kind"] == "id" and report_delivery.native_identity(row) is None):
+        raise ValueError("launch a supported native observer with an absolute cwd and matching pane/session identity")
+    return row
 
 
 def matches(binding, row):
