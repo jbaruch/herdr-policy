@@ -830,9 +830,10 @@ def goal_restoration(state_path, who):
     """Read only the current pane's admitted but unfinished host transfer."""
     try:
         document, _ = _load(record_path(state_path), migrate_legacy=False)
-    except ResetRecordOlder:
-        # Older records cannot contain this two-phase host transfer. Their
-        # original supervision/reset-coverage checks still apply separately.
+    except (ResetRecordOlder, ResetRecordNewer, ResetRecordUnusable):
+        # Only a readable current receipt links this session to an admitted
+        # transfer. Original reset/handoff checks still refuse unusable proof
+        # where a reset actually supplies continuation coverage.
         return None
     if document is None:
         return None
