@@ -342,13 +342,16 @@ def read_log(path, cursor, *, now, since, budget=LOG_CHUNK):
                 if not isinstance(event, dict):
                     raise ValueError("invalid record")
                 at = instant(event.get("timestamp"))
+                ceiling = time.time() if now is None else now
+                if at is not None and not 0 <= at <= ceiling:
+                    gaps.append("native_log_timestamp_outside_collection_clock")
+                    continue
                 # A replacement may copy old history. Never charge that history twice.
                 if at is not None and at <= cursor.get("replay_through", 0):
                     continue
                 metrics = event_metrics(event, cursor)
                 if at is not None:
                     cursor["watermark"] = max(at, cursor.get("watermark", at))
-                ceiling = time.time() if now is None else now
                 if at is not None and since <= at <= ceiling:
                     batches.append({"at": at, "metrics": metrics, "model": cursor.get("model"),
                                     "effort": cursor.get("effort"), "start": position, "end": stream.tell()})

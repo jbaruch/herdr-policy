@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "skills/herdr-observer"))
 sys.path.insert(0, str(ROOT / "skills/herdr-foreman"))
 
 from factory_observer import cli, collect, native, sources
-from factory_observer.store import Store, private_directory, private_file
+from factory_observer.store import MAX_REPORT_SWEEP, Store, private_directory, private_file
 from foreman import observer_role, role_context, supervision
 
 
@@ -291,6 +291,29 @@ class ObserverTest(unittest.TestCase):
         self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "b", "name": "exec"}, 121)])
         self.tick(self.now + 180)
         self.assertEqual(collect.evidence(self.store, self.now + 180)["total_metrics"]["tool_calls"], 2)
+
+    def test_future_log_records_cannot_poison_baselines_deduplication_or_rotation(self):
+        records = [self.event("turn_context", {"model": "small", "effort": "low"}, 0),
+                   self.event("event_msg", {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 100}}}, 1),
+                   self.event("turn_context", {"model": "future-big", "effort": "max"}, 3600),
+                   self.event("event_msg", {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 999999}}}, 3600),
+                   self.event("response_item", {"type": "function_call", "call_id": "reused", "name": "exec"}, 3600),
+                   self.event("event_msg", {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 120}}}, 2),
+                   self.event("response_item", {"type": "function_call", "call_id": "reused", "name": "exec"}, 3)]
+        path = self.log(records=records)
+        self.tick(self.now + 60)
+        first = collect.evidence(self.store, self.now + 60, agent="coordinator")
+        self.assertEqual(first["total_metrics"]["input_tokens"], 20)
+        self.assertEqual(first["total_metrics"]["tool_calls"], 1)
+        self.assertEqual({row["model"] for row in first["profiles"]}, {"small"})
+        path.rename(path.with_suffix(".old"))
+        self.log(records=records + [self.event("response_item", {"type": "function_call", "call_id": "later", "name": "exec"}, 61)])
+        self.tick(self.now + 120)
+        view = collect.evidence(self.store, self.now + 120, agent="coordinator")
+        self.assertEqual(view["total_metrics"]["tool_calls"], 2)
+        self.assertEqual(view["total_metrics"]["input_tokens"], 20)
+        gaps = next(row["log_coverage"] for row in self.record("current")["agents"] if row["name"] == "coordinator")
+        self.assertIn("native_log_timestamp_outside_collection_clock", gaps)
 
     def test_running_start_merges_explicit_state_sources(self):
         additional = self.root / "additional/state.json"
@@ -886,6 +909,74 @@ class ObserverTest(unittest.TestCase):
         self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "fresh", "name": "exec"}, 121)])
         self.tick(self.now + 180)
         self.assertEqual(collect.evidence(self.store, self.now + 180)["total_metrics"]["tool_calls"], 2)
+
+    def test_report_expiry_survives_commit_failure_and_orphan_cleanup_retry(self):
+        directory = private_directory(self.cache / "reports")
+        job_id = native.fingerprint("expiry-report")
+        report = directory / (job_id + ".md")
+        private_file(report)
+        report.write_text("durable report")
+        receipt = {"id": job_id, "kind": "urgent", "path": str(report), "at": self.now,
+                   "sha256": "a" * 64, "notification": "sent"}
+        with self.store.transaction():
+            self.store.put("reports", job_id, receipt, self.now)
+        self.store.db.executescript("""
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE parent_commit (id INTEGER PRIMARY KEY);
+            CREATE TABLE child_commit (parent INTEGER,
+                FOREIGN KEY(parent) REFERENCES parent_commit(id) DEFERRABLE INITIALLY DEFERRED);
+        """)
+        with patch("factory_observer.store.MAX_REPORTS", 0):
+            with self.assertRaises(sqlite3.IntegrityError), self.store.transaction():
+                self.store.prune(self.now)
+                self.store.db.execute("INSERT INTO child_commit VALUES (1)")
+        self.assertEqual(report.read_text(), "durable report")
+        self.assertIsNotNone(self.store.get("reports", job_id))
+        with self.store.transaction():
+            with self.assertRaisesRegex(ValueError, "commit observer state"):
+                self.store.collect_report_files()
+        with patch("factory_observer.store.MAX_REPORTS", 0), self.store.transaction():
+            self.store.prune(self.now)
+        self.assertIsNone(self.store.get("reports", job_id))
+        self.assertTrue(report.exists())
+        temporary = directory / (native.fingerprint("partial-write") + ".tmp")
+        private_file(temporary)
+        temporary.write_text("uncommitted partial report")
+        unlink = Path.unlink
+        removed = []
+        def fail_after_one(path, *, missing_ok=False):
+            if removed:
+                raise OSError("injected cleanup failure")
+            unlink(path, missing_ok=missing_ok)
+            removed.append(path)
+        with patch.object(Path, "unlink", new=fail_after_one):
+            with self.assertRaises(OSError):
+                self.store.collect_report_files()
+        self.assertEqual(sum(path.exists() for path in (report, temporary)), 1)
+        self.assertIsNone(self.store.get("reports", job_id))
+        restarted = Store(self.cache)
+        self.addCleanup(restarted.close)
+        self.assertEqual(restarted.collect_report_files(), 1)
+        self.assertEqual(restarted.collect_report_files(), 0)
+        self.assertFalse(report.exists())
+        self.assertFalse(temporary.exists())
+
+    def test_report_file_backlog_is_bounded_and_recovers_after_cleanup(self):
+        job = self.due()["data"]["job"]
+        directory = private_directory(self.cache / "reports")
+        for index in range(MAX_REPORT_SWEEP):
+            private_file(directory / (native.fingerprint(["orphan", index]) + ".md"))
+        draft = private_directory(self.cache / "drafts") / (job["id"] + ".md")
+        private_file(draft)
+        draft.write_text("private report after cleanup")
+        with patch.dict(os.environ, {"HERDR_PANE_ID": self.observer["pane_id"]}):
+            with self.assertRaisesRegex(ValueError, "restore private report cleanup"):
+                cli.report(self.store, self.client, job["id"], "urgent", str(draft), self.now + 1000)
+            self.assertEqual(self.record("pending")["id"], job["id"])
+            self.assertIsNone(self.store.get("reports", job["id"]))
+            self.assertEqual(self.store.collect_report_files(), MAX_REPORT_SWEEP)
+            self.assertTrue(cli.report(self.store, self.client, job["id"], "urgent", str(draft), self.now + 1000)["ok"])
+        self.assertEqual(len(list(directory.glob("*.md"))), 1)
 
 
 class EntryPointTest(unittest.TestCase):

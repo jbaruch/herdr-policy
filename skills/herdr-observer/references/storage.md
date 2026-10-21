@@ -16,6 +16,11 @@ refuses links, and restricts directory/file permissions. It creates no `.hr`
 archive, repository output or public history. Retention, database ceiling and
 report limits are owned by the constants in `store.py` (referenced from the
 analysis contract); final reports are retained separately from rolling samples.
+Expiry commits receipt deletion before a separate bounded file sweep. The sweep
+holds the report-writer lock and removes only managed files lacking a committed
+receipt; rollback cannot revive a receipt for an unlinked report. Interrupted
+sweeps safely retry after restart. A file-backlog ceiling prevents accumulation
+when cleanup fails, preserving the pending job for retry after storage recovery.
 `collector.stderr` keeps one bounded private launch diagnostic and is replaced
 on restart. The entrypoint owns its byte bound. Fatal diagnostics include the
 exception type and stack locations, excluding exception values and local variables.

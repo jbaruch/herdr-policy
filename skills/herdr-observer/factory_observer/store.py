@@ -9,6 +9,7 @@ See references/storage.md for lifecycle and the public CLI's writer/reader contr
 
 from contextlib import contextmanager
 import json
+from itertools import islice
 import os
 from pathlib import Path
 import sqlite3
@@ -22,6 +23,7 @@ RETENTION_SECONDS = 28 * 86400
 MAX_BINS = 20000
 MAX_SOURCES = 2048
 MAX_REPORTS = 64
+MAX_REPORT_SWEEP = MAX_REPORTS * 2
 MAX_ACKNOWLEDGEMENTS = 128
 MAX_DB_PAGES = 8192
 MAX_REPORT_BYTES = 65536
@@ -131,12 +133,9 @@ class Store:
         # Validate the complete deletion set before any file or cache mutation.
         reports = [self.decode(row[1], "reports", row[0]) for row in candidates]
         if reports:
-            private_directory(self.home / "reports")
+            self.report_directory()
         removed_counts = {"bins": 0, "sources": 0}
         for table, maximum in (("bins", MAX_BINS), ("sources", MAX_SOURCES), ("reports", MAX_REPORTS)):
-            if table == "reports":
-                for receipt in reports:
-                    Path(receipt["path"]).unlink(missing_ok=True)
             removed = self.db.execute("DELETE FROM " + table + " WHERE key IN (SELECT key FROM " + table
                                       + " ORDER BY at DESC LIMIT -1 OFFSET ?)", (maximum,)).rowcount
             if table in removed_counts:
@@ -169,3 +168,43 @@ class Store:
 
     def used_pages(self):
         return self.db.execute("PRAGMA page_count").fetchone()[0] - self.db.execute("PRAGMA freelist_count").fetchone()[0]
+
+    def report_directory(self):
+        directory = self.home / "reports"
+        try:
+            info = directory.lstat()
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError("restore the owned directory for private observer reports before cleanup")
+        return directory
+
+    def collect_report_files(self):
+        """Collect only committed orphans in the managed report namespace.
+
+The separate transaction proves receipt absence after expiry committed. Its
+write lock excludes report writers, which hold that lock before creating files.
+SQL/commit failures here cannot resurrect already-committed expired receipts.
+"""
+        if self.db.in_transaction:
+            raise ValueError("commit observer state before collecting orphan report files")
+        with self.transaction():
+            directory = self.report_directory()
+            if directory is None:
+                return 0
+            files = [entry for entry in islice(directory.iterdir(), MAX_REPORT_SWEEP)
+                     if entry.suffix in (".md", ".tmp") and schema.digest(entry.stem)]
+            # Validate every encountered receipt before unlinking any orphan.
+            orphaned = [entry for entry in files if self.get("reports", entry.stem) is None]
+            ready = []
+            for entry in orphaned:
+                try:
+                    info = entry.lstat()
+                except FileNotFoundError:
+                    continue
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_mode & 0o077:
+                    raise ValueError("restore owned private regular report files before cleanup")
+                ready.append(entry)
+            for entry in ready:
+                entry.unlink(missing_ok=True)
+            return len(ready)

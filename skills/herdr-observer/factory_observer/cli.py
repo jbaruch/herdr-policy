@@ -8,6 +8,7 @@ publishing path exists. start/next/ack/report verify the current native observer
 import argparse
 import fcntl
 import hashlib
+from itertools import islice
 import json
 import os
 from pathlib import Path
@@ -18,7 +19,7 @@ import sys
 import time
 
 from . import collect, native, sources
-from .store import MAX_ACKNOWLEDGEMENTS, MAX_REPORT_BYTES, Store, default_home, private_directory, private_file
+from .store import MAX_ACKNOWLEDGEMENTS, MAX_REPORT_BYTES, MAX_REPORT_SWEEP, Store, default_home, private_directory, private_file
 from foreman import observer_role
 from foreman.errors import ForemanError
 
@@ -154,9 +155,10 @@ def serve(store):
                     with store.db:
                         checked = collect.tick(store, client)
                         store.put("meta", "heartbeat", {"at": now, "collection_seconds": time.monotonic() - started})
+                    due = time.time() + collect.POLL_SECONDS
                     collect.signal_pending(store, client, now)
                     collect.dispatch(store, client, checked, now)
-                    due = time.time() + collect.POLL_SECONDS
+                    store.collect_report_files()
             except (ValueError, OSError, sqlite3.Error):
                 # Storage may itself be unavailable. Retain the service and
                 # retry on its next tick; status still exposes heartbeat age.
@@ -243,6 +245,8 @@ def report(store, client, job_id, kind, path, now):
         pending = store.get("meta", "pending", {})
         if pending.get("id") != job_id:
             raise ValueError("load the pending job before saving its report")
+        if len(list(islice(directory.iterdir(), MAX_REPORT_SWEEP))) >= MAX_REPORT_SWEEP and not final.exists():
+            raise ValueError("restore private report cleanup before creating more report files")
         finish(store, job_id, now, kind)
         private_file(temporary)
         with temporary.open("wb") as stream:
@@ -332,6 +336,7 @@ def main(argv=None):
                         store.prune(now)
                     with store.db:
                         output = collect.tick(store, client)
+                    store.collect_report_files()
         print(json.dumps(output, ensure_ascii=False))
         return 0
     except (OSError, ValueError, sqlite3.Error) as exc:
