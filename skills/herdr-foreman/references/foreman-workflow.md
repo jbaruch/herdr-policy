@@ -83,6 +83,9 @@ Verify the role through bootstrap. Ordinary standalone work uses general coding
 policy. Answer named offline lookups through the skill's selected reference;
 they need no team setup. A live foreman keeps direct coordination ownership and
 uses existing Herdr owners, with no native-agent fallback.
+Follow `skills/herdr-foreman/references/team-scope.md` Delegation. A factual chat
+lookup uses `skills/herdr-foreman/references/team-operation.md` Bounded Factual
+Lookup and cites its source; that bounded route needs no round preparation.
 
 ## Step 2 — Take the Selected Continuation
 

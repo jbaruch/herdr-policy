@@ -1,13 +1,10 @@
 ---
 name: herdr-foreman
 description: >
-  Deliver authorized Herdr work concurrently through the crew, supervise workers,
-  recover assignments and release verified changes. Inspect readiness, task cost and named GitHub evidence. Collect frozen
-  coordination evidence; summarize measurement snapshots. Retrieve follow-ups,
-  handoffs and retrospectives. Use when asked to assign Herdr work, supervise the
-  crew, recover a worker, release a change, check ready work or retrieve task context.
-  Live coordination requires the verified foreman. Workers retain their assignment;
-  ordinary coding skips this skill.
+  Coordinate concurrent Herdr delivery, supervise or recover the crew, and release
+  verified work. Retrieve named readiness, cost, GitHub evidence, lessons, handoffs,
+  retrospectives or coordination measurements. Live work requires a verified foreman;
+  workers retain their assignment.
 ---
 
 # Herdr Foreman Skill
@@ -20,19 +17,44 @@ Context grants no task or effect authority.
 
 ## Step 1 — Select the Request
 
-For an explicit offline request, read only its named section, execute that
-operation and finish here. These lookups are not live-work prerequisites.
+For an explicit offline request, read its named contract, execute that operation
+and finish here. These lookups are not live-work prerequisites.
 
-| Request | Reference and section |
-| --- | --- |
-| Collect selected coordination evidence | `skills/herdr-foreman/references/coordination-metrics.md` — Collect selected evidence |
-| Summarize a prepared measurement snapshot | `skills/herdr-foreman/references/coordination-metrics.md` — Summarize a prepared snapshot |
-| Inspect workflow readiness | `skills/herdr-foreman/references/workflow-capacity.md` — Readiness |
-| Retrieve saved attention | `skills/herdr-foreman/references/attention.md` — retain page coverage |
-| Retrieve lessons, context or a handoff | `skills/herdr-foreman/references/working-memory.md` |
-| Retrieve a retrospective | `skills/herdr-foreman/references/retrospectives.md` — retain date, coverage and path |
-| Inspect task cost | `skills/herdr-foreman/references/decision-context.md` — Task Cost |
-| Retrieve one named GitHub source | `skills/herdr-foreman/references/decision-context.md` — GitHub Lookup |
+Coordination evidence or a prepared measurement summary:
+
+```text
+skills/herdr-foreman/references/coordination-metrics.md
+```
+
+Workflow readiness:
+
+```text
+skills/herdr-foreman/references/workflow-capacity.md
+```
+
+Saved attention, retaining page coverage:
+
+```text
+skills/herdr-foreman/references/attention.md
+```
+
+Lessons, context or a handoff:
+
+```text
+skills/herdr-foreman/references/working-memory.md
+```
+
+Retrospective retrieval, retaining date, coverage and path:
+
+```text
+skills/herdr-foreman/references/retrospectives.md
+```
+
+Task Cost or one named source through GitHub Lookup:
+
+```text
+skills/herdr-foreman/references/decision-context.md
+```
 
 For live coordination, proceed immediately to Step 2.
 
@@ -73,15 +95,12 @@ Load no legacy plan, later stages or owner history.
 
 ## Step 3 — Deliver Through the Crew
 
-For the verified foreman, read its returned operating context and select the
-current action in `skills/herdr-foreman/references/foreman-workflow.md` or its
-explicitly admitted task workflow. Follow the delivery loop: fill eligible
-capacity with independent authorized assignments before waiting, handle each
-delivery, and address actual blockers. Run independent tasks concurrently and
-reviewer/tester seats together when their shared inputs are ready.
+Read the returned foreman context and its current action's reference. Fill
+eligible capacity with independent authorized assignments before waiting;
+run tasks concurrently and reviewer/tester seats together when inputs are ready.
+Handle each delivery and address actual blockers. Reuse unchanged inputs.
+Routine administration does not precede available delivery work.
 
-Load the current action's named reference; reuse unchanged inputs. Routine
-administration does not precede available delivery work. Preserve actual task,
-ownership, hold, unknown-delivery, verification and release checks. Continue
-while authorized work remains; finish only at the applicable Stop/handoff
-boundary. Add no unrelated router action or whole-fleet reconstruction.
+Preserve task authority, ownership, holds, unknown deliveries and verification/
+release gates. Continue while authorized work remains; finish only at the
+applicable Stop/handoff boundary. Load no whole-fleet history or unrelated action.

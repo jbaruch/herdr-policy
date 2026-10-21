@@ -134,7 +134,7 @@ RESUME_TEMPLATE = (
     "`{tl} catch-up {flags} --compact --section resets` and `{tl} supervision-drain {flags} --compact`. "
     "Inspect the complete unresumed hold set and relevant pending events/resets before covered effects. "
     "Do not replay historical progress, all attention pages, active-enrollment bodies or unrelated queue pages "
-    "before the saved continuation. Read task-specific gating attention through its current load-set. "
+    "before the saved continuation. Retrieve current task-gating attention with the decision query below. "
     "An omitted or unavailable "
     "obligation remains unresolved. Preserve operator holds. Run "
     "`{tl} supervision-resume {flags} --compact --hold <observed-hold-id>` only when existing authority "
