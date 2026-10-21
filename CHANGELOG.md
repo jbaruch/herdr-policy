@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.2 — 2026-10-20
+
+- Wait through temporary shell utilities in fresh owned panes, then verify one admitted native start against the same root and stable, exact agent flags. Preserve immediate actual-agent/flag mismatch refusal, unknown-start safety and guarded cleanup; existing panes retain their occupancy checks (#54).
+- Retry failed, missing or expired usage profiles with `measure --retry-failed`, reusing valid successes from the latest snapshot without another cache store. Keep shared windows together, invalidate changed configuration/transport context, and retain the older observation timestamp rather than refreshing reused headroom.
+- Migrate snapshot schema 5 to 6 without inventing reuse proof. Preserve bounded startup timing, root/process-group identity, observed process names and expected tier flags in failure receipts; the host exposes no parent PID. Verify retries avoid repeated successful-provider probes and refuse mismatched or unsupported state before native effects.
+
 ## 0.13.1 — 2026-10-20
 
 - Transfer Codex host goals through the existing app-server during an explicitly requested foreman reset. Retire the outgoing scheduler and verify its turn ended before activating the successor; preserve the exact objective, lifecycle and remaining budget without fake completion, pause or blocked status. The native input hook admits continuation only after the goal handshake and owner binding are verified (#51).
