@@ -48,13 +48,12 @@ Its hook verifies the saved input, foreground and binding,
 then records admission once; the admitted continuation finishes reconciliation.
 No automated input is repeated and no new recovery record is added.
 The existing daemon's `appServerVersion` must match `SUPPORTED_CODEX_VERSIONS`
-in `skills/herdr-foreman/foreman/codex_goals.py` (currently `0.163.0`), checked at discovery and each
+in `skills/herdr-foreman/foreman/codex_goals.py`, checked at discovery and each
 connection to the saved socket. An unknown version or changed daemon refuses
 before goal RPCs. Renew the supported set with the installed app-server JSON
 schema, existing protocol/handoff regressions and an owned paused-goal smoke;
 never start, upgrade or restart a daemon as reset recovery.
-Codex 0.163.0's installed `ThreadGoalClearParams` supports `threadId` and
-`origin`, with no conditional generation or compare-and-clear transaction.
+The host protocol's transaction limits are owned by that module's docstring.
 The Herdr supervision lock serializes its handoff owners, and the transfer
 rechecks the live goal after its last journal write, immediately before clear.
 It refuses observed changes. Concurrent edits by an unrelated host client are

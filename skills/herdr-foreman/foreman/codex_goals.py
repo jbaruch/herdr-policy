@@ -5,6 +5,9 @@ goal methods, bounded thread metadata and exact-turn interruption are used.
 Errors contain bounded
 local reasons, never server payloads or goal text. Protocol compatibility:
 Codex 0.163 app-server schema; recheck with each Codex compatibility update.
+The supported ThreadGoalClearParams accepts threadId and origin, with no
+conditional generation or compare-and-clear transaction. Callers can recheck
+observed goals before clearing but cannot exclude unrelated host-client edits.
 """
 
 import base64
