@@ -10,14 +10,14 @@ import os
 from pathlib import Path
 
 from . import config, context_output, launch, progression_owner, report_delivery
-from . import supervision, tiers, workflow_capacity
+from . import observer_role, supervision, tiers, workflow_capacity
 from .errors import ForemanError, StateError, UsageError
 from .state import default_state_path, load_state_checked
 
 
 CONTEXT_BYTES = 4_096
 ROLE_FILES = {"foreman": "foreman-context.md", "worker": "worker-context.md",
-              "recovery": "context-recovery.md"}
+              "observer": "observer-context.md", "recovery": "context-recovery.md"}
 
 
 SELECTION_ENV = {"state_path": "FOREMAN_CONTEXT_STATE", "config_path": "FOREMAN_CONTEXT_CONFIG"}
@@ -159,6 +159,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
                                    kind=native["kind"], pane_id=pane_id)
         if payload is not None and who not in incoming:
             return _result("unverified", "hook_session_mismatch", skill)
+        if observer_role.matches(who, native, environment):
+            return _result("observer", "registered_native_observer", skill, verified=True)
         binding = _binding(who, binding_root)
         if binding is not None:
             selected = Path(binding["state_path"])

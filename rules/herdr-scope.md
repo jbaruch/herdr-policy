@@ -9,6 +9,7 @@ description: Minimal Herdr role routing, delegation boundary and installed looku
 
 - Ordinary work follows general coding policy; load no Herdr references.
 - Herdr standups and worker status updates use `Skill(skill: "herdr-standup")`.
+- Observation and observer wakes use `Skill(skill: "herdr-observer")`.
 - Other explicit Herdr requests use `Skill(skill: "herdr-foreman")`.
 - Verify the launched role through the shared bootstrap.
 - `HERDR_ENV` grants no role or task authority.

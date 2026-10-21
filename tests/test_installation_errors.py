@@ -82,7 +82,7 @@ class InstallationErrorsTest(unittest.TestCase):
                          "measurements.py", "references/coordination-metrics.md",
                          "native-hook.sh", "foreman/session_start_hook.py", "foreman/role_context.py", "foreman/github_context.py",
                          "references/foreman-context.md", "references/worker-context.md",
-                         "references/context-recovery.md", "references/workflow-worker.md",
+                         "references/context-recovery.md", "references/observer-context.md", "foreman/observer_role.py", "references/workflow-worker.md",
                          "references/foreman-workflow.md", "references/bootstrap.md",
                          "references/team-scope.md", "references/coding-policy-integration.md"):
                 path = skill / name

@@ -1,0 +1,59 @@
+# Private Observer Storage
+
+The `herdr-observer` runtime is the sole writer of its local cache. `Store` in
+`skills/herdr-observer/factory_observer/store.py` owns migration 1 of
+`observer.sqlite3`, identified by SQLite `user_version`. Every JSON record has
+`schema_version: 1`. Unknown migrations/records are refused without rewriting.
+No older observer schema exists. The cache supplies evidence and scheduling,
+never delivery authority.
+
+The root is `herdr-observer` under `XDG_STATE_HOME`, falling back to
+`~/.local/state`. The runtime requires owned directories and regular files,
+refuses links, and restricts directory/file permissions. It creates no `.hr`
+archive, repository output or public history. Retention, database ceiling and
+report limits are owned by the constants in `store.py` (referenced from the
+analysis contract); final reports are retained separately from rolling samples.
+
+The migration creates these tables:
+
+| Table | Key and value contract |
+| --- | --- |
+| `meta` | Named records: `binding` (exact native identity, agent name, cwd, registration time), `config` (enabled, collection start, selected owner paths, native binary), `current` (last sample, coverage, quota observations, anomaly continuity), `heartbeat` (service time/health), `pending` (one analysis job, frozen payload, reasons and send status), `schedule` (last analysis/weekly report and anomaly fingerprint), `closures` (bounded per-owner event sequence watermarks). |
+| `sources` | Native identity key; byte cursor/file identity, current model/effort, numeric usage baseline, bounded tool/message hashes, coverage and source locator. Quota keys retain bounded observations with their original measurement/reset identities. No prompt, output or reasoning bodies. |
+| `bins` | Identity, role/task and UTC hour key; sampled status duration, native counters/proxies, model/effort totals and source byte locators. No transcript bodies. |
+| `reports` | Generated job ID; private report path, kind, time, content digest and generic notification result. |
+
+Only this skill's CLI/collector writes these records. `status` and `evidence`
+return last-seen data; `next`, `ack` and `report` require the registered live
+observer. The shared SessionStart hook's
+`skills/herdr-foreman/foreman/observer_role.py` reader accepts migration/record 1
+read-only, reads only `binding` and `config`, and returns no role for missing,
+incompatible or untrusted storage. It never migrates the database.
+
+The collector owns one service lock and continuously reads Herdr topology,
+selected current owner metadata, existing quota snapshots and matching native
+logs. Source readers and their accepted owner schemas are documented in
+`sources.py`; they do not migrate those owners. Filename discovery is bounded;
+unavailable native logs, quota and outcomes remain explicit gaps. Native source
+files stay where their runtimes own them. No telemetry is uploaded.
+
+A precheck emits `wake_agent` and `data`. It saves the same payload as one pending
+job before waking only the exact registered idle observer. Wakes are coalesced
+while the agent is busy. Persisted send intent prevents automatic replay after
+lost responses or crashes; `sending` and `unknown` require reading `next` in the
+original observer. Neither is proof a turn ran. Collection continues meanwhile.
+
+Only the supplied private `draft_path` is used for report drafts. `report` saves
+a bounded UTF-8 Markdown file under `reports/`, records its receipt before a
+generic native notification, and is idempotent by job ID. Lost notification
+responses are not automatically resent. Completed drafts are removed. `ack`
+finishes an analysis without a report; it cannot replace a due weekly report.
+Starting or stopping collection never changes foreman/worker records or holds.
+
+Start this role when enabling factory observation. Its detached collector
+survives agent turns and compactions, but does not install a login service or
+restart the Herdr application after a machine reboot. Relaunch the observer with
+the factory after reboot. `status` exposes a dead collector or missing reporter;
+restart from the same observer to retain cursors and pending work. An explicitly
+stopped role can be registered to a replacement session; uncertain pending work
+is preserved for inspection rather than replayed.

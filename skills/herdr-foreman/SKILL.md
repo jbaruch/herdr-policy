@@ -52,9 +52,7 @@ and finish here. Use no replacement store to obtain a role.
   - Fill eligible capacity before waiting.
   - Run independent tasks and reviewer/tester seats concurrently.
   - Continue to the delivery loop's Stop/handoff boundary.
-- Verified `worker`:
-  - Follow the returned protocol and assignment.
-  - Finish here.
+- Verified `worker` or `observer`: follow the returned context; finish here.
 - `standalone`:
   - Perform ordinary authorized work under general policy.
   - Finish here.

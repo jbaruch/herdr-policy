@@ -8,9 +8,9 @@
 ## Installed Skill Lookup
 
 - Narrow exception for installed Herdr skill lookup in Bash command blocks.
-- Applies to `skills/herdr-foreman/SKILL.md`, `skills/herdr-standup/SKILL.md`, and their `references/*.md`.
+- Applies to the co-shipped Herdr skills' `SKILL.md` and `references/*.md` files.
 - Preconditions (all required):
-  1. Initialize `HS` to `.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/` or the corresponding `herdr-standup/` path.
+  1. Initialize `HS` to `.tessl/plugins/jbaruch/herdr-policy/skills/<invoked-skill>/` for a manifest-declared skill.
   2. Use one directory test for project-local lookup, one for `$HOME` fallback, and one whole-string origin `case` for source lookup.
   3. Accept only `git@github.com:jbaruch/herdr-policy`, `https://github.com/jbaruch/herdr-policy`, and `ssh://git@github.com/jbaruch/herdr-policy`, each with or without `.git`.
   4. Source lookup selects `skills/<same-skill>/`.
@@ -33,7 +33,7 @@
 - Success returns schema 1 with `role`, `verified`, `reason`, `context`, `reference` and `state_path`; every authority field is false.
 - `skills/herdr-foreman/foreman/role_context.py` owns role selection and preflight. A role hint establishes no authority; an explicit foreign remote `--state` is refused.
 - Known outages, changed ownership and operator holds retain a recovery capsule. Unverified sessions receive no foreman contract.
-- Ordinary native sessions with `HERDR_ENV` unset read no owner or controller.
+- Ordinary native sessions with `HERDR_ENV` unset read no owner or controller. The observer receives only its capsule after an exact live match to its own private registration; it does not load foreman state or workflow.
 - Each co-shipped capsule is at most 4096 UTF-8 bytes; structured stdout is at most 16 KiB. Missing, unreadable or oversized contracts fail visibly without partial instructions.
 - This reader creates no binding, task authority, admission, report, acknowledgement or dispatch.
 - The shared SessionStart hook accepts at most 16 KiB of native JSON, verifies session identity and preserves the consumer cwd.

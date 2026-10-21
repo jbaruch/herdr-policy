@@ -134,6 +134,7 @@ PYCONTRACT
 check_foreman_reference_routes() {
   local skills_root="$1"
   if python3 - "$skills_root" <<'PYCONTRACT'
+import json
 import re
 import sys
 from pathlib import Path
@@ -159,9 +160,10 @@ for number, section in enumerate(sections[1:], 1):
 assert len(skill.encode("utf-8")) <= 20000, "entry point exceeds the 5000-token approximation"
 rule = (root / "skills/herdr-foreman/references/bootstrap.md").read_text()
 scope = next(line for line in rule.splitlines() if line.startswith("- Applies to "))
-allowed = {"skills/herdr-foreman/SKILL.md", "skills/herdr-standup/SKILL.md"}
-for kind in ("herdr-foreman", "herdr-standup"):
-    allowed.update(str(p.relative_to(root)) for p in (root / f"skills/{kind}/references").glob("*.md"))
+declared = json.loads((root / '.tessl-plugin/plugin.json').read_text())["skills"]
+allowed = {path + "/SKILL.md" for path in declared}
+for path in declared:
+    allowed.update(str(p.relative_to(root)) for p in (root / path / "references").glob("*.md"))
 for file in (root / "skills").rglob("*.md"):
     if re.search(r"^[ \t]*HS=\.tessl/plugins/jbaruch/herdr-policy/skills/", file.read_text(), re.M):
         assert file.relative_to(root).as_posix() in allowed, (file, "bootstrap is outside its exact policy scope")
