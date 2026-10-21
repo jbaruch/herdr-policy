@@ -43,8 +43,14 @@ bash "$HS/observer.sh" start
 The command verifies this native session, registers the observer and starts an
 idempotent detached collector. Supply `--state /absolute/owner/state.json` for
 additional owner paths absent from native discovery; repeat for distinct owners.
-No worker is prompted. Read the returned status and inspect health through Step 3
-immediately. Then finish the turn so this agent can sleep between wakes. Do not
+No worker is prompted. Read the returned status and immediately use Inspect
+Observer Health from the lifecycle contract as this launch's validation:
+
+```text
+skills/herdr-observer/references/storage.md
+```
+
+Then finish the turn so this agent can sleep between wakes. Do not
 add a model polling loop or keep the foreman supervising the observer.
 
 ## Step 2 — Analyze Pending Evidence

@@ -72,6 +72,9 @@ Retrieve only evidence needed for an open question. Set `HOURS` to a value in
 An agent view includes only matching metrics, identities and log coverage;
 shared factory, quota and retention context is explicitly omitted. Use a fleet
 view for those comparisons. `scope.matched` identifies an unknown or mistyped name.
+Comparison periods outside the selected window appear in `comparison_omitted`,
+not as zero totals. Interpret included periods alongside source and retention
+coverage; inclusion alone does not establish complete measurement.
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-observer/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-observer/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac

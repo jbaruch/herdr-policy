@@ -101,9 +101,12 @@ def evidence(store, now, *, hours=168, agent=None):
     quota_history = [{"profile": r["profile"], "provider": r["provider"], "window_group": r.get("window_group"),
                      "observations": r["history"][-8:], "earlier_observations_omitted": max(0, len(r["history"]) - 8)}
                     for r in source_rows if r.get("kind") == "quota"]
-    comparisons = {}
+    comparisons, comparison_omitted = {}, {}
     for label, lower, upper in (("recent_day", now - 86400, now), ("previous_day", now - 2 * 86400, now - 86400),
                                 ("recent_week", now - WEEK_SECONDS, now), ("previous_week", now - 2 * WEEK_SECONDS, now - WEEK_SECONDS)):
+        if lower < start:
+            comparison_omitted[label] = "outside_requested_window"
+            continue
         summary = {}
         for row in rows:
             if lower <= row["at"] < upper:
@@ -116,6 +119,7 @@ def evidence(store, now, *, hours=168, agent=None):
             "total_metrics": totals, "by_role": group_rows(rows, "role"),
             "retention": store.get("meta", "retention", {}) if agent is None else {}, "earliest_retained_bucket": min((r["at"] for r in rows), default=None),
             "by_provider": group_rows(rows, "provider"), "by_hour": hours_view, "comparisons": comparisons,
+            "comparison_omitted": comparison_omitted,
             "by_agent": agents[:MAX_VIEW_ROWS], "profiles": all_profiles[:MAX_VIEW_ROWS],
             "source_locators": locators[-MAX_VIEW_ROWS:], "current": current,
             "log_coverage": coverage[-MAX_VIEW_ROWS:], "quota_history": quota_history[:MAX_VIEW_ROWS],
@@ -388,7 +392,8 @@ def precheck(store, current, binding, live, now):
                 # Keep essential state and make any larger evidence an explicit query.
                 data = {"schema_version": 1, "as_of": now, "context_truncated": True,
                         "current": {k: current[k] for k in ("at", "healthy", "coverage", "stall_since")},
-                        "total_metrics": data["total_metrics"], "comparisons": data["comparisons"]}
+                        "total_metrics": data["total_metrics"], "comparisons": data["comparisons"],
+                        "comparison_omitted": data["comparison_omitted"]}
                 break
             removed = len(parent[field]) - len(parent[field]) // 2
             category = {"by_agent": "agents", "agents": "current_agents"}.get(field, field)

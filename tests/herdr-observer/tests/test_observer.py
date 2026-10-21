@@ -190,6 +190,24 @@ class ObserverTest(unittest.TestCase):
             self.assertFalse(missing[field])
         self.assertEqual(missing["current"]["agents"], [])
 
+    def test_short_views_never_present_unqueried_comparison_periods_as_zero(self):
+        row = {"key": "comparison", "session_key": "comparison-session", "name": "comparison-agent",
+               "provider": "codex", "role": "worker", "task": None}
+        with self.store.transaction():
+            collect.bin_update(self.store, row, self.now - 8 * 86400, {"tool_calls": 7})
+            collect.bin_update(self.store, row, self.now - 2 * 3600, {"tool_calls": 3})
+        week = collect.evidence(self.store, self.now, hours=168)
+        day = collect.evidence(self.store, self.now, hours=24)
+        full = collect.evidence(self.store, self.now, hours=336)
+        self.assertNotIn("previous_week", week["comparisons"])
+        self.assertEqual(week["comparison_omitted"]["previous_week"], "outside_requested_window")
+        self.assertEqual(week["comparisons"]["recent_week"]["tool_calls"], 3)
+        self.assertEqual(set(day["comparisons"]), {"recent_day"})
+        self.assertEqual(day["comparisons"]["recent_day"]["tool_calls"], 3)
+        self.assertEqual(set(day["comparison_omitted"]), {"previous_day", "recent_week", "previous_week"})
+        self.assertEqual(full["comparisons"]["previous_week"]["tool_calls"], 7)
+        self.assertFalse(full["comparison_omitted"])
+
     def test_acknowledgement_retry_preserves_a_newer_pending_job(self):
         job = self.due()["data"]["job"]
         with self.store.transaction():
