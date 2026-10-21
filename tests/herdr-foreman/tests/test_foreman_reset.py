@@ -149,7 +149,7 @@ class ResumePromptRunsTest(unittest.TestCase):
 
     def test_every_command_is_accepted_by_the_launcher(self):
         commands = self.commands()
-        self.assertEqual(len(commands), 11)
+        self.assertEqual(len(commands), 12)
         for command in commands:
             filled = (command.replace("<plan|brief|gate|diagnose>", "plan").replace("<task>", "t")
                       .replace("<enrollment-id>", "e1"))
@@ -474,13 +474,13 @@ class DeliverTest(unittest.TestCase):
         self.assertLess(prompt.index("supervision-resume"), prompt.index("foreman-queue"))
         self.assertIn("Do not continue while any hold condition is unsatisfied", prompt)
 
-    def test_resume_requires_explicit_goal_activation_before_supervision_resumes(self):
+    def test_resume_uses_the_native_goal_receipt_without_creating_another_goal(self):
         prompt = foreman_reset.resume_prompt("round-7", "/s.json")
-        self.assertIn("/goal <saved objective>", prompt)
-        self.assertIn("verify the goal is active", prompt)
-        self.assertIn("preserving any remaining budget", prompt)
-        self.assertLess(prompt.index("memory-show"), prompt.index("/goal"))
-        self.assertLess(prompt.index("/goal"), prompt.index("supervision-resume"))
+        self.assertNotIn("/goal <saved objective>", prompt)
+        self.assertIn("Never create or rewrite a goal", prompt)
+        self.assertIn("host_goal receipt", prompt)
+        self.assertLess(prompt.index("memory-show"), prompt.index("host_goal receipt"))
+        self.assertLess(prompt.index("host_goal receipt"), prompt.index("supervision-resume"))
         self.assertIn("without dispatch or claiming healthy takeover", prompt)
 
     def test_a_refusal_before_any_keystroke_is_an_ordinary_failure(self):
@@ -974,12 +974,12 @@ class RecordTest(unittest.TestCase):
         # The owner's read rewrites the record; a delivered reset still replays.
         replayed = foreman_reset.replay(self.state, self.plan, alive=lambda process: False)
         assert replayed is not None, "a migrated delivered reset replays"
-        self.assertEqual((replayed["schema_version"], replayed["native_session"]), (3, None))
+        self.assertEqual((replayed["schema_version"], replayed["native_session"]), (4, None))
         document = json.loads(path.read_text())
-        self.assertEqual(document["schema_version"], 3)
+        self.assertEqual(document["schema_version"], 4)
         self.assertEqual([(row["stow"], row["schema_version"], row["native_session"]) for row in document["resets"]],
-                         [("round-7", 3, None), ("round-6", 3, None)])
-        self.assertEqual(document["resets"][0]["result"]["schema_version"], 3)
+                         [("round-7", 4, None), ("round-6", 4, None)])
+        self.assertEqual(document["resets"][0]["result"]["schema_version"], 4)
         self.assertEqual([item["stow"] for item in foreman_reset.outstanding(self.state)], ["round-6"])
 
     def test_catch_up_alone_rewrites_a_schema_1_record(self):
@@ -988,7 +988,7 @@ class RecordTest(unittest.TestCase):
                "scheduled_at": "2026-09-24T10:00:00+00:00", "options": {}, "process": None, "result": self.FAILURE}
         path.write_text(json.dumps({"schema_version": 1, "resets": [row]}))
         self.assertEqual([item["stow"] for item in foreman_reset.outstanding(self.state)], ["round-6"])
-        self.assertEqual(json.loads(path.read_text())["resets"][0], {**row, "schema_version": 3, "native_session": None, "foreground": None, "accepted_session": None})
+        self.assertEqual(json.loads(path.read_text())["resets"][0], {**row, "schema_version": 4, "native_session": None, "foreground": None, "accepted_session": None, "host_goal": None})
 
     def test_schema_2_migration_preserves_session_without_inventing_hook_acceptance(self):
         path = foreman_reset.record_path(self.state)
@@ -1002,7 +1002,7 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(path.read_text(), original)
         self.assertEqual(foreman_reset.outstanding(self.state, alive=lambda process: True), [])
         self.assertEqual(json.loads(path.read_text())["resets"][0],
-                         {**row, "schema_version": 3, "foreground": None, "accepted_session": None})
+                         {**row, "schema_version": 4, "foreground": None, "accepted_session": None, "host_goal": None})
 
     def test_malformed_hook_pins_or_acceptance_refuse_without_rewriting(self):
         self.schedule("2026-09-24T10:00:00+00:00", True)
@@ -1020,13 +1020,36 @@ class RecordTest(unittest.TestCase):
                 self.assertEqual(path.read_text(), original)
                 document["resets"][0][field] = None
 
+    def test_schema_3_migration_preserves_native_receipts_without_inventing_goal_transfer(self):
+        self.schedule("2026-09-24T10:00:00+00:00", True)
+        path = foreman_reset.record_path(self.state)
+        document = json.loads(path.read_text())
+        row = document["resets"][0]
+        row.pop("host_goal")
+        row.update(schema_version=3, foreground=[{"pid": 77, "identity": "native"}],
+                   accepted_session={"kind": "id", "value": CLEARED})
+        document["schema_version"] = 3
+        path.write_text(json.dumps(document))
+        self.assertEqual(foreman_reset.outstanding(self.state, alive=lambda _: True), [])
+        migrated = json.loads(path.read_text())["resets"][0]
+        self.assertEqual(migrated, {**row, "schema_version": 4, "host_goal": None})
+
+    def test_selected_status_does_not_dump_reset_history_or_goal_text(self):
+        self.schedule("2026-09-24T10:00:00+00:00", True)
+        view = foreman_reset.status(self.state, "round-7")
+        self.assertEqual(view["host_goal"]["phase"], "unverified")
+        self.assertEqual(set(view), {"schema_version", "pane_id", "stow", "status", "host_goal"})
+        self.assertNotIn("resets", json.dumps(view))
+        with self.assertRaises(foreman_reset.UsageError):
+            foreman_reset.status(self.state, "unknown")
+
     def test_a_schema_1_delivery_still_running_is_rewritten_and_surfaces_once_gone(self):
         path = foreman_reset.record_path(self.state)
         row = {"schema_version": 1, "pane_id": PANE, "stow": "round-7", "status": "delivering",
                "scheduled_at": "2026-09-24T10:00:00+00:00", "options": {}, "process": self.me(), "result": None}
         path.write_text(json.dumps({"schema_version": 1, "resets": [row]}))
         self.assertEqual(foreman_reset.outstanding(self.state, alive=lambda process: True), [])
-        self.assertEqual(json.loads(path.read_text())["resets"][0], {**row, "schema_version": 3, "native_session": None, "foreground": None, "accepted_session": None})
+        self.assertEqual(json.loads(path.read_text())["resets"][0], {**row, "schema_version": 4, "native_session": None, "foreground": None, "accepted_session": None, "host_goal": None})
         # That build cannot record its outcome now; once it is gone, catch-up names the repair.
         items = foreman_reset.outstanding(self.state, alive=lambda process: False)
         self.assertEqual([(item["stow"], item["status"]) for item in items], [("round-7", "delivering")])
@@ -1089,6 +1112,31 @@ class ResetCommandTest(CliCase):
         # Scheduling now observes a live name and bound native session. Keep
         # those reads isolated even when a test exercises non-default binaries.
         return super().run_cli(argv, client=FakeClient(["working"]) if client is None else client)
+
+    def test_reset_status_cli_prints_only_the_selected_receipt(self):
+        foreman_reset.schedule(self.state, {"pane_id": PANE, "stow": "round-7"}, RESET_AT,
+                               os.getpid, native_session=SESSION)
+        code, out, err = self.run_cli(self.base() + ["foreman-reset-status", "--stow", "round-7"])
+        self.assertEqual(code, 0, err)
+        view = json.loads(out)
+        self.assertEqual((view["stow"], view["host_goal"]["phase"]), ("round-7", "unverified"))
+        self.assertNotIn("resets", view)
+        self.assertNotIn("source_goal", out)
+
+    def test_unavailable_codex_goal_control_refuses_before_spawn_log_or_input(self):
+        from foreman.codex_goals import unavailable
+        client = FakeClient(["working"], kind="codex")
+        with patch("foreman.cli.memory.show", return_value={"record": READY}), \
+             patch("foreman.cli.supervision.load", return_value=supervision_data()[0]), \
+             patch.dict("os.environ", {"HERDR_PANE_ID": PANE, "HERDR_ENV": "1"}), \
+             patch("foreman.host_goals.control_socket", side_effect=unavailable("fixture_unavailable")), \
+             patch("foreman.cli._spawn_detached", side_effect=AssertionError("must not spawn")):
+            code, out, err = self.run_cli(self.base() + ["foreman-reset", "--now", RESET_AT], client=client)
+        self.assertEqual((code, out), (1, ""))
+        self.assertEqual(json.loads(err)["error"], "reset_host_goal")
+        self.assertFalse(foreman_reset.record_path(self.state).exists())
+        self.assertFalse(Path(str(self.state.resolve()) + ".foreman-reset.log").exists())
+        self.assertEqual(client.keystrokes, [])
 
     def test_default_reset_refuses_before_owner_access_or_runtime_effects(self):
         for kind in ("claude", "codex", "grok"):
@@ -1162,6 +1210,8 @@ class ResetCommandTest(CliCase):
         self.assertFalse(foreman_reset.record_path(self.state).exists())
 
     def test_metadata_naming_allows_fresh_schedule_without_resetting_context(self):
+        from tests.goal_fakes import GoalHost
+        host = GoalHost()
         for kind in ("claude", "codex", "grok"):
             client = FakeClient(["working"], kind=kind)
             spawned = []
@@ -1170,6 +1220,8 @@ class ResetCommandTest(CliCase):
                  patch("foreman.cli.supervision.load", return_value=supervision_data()[0]), \
                  patch.dict("os.environ", {"HERDR_PANE_ID": PANE, "HERDR_ENV": "1"}), \
                  patch("foreman.cli._spawn_detached", side_effect=lambda argv, sink: spawned.append(argv) or 4242), \
+                 patch("foreman.host_goals.AppServer", side_effect=host.connect), \
+                 patch("foreman.host_goals.control_socket", return_value="/fixture/codex.sock"), \
                  patch("foreman.foreman_reset.process_identity", side_effect=lambda pid: {"pid": pid, "identity": "child"}):
                 foreman_reset.record_path(self.state).unlink(missing_ok=True)
                 self.out, self.err = io.StringIO(), io.StringIO()

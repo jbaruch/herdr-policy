@@ -16,8 +16,9 @@ from unittest.mock import patch
 
 ROOT = (Path(__file__).resolve().parents[3] / "skills/herdr-foreman")
 sys.path.insert(0, str(ROOT))
-from foreman import foreman_reset as reset, memory, reset_input_hook as hook, supervision as store
+from foreman import foreman_reset as reset, host_goals, memory, reset_input_hook as hook, supervision as store
 from tests.test_foreman_reset import FakeClient, SESSION, CLEARED, PANE
+from tests.goal_fakes import GoalHost, goal
 
 AT = "2026-10-01T00:00:00+00:00"
 CHILD = {"pid": 2121, "identity": "claimed-child"}
@@ -25,7 +26,7 @@ FOREGROUND = [{"pid": 4242, "identity": "started-once"}]
 
 
 class ResetHookTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, kind="codex", source=None):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
@@ -38,8 +39,10 @@ class ResetHookTest(unittest.TestCase):
         self.who = store.identity(SESSION["value"], str(self.directory), "1", pane_id=PANE)
         store.bind(self.state, self.who, AT, root=self.root)
         self.plan = {"pane_id": PANE, "stow": "round-7"}
+        self.host = GoalHost({SESSION["value"]: source} if source else {})
+        host_goal = host_goals.prepare(kind, SESSION, connect=self.host.connect, discover=lambda: "/fixture/codex.sock")
         reset.schedule(self.state, self.plan, AT, lambda: CHILD["pid"], native_session=SESSION,
-                       probe=lambda pid: CHILD, alive=lambda process: True)
+                       probe=lambda pid: CHILD, alive=lambda process: True, host_goal=host_goal)
         reset.claim(self.state, self.plan, CHILD)
         with patch("foreman.foreman_reset.process_identity", return_value=CHILD):
             reset.arm_resume(self.state, PANE, "round-7", SESSION, FOREGROUND)
@@ -49,14 +52,15 @@ class ResetHookTest(unittest.TestCase):
 
     def invoke(self, *, kind="codex", payload=None, env=None, client=None, probe=lambda pid: CHILD):
         client = client or FakeClient(["idle"], kind=kind)
-        with patch("foreman.foreman_reset.process_identity", side_effect=client.identify):
+        with patch("foreman.foreman_reset.process_identity", side_effect=client.identify), \
+                patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
             return hook.check(self.payload if payload is None else payload, self.env if env is None else env,
                               AT, client=client, root=self.root, probe=probe)
 
     def test_all_three_agents_transfer_the_same_verified_owner_and_refuse_replay(self):
         # Each subtest has independent owner files and a fixed native payload.
         for kind in ("claude", "codex", "grok"):
-            self.setUp()
+            self.setUp(kind=kind)
             with self.subTest(kind=kind):
                 self.assertEqual(self.invoke(kind=kind), hook.acceptance())
                 data = store.load(self.state)
@@ -114,7 +118,12 @@ class ResetHookTest(unittest.TestCase):
         self.assertEqual(store.load(self.state)["binding"]["identity"], self.who)
 
     def test_partial_binding_transfer_never_admits_or_retries_the_input(self):
-        with patch("foreman.reset_input_hook.save_state", side_effect=OSError("fixture storage failure")):
+        original = hook.save_state
+        def save(path, document):
+            if document["resets"][0]["host_goal"]["phase"] != "prepared":
+                raise OSError("fixture storage failure")
+            original(path, document)
+        with patch("foreman.reset_input_hook.save_state", side_effect=save):
             self.assertEqual(self.invoke()["decision"], "block")
         self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
         row = json.loads(reset.record_path(self.state).read_text())["resets"][0]
@@ -144,10 +153,45 @@ class ResetHookTest(unittest.TestCase):
         self.assertFalse(inherited_marker.exists())
 
     def test_native_claude_long_paste_frame_preserves_exact_inner_input(self):
+        self.setUp(kind="claude")
         wrapped = '<pasted_content id="f0fc">\n' + self.payload["prompt"] + '\n</pasted_content id="f0fc">'
         self.assertEqual(self.invoke(kind="claude", payload={**self.payload, "prompt": wrapped}), hook.acceptance())
         self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
         self.assertEqual(self.invoke(kind="claude", payload={**self.payload, "prompt": wrapped})["decision"], "block")
+
+    def test_active_goal_reset_leaves_one_executor_after_the_outgoing_turn_ends(self):
+        self.setUp(source=goal(SESSION["value"], budget=1000, tokens=300))
+        self.assertEqual(self.invoke(), hook.acceptance())
+        self.host.end_turn(SESSION["value"])
+        self.host.end_turn(CLEARED)
+        self.assertEqual(self.host.continuations, [CLEARED])
+        self.assertIsNone(self.host.goal(SESSION["value"]))
+        self.assertEqual(self.host.goals[CLEARED]["tokenBudget"], 700)
+        row = json.loads(reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual(row["host_goal"]["phase"], "verified")
+        self.assertEqual(row["host_goal"]["carried_tokens"], 300)
+        self.assertEqual(reset.accepted_resume(self.state, PANE, "round-7", SESSION), {"kind": "id", "value": CLEARED})
+
+    def test_failed_host_transfer_blocks_input_and_reconciliation_recovers_without_duplicate_goal(self):
+        self.setUp(source=goal(SESSION["value"], budget=None))
+        self.host.lost = "thread/goal/clear"
+        self.assertEqual(self.invoke()["decision"], "block")
+        self.assertIsNone(self.host.goal(SESSION["value"]))
+        self.assertIsNone(self.host.goal(CLEARED))
+        self.assertIsNone(reset.accepted_resume(self.state, PANE, "round-7", SESSION))
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            result = reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: False)
+        self.assertEqual(result["host_goal"]["phase"], "verified")
+        self.assertEqual(self.host.goals[CLEARED]["tokenBudget"], None)
+        self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
+
+    def test_legacy_codex_reset_without_host_preflight_is_refused_before_rebinding(self):
+        path = reset.record_path(self.state)
+        document = json.loads(path.read_text())
+        document["resets"][0]["host_goal"] = None
+        path.write_text(json.dumps(document))
+        self.assertEqual(self.invoke()["decision"], "block")
+        self.assertEqual(store.load(self.state)["binding"]["identity"], self.who)
 
     def test_mismatched_paste_frames_and_extra_inner_content_are_not_authority(self):
         for opening, closing, inner in (("f0fc", "other", self.payload["prompt"]),

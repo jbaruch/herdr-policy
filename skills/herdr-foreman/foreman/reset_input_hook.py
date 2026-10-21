@@ -13,7 +13,7 @@ import os
 import re
 import sys
 
-from . import foreman_reset as reset, memory, supervision as store, supervision_runtime as runtime
+from . import foreman_reset as reset, host_goals, memory, supervision as store, supervision_runtime as runtime
 from .errors import ForemanError, UsageError
 from .state import save_state, state_lock
 
@@ -86,6 +86,12 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
             live = reset._foreman_record(native, pane)
             if live.get("agent") not in reset.SESSION_AGENTS or reset.foreground_processes(native, pane) != receipt["foreground"]:
                 return refusal("foreground_replaced")
+            goal = row["host_goal"]
+            if live.get("agent") == "codex" and (goal is None or goal["runtime"] != "codex"
+                    or goal["source_thread"] != row["native_session"]["value"] or who["kind"] != "id"):
+                return refusal("missing_host_goal_preflight")
+            if goal is not None and goal["runtime"] != live.get("agent"):
+                return refusal("host_goal_runtime_changed")
 
             def validate(data):
                 bound = (data["binding"] or {}).get("identity", {})
@@ -95,7 +101,14 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
                 stow = memory.show(receipt["state"], at, row["stow"])["record"]
                 reset.preflight(stow, data, pane)
 
+            if goal is not None and goal["runtime"] == "codex":
+                if goal["target_thread"] not in (None, who["value"]):
+                    return refusal("host_goal_target_changed")
+                goal["target_thread"] = who["value"]
+                save_state(path, document)
             store.bind(receipt["state"], who, at, root=root, before_bind=validate)
+            if goal is not None:
+                host_goals.transfer(goal, who["value"], lambda: save_state(path, document))
             row["accepted_session"] = {key: who[key] for key in ("kind", "value")}
             save_state(path, document)
         return acceptance()

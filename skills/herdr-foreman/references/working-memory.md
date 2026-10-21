@@ -131,17 +131,21 @@ Do not work around refusal by dumping the index or replaying the archive.
 
 ## Successor Goal
 
-For a new foreman taking over outstanding work, explicitly set
-`/goal <saved objective>` in that foreman's host runtime after reading the
-handoff and before resuming dispatch or retiring the outgoing foreman.
-Restore the saved remaining budget when the runtime supports a budget; never
-grant a fresh full budget for the same goal. Verify the runtime reports the
-goal active and that its objective and remaining work match the saved authority.
-A prompt saying "continue the goal" or naming the objective is not this action.
-If the saved goal or the runtime's `/goal` facility is unavailable, keep the
-outgoing foreman responsible and recover that gap; never silently skip goal
-activation or claim a healthy successor. A requested in-place reset uses the
-same goal restoration after resume; it does not implement successor takeover.
+For a requested maintenance reset, the native reset hook owns the host-goal
+handoff. Use `foreman-reset-status --stow <stow-id>` with the same owner flags
+to read that one receipt; do not open the reset history. The Codex receipt must
+report `host_goal.phase: verified` before dispatch. Its carried usage belongs
+to the same objective; the host's successor counter records only that thread's
+usage. Never grant a fresh full budget or recreate a goal from prompt text.
+
+Native Claude/Grok report `not_applicable` for the Codex goal scheduler and
+create no host goal. An external scheduler is outside that receipt's proof.
+If such a host owns an automatic goal, retain its executor and use its supported
+transfer integration before resetting; this plugin cannot claim its retirement.
+Fresh-foreman succession outside the requested reset also requires a supported
+host transfer. A new active goal alone never retires the outgoing executor.
+An unavailable or unfinished transfer remains recovery work; never emulate it
+with completion, a user pause, or blocked status.
 
 ## Reset Outcome Routing
 

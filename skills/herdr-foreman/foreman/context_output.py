@@ -22,7 +22,7 @@ READ_COMMANDS = frozenset({
     "memory-list", "memory-show", "attention-list", "attention-show", "catch-up",
     "supervision-gate", "supervision-status", "supervision-drain", "supervision-watch",
     "retro-check", "retro-list", "retro-show", "capability-check", "capability-show",
-    "report-gate-status", "github-context",
+    "report-gate-status", "github-context", "foreman-reset-status",
 })
 
 

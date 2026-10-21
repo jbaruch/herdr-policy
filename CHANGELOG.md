@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.1 — 2026-10-20
+
+- Transfer Codex host goals through the existing app-server during an explicitly requested foreman reset. Retire the outgoing scheduler and verify its turn ended before activating the successor; preserve the exact objective, lifecycle and remaining budget without fake completion, pause or blocked status. The native input hook admits continuation only after the goal handshake and owner binding are verified (#51).
+- Journal transfer intent and cumulative prior-executor usage in the existing reset record, with schema-1/2/3 owner migration to schema 4. Recover lost host responses through the already bound successor without repeating native input or replenishing budget. Add one bounded, context-charged `foreman-reset-status` receipt instead of exposing reset history.
+- Preserve native Claude/Grok resets without inventing an external host goal. Codex goal control must be available before scheduling; other external schedulers remain an explicit integration boundary. Exercise one continuing executor, repeated resets, inactive/unbudgeted goals, changed authority and host failures through native-hook and Unix WebSocket regression tests.
+
 ## 0.13.0 — 2026-10-20
 
 - Migrate native task releases to the independent Codex policy and Claude code-quality verdicts. Require both on the reviewed head; either blocking verdict holds release. Retain all-author review reading and historical Copilot feedback without requiring a Copilot verdict.

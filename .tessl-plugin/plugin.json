@@ -1,6 +1,6 @@
 {
   "name": "jbaruch/herdr-policy",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Herdr team coordination policy for AI coding agents",
   "private": false,
   "repository": "https://github.com/jbaruch/herdr-policy",

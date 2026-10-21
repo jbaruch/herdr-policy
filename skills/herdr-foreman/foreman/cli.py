@@ -479,6 +479,9 @@ def build_parser():
     reconcile_parser.add_argument("--pane", required=True)
     reconcile_parser.add_argument("--stow", required=True)
     reconcile_parser.add_argument("--outcome", required=True, choices=["delivered", "failed"])
+    reset_status = sub.add_parser("foreman-reset-status", parents=[common], help="Read one bounded reset and host-goal receipt without dumping history.")
+    reset_status.add_argument("--stow", required=True)
+    reset_status.add_argument("--pane", help="Select the exact pane when the stow appears in more than one reset.")
     close_member = sub.add_parser("close-member", parents=[common], help="Acknowledge an enrollment's pending events and resolve it, once the task ledger records its assessed outcome; an `accepted` reviewer, tester or consultation outcome needs its report's recorded contract lines.")
     close_member.add_argument("--enrollment", required=True)
     close_member.add_argument("--ledger", required=True, help="Absolute path of the task's TASK-LEDGER.md.")
@@ -2257,7 +2260,8 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
     plan = foreman_reset.preflight(stow, data, caller)
     native_session = foreman_reset.bound_session(data)
     client = client if client is not None else _client(args, trace=trace)
-    foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    live = foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    host_goal = foreman_reset.prepare_host_goal(state_path, live["agent"], native_session)
     log = Path(str(state_path) + ".foreman-reset.log")
     # The deliverer runs from the package directory, so every path it gets is absolute.
     argv = [sys.executable, "-m", "foreman", "foreman-reset-deliver", "--pane", plan["pane_id"], "--stow", plan["stow"],
@@ -2277,7 +2281,7 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
             raise StateError("Could not start the reset deliverer ({}); nothing was sent.".format(exc),
                              {"log": str(log)}) from None
 
-    row = foreman_reset.schedule(state_path, plan, at, start, native_session=native_session, options=options)
+    row = foreman_reset.schedule(state_path, plan, at, start, native_session=native_session, options=options, host_goal=host_goal)
     return {"schema_version": foreman_reset.RESET_SCHEMA_VERSION, "scheduled": True, **row, "log": str(log),
             "next": "End this turn now; the deliverer clears the pane once it is idle."}, None
 
@@ -2392,6 +2396,10 @@ def cmd_foreman_reset_reconcile(args, client=None, warn=None, trace=None):
     state_path = Path(_state_path(args)).expanduser().resolve()
     return foreman_reset.reconcile(state_path, {"pane_id": args.pane, "stow": args.stow}, args.outcome,
                                    getattr(args, "now", None) or now_iso()), None
+
+
+def cmd_foreman_reset_status(args, client=None, warn=None, trace=None):
+    return foreman_reset.status(_state_path(args), args.stow, args.pane), None
 
 
 def cmd_close_member(args, client=None, warn=None, trace=None):
@@ -3452,6 +3460,7 @@ COMMANDS = {
     "foreman-reset": cmd_foreman_reset,
     "foreman-reset-deliver": cmd_foreman_reset_deliver,
     "foreman-reset-reconcile": cmd_foreman_reset_reconcile,
+    "foreman-reset-status": cmd_foreman_reset_status,
     "close-member": cmd_close_member,
     "check-member": cmd_check_member,
     "load-set": cmd_load_set,
@@ -3580,7 +3589,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "close-member", "progression-run"}
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run"}
             authority_transaction = service_capability is not None
             lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:
