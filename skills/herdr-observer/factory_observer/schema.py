@@ -82,7 +82,7 @@ def valid(table, key, value, home, version):
             return fields(value, {"profile": text, "provider": label, "window_group": label, "history": objects})
         gap = lambda item: fields(item, {"at": number, "gaps": strings})
         return ("kind" not in value and fields(value, {"provider": text, "coverage": strings, "gap_history": items(gap)},
-                    {"path": path, "retry_at": number, "offset": count, "backlog_bytes": count,
+                    {"path": path, "retry_at": number, "discovery_gap": text, "offset": count, "backlog_bytes": count,
                      "file_id": lambda item: isinstance(item, list) and len(item) == 2 and all(count(part) for part in item),
                      "skip_line": lambda item: type(item) is bool, "watermark": number, "replay_through": number,
                      "usage": nullable(numbers), "messages": mapping(numbers), "call_ids": items(digest),

@@ -267,16 +267,22 @@ def tick(store, client, now=None, user_home=None):
         if path is None and now >= cursor.get("retry_at", 0):
             try:
                 path = sources.locate(who, user_home)
+                cursor.pop("discovery_gap", None)
+            except sources.DiscoveryLimit:
+                path = None
+                cursor["discovery_gap"] = "native_log_discovery_truncated"
             except OSError:
                 path = None
+                cursor["discovery_gap"] = "native_log_discovery_unavailable"
             cursor["retry_at"] = now + DISCOVERY_RETRY_SECONDS
+        if path is not None:
+            cursor["path"] = str(path)
         log_gaps = []
         if path is None:
-            log_gaps = ["native_log_unsupported" if who["agent"] not in sources.SUPPORTED_LOGS else "native_log_not_found"]
+            log_gaps = [cursor.get("discovery_gap") or ("native_log_unsupported" if who["agent"] not in sources.SUPPORTED_LOGS else "native_log_not_found")]
         elif budget <= 0:
             log_gaps = ["native_log_deferred_by_cycle_budget"]
         else:
-            cursor["path"] = str(path)
             try:
                 batches, log_gaps, consumed = sources.read_log(path, cursor, now=now if fixed_clock else None, since=since,
                                                              budget=min(budget, sources.LOG_CHUNK))

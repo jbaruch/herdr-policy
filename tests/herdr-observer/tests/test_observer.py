@@ -166,6 +166,54 @@ class ObserverTest(unittest.TestCase):
         self.assertFalse(self.due()["wake_agent"])
         self.assertIsNone(self.record("current")["stall_since"])
 
+    def test_claude_discovery_ignores_unrelated_transcript_counts(self):
+        worker = agent("claude-worker", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind="claude")
+        self.client.agents.append(worker)
+        root = self.root / ".claude/projects"
+        for name in ("zzz-old", "yyy-old", "xxx-old", "aaa-live"):
+            project = root / name
+            project.mkdir(parents=True)
+            for index in range(20):
+                (project / ("unrelated-" + str(index) + ".jsonl")).write_text("not a native record")
+        path = root / "aaa-live" / (worker["agent_session"]["value"] + ".jsonl")
+        path.touch()
+        with patch.object(sources, "MAX_DISCOVERY_FILES", 8):
+            self.tick()
+            path.write_text(json.dumps({"timestamp": stamp(self.now + 1), "type": "assistant",
+                "message": {"id": "message", "model": "claude-small", "usage": {"input_tokens": 5, "output_tokens": 2},
+                            "content": [{"type": "tool_use", "id": "call", "name": "Read", "input": {}}]}}) + "\n")
+            self.tick(self.now + 60)
+        view = collect.evidence(self.store, self.now + 60, agent="claude-worker")
+        self.assertEqual(view["total_metrics"]["tool_calls"], 1)
+        self.assertEqual(view["total_metrics"]["input_tokens"], 5)
+        self.assertEqual(view["profiles"][0]["model"], "claude-small")
+        self.assertEqual(view["log_coverage"][0]["backlog_bytes"], 0)
+
+    def test_discovery_truncation_remains_distinct_from_a_missing_log(self):
+        worker = agent("claude-worker", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind="claude")
+        self.client.agents.append(worker)
+        for name in ("one", "two"):
+            (self.root / ".claude/projects" / name).mkdir(parents=True)
+        with patch.object(sources, "MAX_DISCOVERY_FILES", 1):
+            self.tick()
+        with patch.object(sources, "locate", side_effect=AssertionError("retry delay must be retained")):
+            self.tick(self.now + 60)
+        selected = next(row for row in self.record("current")["agents"] if row["name"] == "claude-worker")
+        self.assertEqual(selected["log_coverage"], ["native_log_discovery_truncated"])
+
+    def test_discovered_paths_survive_a_deferred_read_budget(self):
+        path = self.log(self.worker)
+        with patch.object(sources, "LOG_BUDGET", 0):
+            self.tick()
+        cursor = self.store.get("sources", native.session_key(native.identity(self.worker)))
+        assert cursor is not None
+        self.assertEqual(cursor["path"], str(path))
+        self.assertEqual(cursor["coverage"], ["native_log_deferred_by_cycle_budget"])
+        self.log(self.worker, [self.event("response_item", {"type": "function_call", "call_id": "new", "name": "exec"})])
+        with patch.object(sources, "locate", side_effect=AssertionError("cached path must be reused")):
+            self.tick(self.now + 60)
+        self.assertEqual(collect.evidence(self.store, self.now + 60, agent="developer")["total_metrics"]["tool_calls"], 1)
+
     def test_agent_focus_excludes_other_agents_and_shared_factory_context(self):
         self.log()
         self.log(self.worker)
@@ -790,6 +838,43 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(fresh["payload"], "y" * 8192)
         self.assertGreater(self.record("retention")["bins_evicted"], 0)
         self.assertEqual(self.record("binding")["name"], "observer")
+
+    def test_pruning_validates_all_candidates_before_deleting_any_file(self):
+        job_id = native.fingerprint("valid-report")
+        directory = private_directory(self.cache / "reports")
+        valid = directory / (job_id + ".md")
+        private_file(valid)
+        valid.write_text("keep valid report")
+        outside = self.cache.parent / "target.md"
+        outside.write_text("keep outside file")
+        receipt = {"id": job_id, "kind": "urgent", "path": str(valid), "at": self.now,
+                   "sha256": "a" * 64, "notification": "sent"}
+        with self.store.transaction():
+            self.store.put("reports", job_id, receipt, self.now)
+            bad = {**receipt, "id": "../../target", "path": str(outside), "schema_version": 1}
+            self.store.db.execute("INSERT INTO reports VALUES (?,?,?)", (bad["id"], self.now - 1, json.dumps(bad)))
+        before = [tuple(row) for row in self.store.db.execute("SELECT * FROM reports ORDER BY key")]
+        with patch("factory_observer.store.MAX_REPORTS", 0):
+            with self.assertRaisesRegex(ValueError, "record shape"), self.store.transaction():
+                self.store.prune(self.now)
+        self.assertEqual(valid.read_text(), "keep valid report")
+        self.assertEqual(outside.read_text(), "keep outside file")
+        self.assertEqual([tuple(row) for row in self.store.db.execute("SELECT * FROM reports ORDER BY key")], before)
+        with self.store.transaction():
+            self.store.db.execute("DELETE FROM reports WHERE key=?", (bad["id"],))
+        saved = self.cache / "saved-reports"
+        directory.rename(saved)
+        external = self.root / "outside-reports"
+        external.mkdir()
+        external_report = external / valid.name
+        external_report.write_text("keep linked target")
+        directory.symlink_to(external)
+        with patch("factory_observer.store.MAX_REPORTS", 0):
+            with self.assertRaisesRegex(ValueError, "owned directory"), self.store.transaction():
+                self.store.prune(self.now)
+        self.assertEqual(external_report.read_text(), "keep linked target")
+        self.assertEqual((saved / valid.name).read_text(), "keep valid report")
+        self.assertIsNotNone(self.store.get("reports", job_id))
 
     def test_evicted_source_baseline_does_not_replay_old_log_costs(self):
         self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "old", "name": "exec"})])

@@ -126,14 +126,17 @@ class Store:
             "SELECT key,value FROM " + table + " WHERE at>=? ORDER BY at", (since,))]
 
     def prune(self, now):
+        candidates = self.db.execute(
+            "SELECT key,value FROM reports ORDER BY at DESC LIMIT -1 OFFSET ?", (MAX_REPORTS,)).fetchall()
+        # Validate the complete deletion set before any file or cache mutation.
+        reports = [self.decode(row[1], "reports", row[0]) for row in candidates]
+        if reports:
+            private_directory(self.home / "reports")
         removed_counts = {"bins": 0, "sources": 0}
         for table, maximum in (("bins", MAX_BINS), ("sources", MAX_SOURCES), ("reports", MAX_REPORTS)):
             if table == "reports":
-                removed = self.db.execute(
-                    "SELECT key FROM reports ORDER BY at DESC LIMIT -1 OFFSET ?", (maximum,)).fetchall()
-                for row in removed:
-                    # Filenames are generated report IDs, never paths from report prose.
-                    (self.home / "reports" / (row[0] + ".md")).unlink(missing_ok=True)
+                for receipt in reports:
+                    Path(receipt["path"]).unlink(missing_ok=True)
             removed = self.db.execute("DELETE FROM " + table + " WHERE key IN (SELECT key FROM " + table
                                       + " ORDER BY at DESC LIMIT -1 OFFSET ?)", (maximum,)).rowcount
             if table in removed_counts:

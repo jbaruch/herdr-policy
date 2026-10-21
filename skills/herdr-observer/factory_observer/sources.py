@@ -148,6 +148,10 @@ def owners(paths, live):
     return roles, quota, closures, contexts, sorted(set(gaps))
 
 
+class DiscoveryLimit(ValueError):
+    """Filename discovery was bounded before the session could be established."""
+
+
 def locate(native, user_home):
     """Find only the live session's file; bounded filename search, no unrelated bodies."""
     provider = native["agent"]
@@ -162,16 +166,27 @@ def locate(native, user_home):
         return None
     if not root.is_dir():
         return None
+    if provider == "claude":
+        # Claude's filename is the native ID. Probe that exact filename once
+        # per project; unrelated transcript counts consume no discovery budget.
+        for index, project in enumerate(islice(root.iterdir(), MAX_DISCOVERY_FILES + 1)):
+            if index >= MAX_DISCOVERY_FILES:
+                raise DiscoveryLimit("native log discovery budget exhausted")
+            if not project.is_symlink() and project.is_dir():
+                candidate = project / (value + ".jsonl")
+                if not candidate.is_symlink() and candidate.is_file():
+                    return candidate
+        return None
     count = 0
-    # Codex uses year/month/day directories; Claude uses one project directory.
+    # Codex uses year/month/day directories.
     directories = [root]
-    for _ in range(3 if provider == "codex" else 1):
+    for _ in range(3):
         next_level = []
         for parent in directories:
             for entry in sorted(islice(parent.iterdir(), MAX_DISCOVERY_FILES - count + 1), reverse=True):
                 count += 1
                 if count > MAX_DISCOVERY_FILES:
-                    return None
+                    raise DiscoveryLimit("native log discovery budget exhausted")
                 if entry.is_dir() and not entry.is_symlink():
                     next_level.append(entry)
         directories = next_level
@@ -179,7 +194,7 @@ def locate(native, user_home):
         for path in sorted(islice(directory.iterdir(), MAX_DISCOVERY_FILES - count + 1), reverse=True):
             count += 1
             if count > MAX_DISCOVERY_FILES:
-                return None
+                raise DiscoveryLimit("native log discovery budget exhausted")
             if path.name.endswith(value + ".jsonl") and not path.is_symlink():
                 return path
     return None
