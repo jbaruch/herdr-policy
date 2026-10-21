@@ -299,8 +299,13 @@ def tick(store, client, now=None, user_home=None):
             gaps.append("closure_timestamp_unavailable_or_ahead")
             continue
         prior_sequence = previous_sequences.get(closure["owner"], -1)
-        recorded["by_owner"][closure["owner"]] = max(recorded["by_owner"].get(closure["owner"], -1), sequence)
-        if at is not None and config["started_at"] <= at <= now and sequence > prior_sequence:
+        # Refresh current owners before trimming; dict assignment alone does not
+        # refresh insertion order. Missing watermarks use the eviction floor.
+        floor = recorded.get("evicted_through", -1) if closure["owner"] not in previous_sequences else -1
+        recorded["by_owner"][closure["owner"]] = max(recorded["by_owner"].pop(closure["owner"], -1), sequence)
+        if floor >= at:
+            gaps.append("closure_history_before_eviction_floor_excluded")
+        if config["started_at"] <= at <= now and at > floor and sequence > prior_sequence:
             outcome = closure.get("outcome")
             outcome_metric = ({"merged": "merged_task_closures", "abandoned": "abandoned_task_closures"}.get(outcome, "closure_outcome_unknown")
                               if isinstance(outcome, str) else "closure_outcome_unknown")
@@ -308,6 +313,8 @@ def tick(store, client, now=None, user_home=None):
                                "role": "outcome", "task": closure["task"]}, at,
                        {"recorded_task_closures": 1, outcome_metric: 1})
             new_closure = new_closure or outcome == "merged"
+    if len(recorded["by_owner"]) > sources.MAX_FACTORIES:
+        recorded["evicted_through"] = max(recorded.get("evicted_through", 0), now)
     recorded["by_owner"] = dict(list(recorded["by_owner"].items())[-sources.MAX_FACTORIES:])
     store.put("meta", "closures", recorded)
     coordinators = [r for r in sampled if r["role"] == "foreman"]

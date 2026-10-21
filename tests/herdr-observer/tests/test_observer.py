@@ -464,6 +464,25 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(metrics["abandoned_task_closures"], 1)
         self.assertNotIn("merged_task_closures", metrics)
 
+    def test_factory_churn_preserves_active_watermarks_and_never_replays_evicted_history(self):
+        roles, quota, _, contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
+        def receipt(owner, sequence=1, offset=10):
+            return {"owner": owner, "sequence": sequence, "at": stamp(self.now + offset),
+                    "task": owner, "outcome": "merged"}
+        def sample(receipts, offset):
+            with patch.object(sources, "MAX_FACTORIES", 2), \
+                    patch.object(sources, "owners", return_value=(roles, quota, receipts, contexts, gaps)):
+                self.tick(self.now + offset)
+            return collect.evidence(self.store, self.now + offset)["total_metrics"]["merged_task_closures"]
+        self.assertEqual(sample([receipt("a"), receipt("b")], 60), 2)
+        self.assertEqual(sample([receipt("a"), receipt("c")], 120), 3)
+        self.assertEqual(set(self.record("closures")["by_owner"]), {"a", "c"})
+        self.assertEqual(sample([receipt("a"), receipt("b")], 180), 3)
+        self.assertIn("closure_history_before_eviction_floor_excluded", self.record("current")["coverage"])
+        self.assertEqual(sample([receipt("a"), receipt("b"), receipt("b", 2, 181)], 240), 4)
+        self.assertEqual(sample([receipt("a"), receipt("c")], 300), 4)
+        self.assertEqual(sample([receipt("a"), receipt("c")], 360), 4)
+
     def test_claude_usage_stream_updates_and_tool_ids_are_not_double_counted(self):
         cursor = {"provider": "claude"}
         message = {"id": "response", "model": "claude-model", "usage": {"input_tokens": 10, "output_tokens": 4},

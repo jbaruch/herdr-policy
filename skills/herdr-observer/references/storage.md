@@ -55,6 +55,9 @@ preserves pending jobs, schedules and report receipts while trimming cached bins
 and source projections. A source-baseline eviction advances the coverage floor;
 a resumed session cannot re-charge its evicted history. Evidence and status show
 retention exclusions. Merged, abandoned and unknown closure counters stay separate.
+Closure watermarks refresh current owners before eviction. `meta.closures`
+retains `evicted_through` as the history floor for missing owner baselines;
+returning owners exclude older receipts and expose that exclusion as coverage.
 
 Only the supplied private `draft_path` is used for report drafts. `report` saves
 a bounded UTF-8 Markdown file under `reports/`, records its receipt before a
