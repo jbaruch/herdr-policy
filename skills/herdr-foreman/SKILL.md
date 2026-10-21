@@ -2,9 +2,10 @@
 name: herdr-foreman
 description: >
   Coordinate concurrent Herdr delivery, supervise or recover the crew, and release
-  verified work. Retrieve named readiness, cost, GitHub evidence, lessons, handoffs,
-  retrospectives or coordination measurements. Live work requires a verified foreman;
-  workers retain their assignment.
+  verified work. Use when asked to assign Herdr work, run crew tasks in parallel,
+  recover a stuck worker, ship verified changes, or look up Herdr readiness, task
+  cost, GitHub evidence, lessons, handoff notes, retrospectives or coordination
+  metrics. Live coordination requires a verified foreman; workers retain their assignment.
 ---
 
 # Herdr Foreman Skill

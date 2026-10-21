@@ -1460,7 +1460,7 @@ The explicit reset request authorizes retiring its obsolete executor through
 host control; no completion, pause or blocked status represents retirement.
 Only a matching verified generation carries accounting into the next reset.
 `foreman-reset-status --stow <id> [--pane <pane>]` emits one bounded selected
-receipt and charges the normal context allowance; it prints no objective or
+receipt under the per-response output bound; it prints no objective or
 history. A missing or ambiguous selection refuses. Its output is a receipt,
 not a substitute for live host/owner verification.
 
