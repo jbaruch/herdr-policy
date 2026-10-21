@@ -1,7 +1,8 @@
 """Goal RPC against an existing Codex app-server, never a second server.
 
 The local control socket speaks WebSocket over Unix, not JSONL. Only the
-goal methods and read-only thread status are used. Errors contain bounded
+goal methods, bounded thread metadata and exact-turn interruption are used.
+Errors contain bounded
 local reasons, never server payloads or goal text. Protocol compatibility:
 Codex 0.163 app-server schema; recheck with each Codex compatibility update.
 """

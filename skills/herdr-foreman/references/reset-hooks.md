@@ -78,6 +78,8 @@ binding. Verify changed stows and replacement process identities refuse too.
   Read both thread goals and the selected `foreman-reset-status` receipt. The
   outgoing goal must be absent, the successor must retain the objective and
   remaining budget, and only it may continue after the outgoing turn ends.
+  Include an outgoing continuation already running at handoff: its exact turn
+  must be interrupted and its final usage retained before successor admission.
   Repeat the reset after spending part of the successor budget; carried usage
   must accumulate without replenishing that budget. Repeat with no token cap.
   Lose a host mutation response in the deterministic protocol fixture, restore

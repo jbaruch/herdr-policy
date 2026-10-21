@@ -114,23 +114,38 @@ class HostGoalTest(unittest.TestCase):
                                   connect=self.host.connect, discover=lambda: "/fixture/codex.sock")
         self.assertEqual(second["carried_tokens"], 5)
 
-    def test_outgoing_turn_must_end_before_the_old_goal_is_cleared(self):
+    def test_busy_outgoing_turn_is_interrupted_by_exact_id_and_final_usage_is_carried(self):
         self.host.active.add("old")
-        def end(_seconds):
+        def end():
             self.assertIn("old", self.host.goals)
             self.host.goals["old"].update(tokensUsed=400, timeUsedSeconds=20)
-            self.host.active.remove("old")
-        self.deliver(sleep=end)
+        self.host.on_interrupt = end
+        self.deliver()
         self.assertEqual(self.receipt["carried_tokens"], 400)
         self.assertEqual(self.host.goals["new"]["tokenBudget"], 600)
+        self.assertEqual(self.host.goals["new"]["status"], "active")
+        interrupted = [params for method, params in self.host.calls if method == "turn/interrupt"]
+        self.assertEqual(interrupted, [{"threadId": "old", "turnId": "outgoing-turn"}])
 
     def test_a_turn_that_does_not_end_refuses_without_clearing_or_creating_goals(self):
         self.host.active.add("old")
+        self.host.ignore_interrupt = True
         clock = iter((0, 31))
         with self.assertRaises(GoalError):
             self.deliver(sleep=lambda _: None, clock=lambda: next(clock))
         self.assertIsNotNone(self.host.goal("old"))
         self.assertIsNone(self.host.goal("new"))
+
+    def test_lost_interrupt_response_recovers_without_another_turn_or_fake_goal_pause(self):
+        self.host.active.add("old")
+        self.host.lost = "turn/interrupt"
+        with self.assertRaises(GoalError):
+            self.deliver()
+        self.assertEqual(self.receipt["phase"], "quiescing")
+        self.assertEqual(self.receipt["retiring_turn"], "outgoing-turn")
+        self.deliver()
+        self.assertEqual(self.host.goals["new"]["status"], "active")
+        self.assertEqual(sum(method == "turn/interrupt" for method, _ in self.host.calls), 1)
 
     def test_missing_host_control_refuses_preflight(self):
         with self.assertRaises(GoalError):

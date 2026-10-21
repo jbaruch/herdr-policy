@@ -19,6 +19,8 @@ class GoalHost:
         self.continuations = []
         self.lost: str | None = None
         self.before_clear: Callable[[], None] | None = None
+        self.on_interrupt: Callable[[], None] | None = None
+        self.ignore_interrupt = False
 
     def __enter__(self):
         return self
@@ -48,6 +50,18 @@ class GoalHost:
             result = {"goal": self.goal(thread)}
         elif method == "thread/read":
             result = {"thread": {"id": thread, "status": {"type": "active" if thread in self.active else "idle"}}}
+        elif method == "thread/turns/list":
+            result = {"data": [{"id": "outgoing-turn", "status": "inProgress"}] if thread in self.active else []}
+        elif method == "turn/interrupt":
+            if params["turnId"] != "outgoing-turn":
+                raise unavailable("fixture_wrong_turn")
+            if self.on_interrupt:
+                self.on_interrupt()
+            if not self.ignore_interrupt:
+                self.active.discard(thread)
+            if thread in self.goals:
+                self.goals[thread]["status"] = "paused"
+            result = {}
         else:
             raise AssertionError("Unexpected host method: " + method)
         if self.lost == method:

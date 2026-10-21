@@ -20,9 +20,9 @@ from .codex_goals import AppServer, control_socket, unavailable, valid_goal
 
 QUIESCE_BUDGET_SEC = 30
 QUIESCE_POLL_SEC = 0.2
-PHASES = {"prepared", "retiring", "retired", "restoring", "restored", "verified"}
+PHASES = {"prepared", "quiescing", "retiring", "retired", "restoring", "restored", "verified"}
 FIELDS = {"schema_version", "runtime", "socket", "source_thread", "source_goal", "target_thread",
-          "target_created_at", "phase", "carried_tokens", "carried_seconds"}
+          "target_created_at", "phase", "carried_tokens", "carried_seconds", "retiring_turn", "resume_status"}
 
 
 def valid(value):
@@ -38,6 +38,10 @@ def valid(value):
             and (value["source_goal"] is None or valid_goal(value["source_goal"], value["source_thread"]))
             and (value["target_thread"] is None or isinstance(value["target_thread"], str) and bool(value["target_thread"]))
             and (value["target_created_at"] is None or type(value["target_created_at"]) is int and value["target_created_at"] >= 0)
+            and (value["retiring_turn"] is None or isinstance(value["retiring_turn"], str) and bool(value["retiring_turn"]))
+            and (value["resume_status"] is None if value["source_goal"] is None
+                 else isinstance(value["resume_status"], str) and value["resume_status"] in
+                 {"active", "paused", "blocked", "usageLimited", "budgetLimited"})
             and isinstance(value["phase"], str) and value["phase"] in PHASES
             and all(type(value[key]) is int and value[key] >= 0 for key in ("carried_tokens", "carried_seconds")))
 
@@ -70,15 +74,21 @@ def prepare(runtime, session, previous=(), *, connect=None, discover=None):
             break
     return {"schema_version": 1, "runtime": runtime, "socket": path, "source_thread": session["value"],
             "source_goal": copy.deepcopy(goal), "target_thread": None, "target_created_at": None, "phase": "prepared",
+            "retiring_turn": None, "resume_status": goal["status"] if goal else None,
             "carried_tokens": carried_tokens + (goal["tokensUsed"] if goal else 0),
             "carried_seconds": carried_seconds + (goal["timeUsedSeconds"] if goal else 0)}
 
 
-def refresh(receipt, host):
+def refresh(receipt, host, *, interrupted=False):
     """Keep final outgoing usage; a changed goal, lifecycle or budget is new authority."""
     current = host.goal(receipt["source_thread"])
     before = receipt["source_goal"]
-    if not same_goal(current, before):
+    observed = current
+    if interrupted and current is not None and before is not None and current["status"] == "paused":
+        # A real turn/interrupt can pause the host goal. Restore the original
+        # lifecycle on the successor, never manufacture a pause to retire it.
+        observed = {**current, "status": before["status"]}
+    if not same_goal(observed, before):
         raise unavailable("source_goal_changed")
     if current is not None:
         for stored, native in (("carried_tokens", "tokensUsed"), ("carried_seconds", "timeUsedSeconds")):
@@ -96,7 +106,7 @@ def remaining(receipt):
 def matches_target(receipt, goal, target):
     source = receipt["source_goal"]
     return (goal is not None and source is not None and goal["threadId"] == target
-            and goal["objective"] == source["objective"] and goal["status"] == source["status"]
+            and goal["objective"] == source["objective"] and goal["status"] == receipt["resume_status"]
             and goal["tokenBudget"] == remaining(receipt)
             and (receipt["target_created_at"] is None or receipt["target_created_at"] == goal["createdAt"]))
 
@@ -115,6 +125,28 @@ def quiescent(host, thread_id, sleep, clock):
         sleep(QUIESCE_POLL_SEC)
 
 
+def retire_turn(receipt, host, persist, sleep, clock):
+    """Interrupt only the exact obsolete host turn, retaining final usage."""
+    refresh(receipt, host, interrupted=receipt["retiring_turn"] is not None)
+    thread = host.call("thread/read", {"threadId": receipt["source_thread"]}).get("thread")
+    if not isinstance(thread, dict) or thread.get("id") != receipt["source_thread"]:
+        raise unavailable("invalid_source_thread")
+    status = thread.get("status")
+    if isinstance(status, dict) and status.get("type") == "active":
+        turns = host.call("thread/turns/list", {"threadId": receipt["source_thread"], "limit": 1,
+                                               "sortDirection": "desc", "itemsView": "notLoaded"}).get("data")
+        turn = turns[0] if isinstance(turns, list) and len(turns) == 1 else None
+        if (not isinstance(turn, dict) or turn.get("status") != "inProgress"
+                or not isinstance(turn.get("id"), str) or not turn["id"]
+                or receipt["retiring_turn"] not in (None, turn["id"])):
+            raise unavailable("source_turn_changed")
+        receipt["retiring_turn"] = turn["id"]
+        persist()
+        host.call("turn/interrupt", {"threadId": receipt["source_thread"], "turnId": turn["id"]})
+    quiescent(host, receipt["source_thread"], sleep, clock)
+    refresh(receipt, host, interrupted=receipt["retiring_turn"] is not None)
+
+
 def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=time.monotonic):
     """Complete/recover only this authenticated reset's journaled host handoff."""
     if not valid(receipt) or receipt is None:
@@ -125,11 +157,14 @@ def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=
         raise unavailable("target_thread_changed")
     with (connect or AppServer)(receipt["socket"]) as host:
         if receipt["phase"] == "prepared":
-            quiescent(host, receipt["source_thread"], sleep, clock)
             refresh(receipt, host)
             if host.goal(target) is not None:
                 raise unavailable("target_goal_already_exists")
-            receipt.update(target_thread=target, phase="retiring")
+            receipt.update(target_thread=target, phase="quiescing")
+            persist()
+        if receipt["phase"] == "quiescing":
+            retire_turn(receipt, host, persist, sleep, clock)
+            receipt["phase"] = "retiring"
             persist()
         if receipt["phase"] == "retiring":
             current = host.goal(receipt["source_thread"])
@@ -162,7 +197,7 @@ def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=
                 if goal is None:
                     source = receipt["source_goal"]
                     host.call("thread/goal/set", {"threadId": target, "objective": source["objective"],
-                                                 "status": source["status"], "tokenBudget": remaining(receipt), "origin": "user"})
+                                                 "status": receipt["resume_status"], "tokenBudget": remaining(receipt), "origin": "user"})
                     goal = host.goal(target)
                 if goal is None or not matches_target(receipt, goal, target):
                     raise unavailable("target_goal_changed")

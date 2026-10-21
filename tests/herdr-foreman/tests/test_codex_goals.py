@@ -151,6 +151,16 @@ class CodexGoalRPCTest(unittest.TestCase):
         with AppServer(peer.path) as client:
             self.assertEqual(client.goal("old"), goal())
 
+    def test_running_outgoing_continuation_is_interrupted_over_the_actual_rpc_protocol(self):
+        peer = self.peer()
+        peer.host.active.add("old")
+        receipt = host_goals.prepare("codex", {"kind": "id", "value": "old"}, discover=lambda: peer.path)
+        host_goals.transfer(receipt, "new", lambda: None)
+        self.assertNotIn("old", peer.host.active)
+        self.assertEqual(peer.host.goals["new"]["status"], "active")
+        self.assertIsNone(peer.host.goal("old"))
+        self.assertEqual(receipt["retiring_turn"], "outgoing-turn")
+
     def test_64_bit_frame_length_is_supported_within_the_message_budget(self):
         peer = self.peer(response={"result": {"padding": "x" * 70000}})
         with AppServer(peer.path) as client:

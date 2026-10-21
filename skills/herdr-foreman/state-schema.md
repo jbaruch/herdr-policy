@@ -1441,11 +1441,14 @@ Codex goal and prove nothing about an external scheduler. Codex receipts contain
 | `socket` | Absolute existing daemon control socket selected during read-only preflight |
 | `source_thread`, `source_goal` | Original native ID and its authoritative host goal snapshot, or null when no goal exists. Snapshot fields are `threadId`, `objective`, `status`, nullable `tokenBudget`, `tokensUsed`, `timeUsedSeconds`, `createdAt`, `updatedAt`; additional host fields are preserved |
 | `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration |
-| `phase` | `prepared`, `retiring`, `retired`, `restoring`, `restored`, `verified`; intermediate intent is never proof the corresponding host mutation succeeded |
+| `phase` | `prepared`, `quiescing`, `retiring`, `retired`, `restoring`, `restored`, `verified`; intermediate intent is never proof the corresponding host mutation succeeded |
+| `retiring_turn`, `resume_status` | Exact outgoing turn ID selected for host interruption, or null; original goal lifecycle restored on the successor, or null with no source goal. A real interruption may pause the outgoing host goal; it never changes the saved objective's intended lifecycle |
 | `carried_tokens`, `carried_seconds` | Nonnegative cumulative usage from prior executors of this goal. The successor's native counters remain native; its token cap is only the remaining allowance |
 
 Each host mutation is preceded by a saved phase. Recovery reads live source and
 target state, preserves changed goals and never blindly repeats a lost mutation.
+An already-running obsolete continuation is interrupted by its exact host turn
+ID before final usage is captured; no new turn is started to stop it.
 The explicit reset request authorizes retiring its obsolete executor through
 host control; no completion, pause or blocked status represents retirement.
 Only a matching verified generation carries accounting into the next reset.

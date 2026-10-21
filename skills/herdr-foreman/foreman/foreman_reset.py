@@ -612,7 +612,8 @@ def status(state_path, stow, pane=None):
         summary = {"schema_version": 1, "phase": "unverified"} if goal is None else {
             key: goal[key] for key in ("schema_version", "runtime", "phase")}
         if goal is not None and goal["runtime"] == "codex":
-            summary.update({key: goal[key] for key in ("source_thread", "target_thread", "carried_tokens", "carried_seconds")})
+            summary.update({key: goal[key] for key in ("source_thread", "target_thread", "carried_tokens", "carried_seconds",
+                                                       "retiring_turn", "resume_status")})
             summary["remaining_budget"] = host_goals.remaining(goal)
         return context_output.enforce_budget(
             {"schema_version": RESET_SCHEMA_VERSION, "pane_id": row["pane_id"], "stow": stow,
