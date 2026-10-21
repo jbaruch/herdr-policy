@@ -28,6 +28,13 @@ The transfer never starts another app-server or changes the user's goal status
 to represent executor retirement. Native Claude/Grok retain their session reset
 without creating an external host goal; external schedulers need their own
 supported integration before a reset can claim that goal's handoff.
+Codex 0.163's installed `ThreadGoalClearParams` supports `threadId` and
+`origin`, with no conditional generation or compare-and-clear transaction.
+The Herdr supervision lock serializes its handoff owners, and the transfer
+rechecks the live goal after its last journal write, immediately before clear.
+It refuses observed changes. Concurrent edits by an unrelated host client are
+outside that API's transaction guarantees; this handshake claims no atomicity
+against such clients.
 Only a verified input receives native `additionalContext` authenticating the
 planned continuation. It preserves the saved user scope, questions and holds;
 it grants no new task authority. This distinguishes a proved machine handoff

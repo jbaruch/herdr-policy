@@ -178,6 +178,12 @@ def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=
                 quiescent(host, receipt["source_thread"], sleep, clock)
                 refresh(receipt, host)
                 persist()
+                # A journal write can block. Revalidate after it, immediately
+                # before the RPC, rather than acting on the persisted snapshot.
+                # The native API has no compare-and-clear parameter; this is
+                # live verification, not a transaction against external clients.
+                if host.goal(receipt["source_thread"]) != receipt["source_goal"]:
+                    raise unavailable("source_goal_changed")
                 # --explicit-reset records the operator's requested handoff.
                 # Clearing an obsolete executor is not completion or a pause.
                 result = host.call("thread/goal/clear", {"threadId": receipt["source_thread"], "origin": "user"})

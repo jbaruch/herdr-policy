@@ -85,6 +85,18 @@ class HostGoalTest(unittest.TestCase):
         self.assertEqual(self.receipt["phase"], "verified")
         self.assertEqual(sum(method == "thread/goal/clear" for method, _ in self.host.calls), 1)
 
+    def test_changed_source_during_the_final_journal_write_refuses_before_clear(self):
+        def persist():
+            final_write = self.receipt["phase"] == "retiring" and self.saved[-1]["phase"] == "retiring"
+            self.persist()
+            if final_write:
+                self.host.goals["old"].update(objective="New operator objective", createdAt=300)
+        with self.assertRaises(GoalError):
+            transfer.transfer(self.receipt, "new", persist, connect=self.host.connect)
+        self.assertEqual(self.host.goals["old"]["objective"], "New operator objective")
+        self.assertIsNone(self.host.goal("new"))
+        self.assertFalse(any(method == "thread/goal/clear" for method, _ in self.host.calls))
+
     def test_lost_restore_response_does_not_reset_usage_on_reconciliation(self):
         self.host.lost = "thread/goal/set"
         with self.assertRaises(GoalError):
