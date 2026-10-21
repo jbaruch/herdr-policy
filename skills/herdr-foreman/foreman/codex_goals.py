@@ -14,6 +14,7 @@ import base64
 import hashlib
 import json
 import os
+import random
 import socket
 import stat
 import struct
@@ -29,6 +30,11 @@ MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_HEADER_BYTES = 16384
 MAX_NOTIFICATIONS = 128
 SUPPORTED_CODEX_VERSIONS = ("0.163.0",)
+# An explicit ingress rejection proves the request was not admitted. Never
+# replay a transport failure or any other response with uncertain effects.
+OVERLOAD_CODE = -32001
+OVERLOAD_DELAY_SEC = 0.1
+OVERLOAD_MAX_DELAY_SEC = 1
 
 
 class GoalError(StateError):
@@ -181,22 +187,34 @@ class AppServer:
         raise unavailable("excessive_rpc_frames")
 
     def call(self, method, params):
-        self.sequence += 1
         self.deadline = min(self.operation_deadline, time.monotonic() + RPC_BUDGET_SEC)
+        delay = OVERLOAD_DELAY_SEC
         try:
-            self._send({"id": self.sequence, "method": method, "params": params})
-            for _ in range(MAX_NOTIFICATIONS):
-                message = self._message()
-                if not isinstance(message, dict):
-                    raise unavailable("invalid_rpc_response")
-                if message.get("id") != self.sequence:
-                    continue
-                if "error" in message or not isinstance(message.get("result"), dict):
-                    raise unavailable("rpc_rejected")
-                return message["result"]
+            while True:
+                self.sequence += 1
+                self._send({"id": self.sequence, "method": method, "params": params})
+                for _ in range(MAX_NOTIFICATIONS):
+                    message = self._message()
+                    if not isinstance(message, dict):
+                        raise unavailable("invalid_rpc_response")
+                    if message.get("id") != self.sequence:
+                        continue
+                    error = message.get("error")
+                    if ("result" not in message and isinstance(error, dict)
+                            and type(error.get("code")) is int and error["code"] == OVERLOAD_CODE):
+                        pause = random.uniform(delay / 2, delay)
+                        if pause >= self.deadline - time.monotonic():
+                            raise unavailable("rpc_overloaded")
+                        time.sleep(pause)
+                        delay = min(delay * 2, OVERLOAD_MAX_DELAY_SEC)
+                        break
+                    if "error" in message or not isinstance(message.get("result"), dict):
+                        raise unavailable("rpc_rejected")
+                    return message["result"]
+                else:
+                    raise unavailable("excessive_rpc_notifications")
         except (OSError, ValueError, UnicodeDecodeError):
             raise unavailable("rpc_failed") from None
-        raise unavailable("excessive_rpc_notifications")
 
     def goal(self, thread):
         result = self.call("thread/goal/get", {"threadId": thread})

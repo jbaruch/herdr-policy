@@ -34,6 +34,7 @@ class SocketHost:
         self.fragment = fragment
         self.invalid_upgrade = invalid_upgrade
         self.response = response
+        self.requests = []
         self.worker = threading.Thread(target=self.serve)
         self.worker.start()
 
@@ -86,10 +87,13 @@ class SocketHost:
                 message = json.loads(data)
                 if "id" not in message:
                     continue
+                self.requests.append(message)
                 if message["method"] == "initialize":
                     result = {"id": message["id"], "result": {}}
                 elif self.response is not None:
-                    result = {"id": message["id"], **self.response}
+                    response = self.response(message) if callable(self.response) else self.response
+                    assert isinstance(response, dict), "protocol fixture must return an RPC object"
+                    result = {"id": message["id"], **response}
                 else:
                     result = {"id": message["id"], "result": self.host.call(message["method"], message["params"])}
                 encoded = json.dumps(result).encode()
@@ -190,6 +194,52 @@ class CodexGoalRPCTest(unittest.TestCase):
             with self.assertRaises(GoalError) as caught:
                 client.goal("old")
         self.assertNotIn("fixture-sensitive-provider-text", str(caught.exception))
+        self.assertEqual([r["method"] for r in peer.requests], ["initialize", "thread/goal/get"])
+
+    def test_explicit_overload_retries_with_jitter_and_fresh_ids(self):
+        replies = iter(({"error": {"code": -32001, "message": "fixture-sensitive-text"}},
+                        {"error": {"code": -32001}}, {"result": {"goal": goal()}}))
+        peer = self.peer(response=lambda _: next(replies))
+        with AppServer(peer.path) as client, patch("foreman.codex_goals.time.sleep") as sleep, \
+                patch("foreman.codex_goals.random.uniform", side_effect=lambda low, high: high) as jitter:
+            self.assertEqual(client.goal("old"), goal())
+        self.assertEqual([c.args for c in jitter.call_args_list], [(0.05, 0.1), (0.1, 0.2)])
+        self.assertEqual([c.args for c in sleep.call_args_list], [(0.1,), (0.2,)])
+        self.assertEqual([r["id"] for r in peer.requests], [1, 2, 3, 4])
+
+    def test_repeated_overload_does_not_extend_the_existing_deadline(self):
+        client = AppServer("/unused-fixture.sock")
+        client.operation_deadline = 100.01
+        response = {"id": 1, "error": {"code": -32001, "message": "fixture-sensitive-text"}}
+        with patch("foreman.codex_goals.time.monotonic", return_value=100), \
+                patch("foreman.codex_goals.time.sleep") as sleep, \
+                patch.object(client, "_send") as send, patch.object(client, "_message", return_value=response), \
+                self.assertRaisesRegex(GoalError, "rpc_overloaded") as caught:
+            client.goal("old")
+        sleep.assert_not_called()
+        send.assert_called_once()
+        self.assertEqual(client.deadline, 100.01)
+        self.assertNotIn("fixture-sensitive-text", str(caught.exception))
+
+    def test_a_lost_mutation_response_is_never_replayed(self):
+        def lose_response(message):
+            peer.host.call(message["method"], message["params"])
+            raise EOFError()
+        peer = self.peer(response=lose_response)
+        with AppServer(peer.path) as client, patch("foreman.codex_goals.time.sleep") as sleep:
+            with self.assertRaises(GoalError):
+                client.call("thread/goal/clear", {"threadId": "old", "origin": "user"})
+            sleep.assert_not_called()
+        self.assertIsNone(peer.host.goal("old"))
+        self.assertEqual([r["method"] for r in peer.requests], ["initialize", "thread/goal/clear"])
+
+    def test_an_overload_error_with_a_result_is_ambiguous_and_never_replayed(self):
+        peer = self.peer(response={"error": {"code": -32001}, "result": {"cleared": True}})
+        with AppServer(peer.path) as client, patch("foreman.codex_goals.time.sleep") as sleep:
+            with self.assertRaisesRegex(GoalError, "rpc_rejected"):
+                client.call("thread/goal/clear", {"threadId": "old", "origin": "user"})
+            sleep.assert_not_called()
+        self.assertEqual([r["method"] for r in peer.requests], ["initialize", "thread/goal/clear"])
 
     def test_unavailable_socket_refuses_without_starting_a_server(self):
         with tempfile.TemporaryDirectory(prefix="goal-rpc-", dir="/tmp") as directory:
