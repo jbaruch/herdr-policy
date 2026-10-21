@@ -50,6 +50,12 @@ class Client:
             raise ValueError("unavailable")
         return {"agents": self.agents}
 
+    def agent_get(self, name):
+        matches = [row for row in self.agents if row.get("name") == name]
+        if len(matches) != 1:
+            raise ValueError("named agent unavailable")
+        return matches[0]
+
     def prompt(self, name, *, recovery=False):
         self.prompts.append(name)
         self.recoveries += int(recovery)
@@ -160,6 +166,48 @@ class ObserverTest(unittest.TestCase):
         self.assertFalse(self.due()["wake_agent"])
         self.assertIsNone(self.record("current")["stall_since"])
 
+    def test_agent_focus_excludes_other_agents_and_shared_factory_context(self):
+        self.log()
+        self.log(self.worker)
+        self.tick()
+        self.log(records=[self.event("response_item", {"type": "function_call", "call_id": "foreman", "name": "exec"})])
+        self.log(self.worker, [self.event("response_item", {"type": "function_call", "call_id": "worker", "name": "exec"})])
+        self.tick(self.now + 60)
+        view = collect.evidence(self.store, self.now + 60, agent="developer")
+        self.assertEqual(view["total_metrics"]["tool_calls"], 1)
+        self.assertEqual(view["scope"], {"kind": "agent", "name": "developer", "matched": True})
+        self.assertEqual([r["name"] for r in view["current"]["agents"]], ["developer"])
+        self.assertEqual([r["key"] for r in view["log_coverage"]], [native.session_key(native.identity(self.worker))])
+        self.assertEqual(view["quota_history"], [])
+        self.assertNotIn("factories", view["current"])
+        self.assertNotIn("quota", view["current"])
+        self.assertTrue(view["omitted"]["shared_fleet_context"])
+        self.assertNotIn(str(self.owner), json.dumps(view))
+        self.assertNotIn(self.foreman["agent_session"]["value"], json.dumps(view))
+        missing = collect.evidence(self.store, self.now + 60, agent="typo")
+        self.assertFalse(missing["scope"]["matched"])
+        for field in ("total_metrics", "log_coverage", "quota_history", "profiles", "source_locators"):
+            self.assertFalse(missing[field])
+        self.assertEqual(missing["current"]["agents"], [])
+
+    def test_acknowledgement_retry_preserves_a_newer_pending_job(self):
+        job = self.due()["data"]["job"]
+        with self.store.transaction():
+            first = cli.acknowledge(self.store, job["id"], self.now + 1000)
+        self.assertFalse(first["already_acknowledged"])
+        schedule = self.record("schedule")
+        with self.store.transaction():
+            self.store.put("meta", "pending", {"id": "newer-job"})
+            repeated = cli.acknowledge(self.store, job["id"], self.now + 2000)
+        self.assertTrue(repeated["already_acknowledged"])
+        self.assertEqual(self.record("pending")["id"], "newer-job")
+        self.assertEqual(self.record("schedule"), schedule)
+        with self.store.transaction():
+            self.store.put("meta", "acknowledgements", {"jobs": [{}]})
+        with self.assertRaisesRegex(ValueError, "restore.*acknowledgement receipts"):
+            cli.acknowledge(self.store, job["id"], self.now + 3000)
+        self.assertEqual(self.record("pending")["id"], "newer-job")
+
     def test_native_session_moves_panes_without_replaying_log_costs(self):
         self.log()
         self.tick()
@@ -200,7 +248,7 @@ class ObserverTest(unittest.TestCase):
         who = {"kind": "id", "value": self.observer["agent_session"]["value"], "cwd": "/factory",
                "pane_id": self.observer["pane_id"], "herdr_env": "1"}
         env = {"XDG_STATE_HOME": str(self.cache.parent)}
-        self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env))
+        self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env, client=self.client))
         self.assertFalse(collect.dispatch(self.store, self.client, pending)["wake_agent"])
         self.assertEqual(self.client.prompts, [])
         with patch.dict(os.environ, {"HERDR_PANE_ID": self.observer["pane_id"]}):
@@ -590,21 +638,25 @@ class ObserverTest(unittest.TestCase):
         who = {"kind": "id", "value": self.observer["agent_session"]["value"], "cwd": "/factory",
                "pane_id": self.observer["pane_id"], "herdr_env": "1"}
         env = {"XDG_STATE_HOME": str(self.cache.parent), "HERDR_ENV": "1", "HERDR_PANE_ID": who["pane_id"]}
-        self.assertTrue(observer_role.matches(who, self.observer["agent_session"], env))
+        self.assertTrue(observer_role.matches(who, self.observer["agent_session"], env, client=self.client))
+        self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env, client=Client([{**self.observer, "name": "renamed"}])))
+        self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env, client=Client([])))
         row = self.observer
         class PaneClient:
             def pane_get(self, pane):
                 return row
+            def agent_get(self, name):
+                return row if row["name"] == name else {}
         with patch("foreman.progression_owner.verify_foreman", side_effect=AssertionError("observer must not run foreman workflow")):
             selected = role_context.select(ROOT / "skills/herdr-foreman", client=PaneClient(),
                                            environment=env, cwd="/factory", binding_root=self.root / "empty-bindings")
         self.assertEqual(selected["role"], "observer")
         self.assertLess(len(selected["context"].encode()), 4096)
         altered = {**who, "value": "other"}
-        self.assertFalse(observer_role.matches(altered, self.observer["agent_session"], {**env, "XDG_STATE_HOME": str(self.root / "missing")}))
+        self.assertFalse(observer_role.matches(altered, self.observer["agent_session"], {**env, "XDG_STATE_HOME": str(self.root / "missing")}, client=self.client))
         self.store.db.execute("PRAGMA user_version=99")
         self.store.db.commit()
-        self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env))
+        self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env, client=self.client))
         self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], 99)
 
     def test_all_row_readers_refuse_newer_and_nonobject_records(self):
@@ -623,6 +675,8 @@ class ObserverTest(unittest.TestCase):
         env = {"XDG_STATE_HOME": str(self.cache.parent)}
         originals = {key: self.record(key) for key in ("binding", "config")}
         cases = [("binding", []), ("config", []), ("binding", {**originals["binding"], "cwd": []}),
+                 ("binding", {k: v for k, v in originals["binding"].items() if k != "name"}),
+                 ("binding", {**originals["binding"], "name": ""}), ("binding", {**originals["binding"], "name": []}),
                  ("binding", {**originals["binding"], "identity": []}),
                  ("config", {**originals["config"], "states": {}}),
                  ("config", {**originals["config"], "states": [1]}),
@@ -634,7 +688,7 @@ class ObserverTest(unittest.TestCase):
                 self.store.db.execute("UPDATE meta SET value=? WHERE key=?", (json.dumps(value), key))
                 self.store.db.commit()
                 before = (self.cache / "observer.sqlite3").read_bytes()
-                self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env))
+                self.assertFalse(observer_role.matches(who, self.observer["agent_session"], env, client=self.client))
                 self.assertEqual((self.cache / "observer.sqlite3").read_bytes(), before)
 
     def test_private_storage_refuses_links_and_has_database_ceiling(self):

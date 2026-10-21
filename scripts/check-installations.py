@@ -102,10 +102,13 @@ def verify_role_context(project, skill, hook, environment, adapter: str | None =
     pane_file = binary / "pane.json"
     (binary / "herdr").write_text(
         "#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n"
-        "if sys.argv[1:3] != ['pane','get'] or sys.argv[3:] not in (['private-fixture-pane'],['private-observer-pane']): raise SystemExit(64)\n"
         "pane=json.loads(Path(__file__).with_name('pane.json').read_text())\n"
         "if pane.get('unavailable'): raise SystemExit(75)\n"
-        "print(json.dumps({'result':{'pane':pane}}))\n")
+        "if sys.argv[1:] == ['agent','get','private-observer']:\n"
+        "    print(json.dumps({'result':{'agent':{**pane,'name':'private-observer'}}}))\n"
+        "elif sys.argv[1:3] == ['pane','get'] and sys.argv[3:] in (['private-fixture-pane'],['private-observer-pane']):\n"
+        "    print(json.dumps({'result':{'pane':pane}}))\n"
+        "else: raise SystemExit(64)\n")
     (binary / "herdr").chmod(0o755)
     environment = {**environment, "PATH": str(binary) + os.pathsep + environment.get("PATH", ""),
                    "XDG_STATE_HOME": str(fixture / "state"), "XDG_CONFIG_HOME": str(fixture / "config"),

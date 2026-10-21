@@ -187,7 +187,7 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
             if any(row["resumed_at"] is None for row in data["holds"]):
                 return _result("recovery", "operator_hold", skill, verified=True, owner=selected)
             return _result("worker", "enrolled_native_worker", skill, verified=True, owner=selected)
-        if observer_role.matches(who, native, environment):
+        if observer_role.matches(who, native, environment, client=client):
             return _result("observer", "registered_native_observer", skill, verified=True)
         if data["binding"] is not None:
             return _result("unverified", "caller_is_not_bound_foreman", skill)

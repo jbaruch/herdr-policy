@@ -77,6 +77,13 @@ def evidence(store, now, *, hours=168, agent=None):
     current = store.get("meta", "current", {})
     quota_omitted = current.get("quota_omitted", 0)
     current = {**current, "agents": [r for r in current.get("agents", []) if agent is None or r["name"] == agent]}
+    if agent is not None:
+        # Shared topology/quota cannot be attributed to one named agent. Keep
+        # only that agent's current identity and explicitly omit fleet context.
+        current = {**{key: current[key] for key in ("at", "healthy") if key in current},
+                   "agents": current["agents"],
+                   "unverified_agents": [r for r in current.get("unverified_agents", []) if r.get("name") == agent]}
+        quota_omitted = 0
     per_hour = {}
     for row in rows:
         add(per_hour.setdefault(str(row["at"]), {}), row["metrics"])
@@ -86,6 +93,9 @@ def evidence(store, now, *, hours=168, agent=None):
     locators = [{"name": r["name"], "task": r.get("task"), **locator}
                 for r in rows for locator in r["locators"]]
     source_rows = store.rows("sources", start)
+    if agent is not None:
+        sessions = {r["session_key"] for r in rows + current["agents"] if r.get("session_key")}
+        source_rows = [r for r in source_rows if r["key"] in sessions and r.get("kind") != "quota"]
     coverage = [{"key": r["key"], "provider": r["provider"], "gaps": r.get("gap_history", []),
                  "backlog_bytes": r.get("backlog_bytes")} for r in source_rows if r.get("kind") != "quota"]
     quota_history = [{"profile": r["profile"], "provider": r["provider"], "window_group": r.get("window_group"),
@@ -101,8 +111,10 @@ def evidence(store, now, *, hours=168, agent=None):
         comparisons[label] = summary
     hours_view = dict(list(sorted(per_hour.items(), key=lambda entry: float(entry[0])))[-24:])
     result = {"schema_version": 1, "as_of": now, "bucket_start": start, "bucket_seconds": 3600,
+            "scope": {"kind": "fleet"} if agent is None else {"kind": "agent", "name": agent,
+                      "matched": bool(rows or current["agents"] or current["unverified_agents"])},
             "total_metrics": totals, "by_role": group_rows(rows, "role"),
-            "retention": store.get("meta", "retention", {}), "earliest_retained_bucket": min((r["at"] for r in rows), default=None),
+            "retention": store.get("meta", "retention", {}) if agent is None else {}, "earliest_retained_bucket": min((r["at"] for r in rows), default=None),
             "by_provider": group_rows(rows, "provider"), "by_hour": hours_view, "comparisons": comparisons,
             "by_agent": agents[:MAX_VIEW_ROWS], "profiles": all_profiles[:MAX_VIEW_ROWS],
             "source_locators": locators[-MAX_VIEW_ROWS:], "current": current,
@@ -111,13 +123,14 @@ def evidence(store, now, *, hours=168, agent=None):
                         "profiles": max(0, len(profiles) - MAX_VIEW_ROWS),
                         "locators": max(0, len(locators) - MAX_VIEW_ROWS),
                         "log_coverage": max(0, len(coverage) - MAX_VIEW_ROWS),
-                        "quota_history": max(0, len(quota_history) - MAX_VIEW_ROWS), "quota": quota_omitted},
+                        "quota_history": max(0, len(quota_history) - MAX_VIEW_ROWS), "quota": quota_omitted,
+                        "shared_fleet_context": agent is not None},
             "interpretation": ["sampled idle is not proof of eligible work or waste",
                                "recorded task closures are not deployment or user value",
                                "tokens are native counters where covered; output bytes and calls are proxies",
                                "quota measurements retain their source timestamps; missing usage is unknown",
                                "hour buckets overlap partial requested boundary hours",
-                               "observer overhead is included under the observer role"]}
+                               "observer overhead appears when the selected scope includes that role"]}
     return result
 
 

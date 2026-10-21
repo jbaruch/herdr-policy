@@ -18,7 +18,7 @@ import sys
 import time
 
 from . import collect, native, sources
-from .store import MAX_REPORT_BYTES, Store, default_home, private_directory, private_file
+from .store import MAX_ACKNOWLEDGEMENTS, MAX_REPORT_BYTES, Store, default_home, private_directory, private_file
 from foreman import observer_role
 from foreman.errors import ForemanError
 
@@ -204,6 +204,21 @@ def finish(store, job_id, now, kind=None):
     store.put("meta", "pending", {})
 
 
+def acknowledge(store, job_id, now):
+    receipts = store.get("meta", "acknowledgements", {"jobs": []})
+    jobs = receipts.get("jobs")
+    if (not isinstance(jobs, list) or len(jobs) > MAX_ACKNOWLEDGEMENTS
+            or any(not isinstance(receipt, dict) or not isinstance(receipt.get("id"), str)
+                   or not receipt["id"] for receipt in jobs)):
+        raise ValueError("restore the versioned observer acknowledgement receipts before retrying")
+    if any(receipt["id"] == job_id for receipt in jobs):
+        return {"ok": True, "job_id": job_id, "reported": False, "already_acknowledged": True}
+    finish(store, job_id, now)
+    receipts["jobs"] = (jobs + [{"id": job_id, "at": now}])[-MAX_ACKNOWLEDGEMENTS:]
+    store.put("meta", "acknowledgements", receipts)
+    return {"ok": True, "job_id": job_id, "reported": False, "already_acknowledged": False}
+
+
 def report(store, client, job_id, kind, path, now):
     verify(store, client)
     prior = store.get("reports", job_id)
@@ -306,9 +321,8 @@ def main(argv=None):
                               "latest_sample_at": store.get("meta", "current", {}).get("at"), "evidence_hours": EVIDENCE_HOURS}
                 elif args.action == "ack":
                     with store.transaction():
-                        finish(store, args.job, now)
+                        output = acknowledge(store, args.job, now)
                     (store.home / "drafts" / (args.job + ".md")).unlink(missing_ok=True)
-                    output = {"ok": True, "job_id": args.job, "reported": False}
                 elif args.action == "report":
                     output = report(store, client, args.job, args.kind, args.file, now)
                 else:

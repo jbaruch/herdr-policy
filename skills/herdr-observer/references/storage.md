@@ -36,6 +36,12 @@ ownership through that owner's reader, including during foreman outages. Foreman
 and worker contracts take precedence over observer registration. No reader here
 migrates a store or clears ownership.
 
+`meta.acknowledgements` retains bounded `jobs` receipts with `id` and `at` fields;
+its limit is owned by `store.py`. Retrying a retained acknowledgement returns
+success without clearing a newer job or advancing its schedule. An expired or
+unknown job is refused without effects. Report retry receipts use `reports`.
+The role reader requires the registered nonempty name to match the live pane.
+
 The collector owns one service lock and continuously reads Herdr topology,
 selected current owner metadata, existing quota snapshots and matching native
 logs. Source readers and their accepted owner schemas are documented in

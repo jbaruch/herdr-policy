@@ -67,7 +67,7 @@ repurposed by registering an observer. No live foreman is required to retain it.
     return None
 
 
-def matches(who, native, environment):
+def matches(who, native, environment, *, client):
     if any(who.get(field) != native.get(field) for field in ("kind", "value")):
         return False
     root = Path(environment.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "herdr-observer"
@@ -92,6 +92,7 @@ def matches(who, native, environment):
         saved = binding.get("identity")
         paths = config.get("states")
         if (not isinstance(saved, dict)
+                or not isinstance(binding.get("name"), str) or not binding["name"]
                 or any(not isinstance(saved.get(field), str) or not saved[field] for field in ("pane_id", "source", "agent", "kind", "value"))
                 or saved["source"] != "herdr:" + saved["agent"] or saved["kind"] not in ("id", "path")
                 or saved["kind"] == "path" and not Path(saved["value"]).is_absolute()
@@ -101,6 +102,15 @@ def matches(who, native, environment):
         identity = {"pane_id": who["pane_id"], **{k: native[k] for k in ("source", "agent", "kind", "value")}}
         if binding.get("identity") != identity or binding.get("cwd") != who["cwd"]:
             return False
-        return delivery_owner(who["pane_id"], paths, environment) is None
+        if delivery_owner(who["pane_id"], paths, environment) is not None:
+            return False
+        # PaneInfo has a label, not the registered agent name. Resolve only the
+        # saved name through AgentInfo and match it to this exact pane/session.
+        live = client.agent_get(binding["name"])
+        if not isinstance(live, dict) or live.get("name") != binding["name"] or live.get("pane_id") != who["pane_id"]:
+            return False
+        live_native = live.get("agent_session")
+        return (isinstance(live_native, dict) and live_native.get("pane_id", who["pane_id"]) == who["pane_id"]
+                and all(live_native.get(field) == native[field] for field in ("source", "agent", "kind", "value")))
     except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, ForemanError):
         return False
