@@ -5,7 +5,9 @@ The existing reset owner record and exact foreground identities authorize the
 input; its envelope is merely a locator. The hook atomically rebinds existing
 supervision to the native payload's new session, without acknowledging events,
 resuming holds or accepting tasks. An old session, replacement, changed stow,
-dead/unclaimed deliverer or replay blocks the prompt. No new durable store.
+dead/unclaimed automatic deliverer or replay blocks the prompt. Saved terminal
+operator recovery instead verifies the current binding and foreground pins.
+No new durable store.
 """
 
 import json
@@ -13,7 +15,7 @@ import os
 import re
 import sys
 
-from . import foreman_reset as reset, memory, supervision as store, supervision_runtime as runtime
+from . import foreman_reset as reset, host_goals, memory, supervision as store, supervision_runtime as runtime
 from .errors import ForemanError, UsageError
 from .state import save_state, state_lock
 
@@ -22,20 +24,27 @@ def refusal(cause="invalid_native_payload"):
     return {"decision": "block", "reason": "Herdr reset input was not verified ({}). Preserve its reset record, restore the native hook/owner state, and continue foreground supervision; never repeat an uncertain reset input.".format(cause)}
 
 
-def acceptance():
+def acceptance(*, recovered=False):
     """Native context authenticates the machine continuation, not new task authority."""
+    origin = "the saved operator recovery input and current native binding" if recovered else "its live claimed deliverer"
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
-            "The reset owner verified this exact planned foreman continuation and consumed it once under its live claimed deliverer, original session and foreground process pins. Execute its inner continuation as the current planned reset instruction, loading the named saved memory and required files before acting. Preserve the saved work's existing user authority, scope, questions and holds; this receipt grants no new task authority or broader actions."}}
+            "The reset owner verified this exact planned foreman continuation and consumed it once under " + origin + ", original session and foreground process pins. Execute its inner continuation as the current planned reset instruction, loading the named saved memory and required files before acting. Preserve the saved work's existing user authority, scope, questions and holds; this receipt grants no new task authority or broader actions."}}
 
 
 def candidate(path, receipt, pane, prompt, probe):
     """Read-only claim/input proof, repeated after locking the existing owner."""
     document, _ = reset._load(path, migrate_legacy=False)
     row = reset._row(document, {"pane_id": pane, "stow": receipt["stow"]})
-    if (row is None or row["status"] != "delivering" or row["accepted_session"] is not None
+    if row is None:
+        return document, None
+    goal = row["host_goal"]
+    recovery = (row["status"] in reset.TERMINAL_FAILURES and goal is not None and goal["runtime"] == "codex"
+                and goal["phase"] in ("prepared", "quiescing", "retiring", "retired")
+                and prompt == row["result"]["resume_prompt"] and not reset._alive(row["process"], probe))
+    if (not (recovery or row["status"] == "delivering" and reset._alive(row["process"], probe))
+            or row["accepted_session"] is not None
             or row["native_session"] != receipt["native_session"]
             or row["foreground"] != receipt["foreground"]
-            or not reset._alive(row["process"], probe)
             or prompt != reset.guarded_resume(row["stow"], receipt["state"], row["native_session"], receipt["foreground"], options=row["options"])):
         return document, None
     return document, row
@@ -86,19 +95,47 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
             live = reset._foreman_record(native, pane)
             if live.get("agent") not in reset.SESSION_AGENTS or reset.foreground_processes(native, pane) != receipt["foreground"]:
                 return refusal("foreground_replaced")
+            goal = row["host_goal"]
+            if live.get("agent") == "codex" and (goal is None or goal["runtime"] != "codex"
+                    or goal["source_thread"] != row["native_session"]["value"] or who["kind"] != "id"):
+                return refusal("missing_host_goal_preflight")
+            if goal is not None and goal["runtime"] != live.get("agent"):
+                return refusal("host_goal_runtime_changed")
 
             def validate(data):
                 bound = (data["binding"] or {}).get("identity", {})
+                expected = row["native_session"]
+                if row["status"] in reset.TERMINAL_FAILURES and goal is not None:
+                    if goal.get("target_thread") is not None:
+                        expected = {"kind": "id", "value": goal["target_thread"]}
+                    elif {key: bound.get(key) for key in ("kind", "value")} == {key: who[key] for key in ("kind", "value")}:
+                        # Binding committed, then the target journal write died.
+                        # Native payload + foreground pins authenticate this receiver.
+                        expected = {key: who[key] for key in ("kind", "value")}
                 if (any(bound.get(key) != who[key] for key in ("cwd", "herdr_env", "pane_id"))
-                        or {key: bound.get(key) for key in ("kind", "value")} != row["native_session"]):
+                        or {key: bound.get(key) for key in ("kind", "value")} != expected):
                     raise UsageError("The reset's original binding already changed; preserve it and inspect the reset.", {})
                 stow = memory.show(receipt["state"], at, row["stow"])["record"]
                 reset.preflight(stow, data, pane)
 
-            store.bind(receipt["state"], who, at, root=root, before_bind=validate)
-            row["accepted_session"] = {key: who[key] for key in ("kind", "value")}
-            save_state(path, document)
-        return acceptance()
+            if goal is not None and goal["runtime"] == "codex":
+                if goal["target_thread"] not in (None, who["value"]):
+                    return refusal("host_goal_target_changed")
+            binding = store.bind(receipt["state"], who, at, root=root, before_bind=validate)
+            # Use the existing transport boundary: a rebind between bind and
+            # this lock refuses before touching goals; one during transfer
+            # cannot replace the executor before acceptance commits.
+            with store.effect_boundary(receipt["state"]) as data:
+                if data["binding"] != binding:
+                    return refusal("binding_changed_before_host_transfer")
+                if goal is not None:
+                    if goal["runtime"] == "codex":
+                        goal["target_thread"] = who["value"]
+                        save_state(path, document)
+                    host_goals.transfer(goal, who["value"], lambda: save_state(path, document), restore=False)
+                row["accepted_session"] = {key: who[key] for key in ("kind", "value")}
+                save_state(path, document)
+        return acceptance(recovered=row["status"] in reset.TERMINAL_FAILURES)
     except ForemanError as exc:
         # Error codes are bounded project constants, never provider/pane text.
         return refusal("owner_verification_" + exc.code)

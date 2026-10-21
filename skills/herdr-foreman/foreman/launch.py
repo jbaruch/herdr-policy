@@ -40,10 +40,23 @@ NAME_POLL_INTERVAL = 0.25
 #: release wait and another start. Every other start failure ends the relaunch:
 #: Herdr may already have started the process, and a second start duplicates it.
 NAME_TAKEN_RETRIES = 2
+NATIVE_EXECUTABLES = frozenset({"claude", "codex", "grok", "agy"})
 
 
-def foreground_agent(client, pane, kind):
-    info = client.pane_process_info(pane)
+def has_native_agent(info):
+    """A real agent occupant is never classified as shell startup activity."""
+    processes = info.get("foreground_processes")
+    for row in processes if isinstance(processes, list) else ():
+        argv = row.get("argv") if isinstance(row, dict) else None
+        if isinstance(row, dict) and (row.get("name") in NATIVE_EXECUTABLES or (
+                isinstance(argv, list) and argv and isinstance(argv[0], str)
+                and PurePath(argv[0]).name in NATIVE_EXECUTABLES)):
+            return True
+    return False
+
+
+def foreground_agent(client, pane, kind, *, info=None):
+    info = client.pane_process_info(pane) if info is None else info
     matches = []
     for process in info.get("foreground_processes", []):
         if not isinstance(process, dict):
@@ -55,7 +68,8 @@ def foreground_agent(client, pane, kind):
                 argv = client.process_args(process.get("pid"))
             matches.append({**process, "argv": argv})
     if len(matches) != 1:
-        raise HerdrError("Cannot identify one {} foreground process in {}; inspect the pane before relaunch.".format(kind, pane), {})
+        raise HerdrError("Cannot identify one {} foreground process in {}; inspect the pane before relaunch.".format(kind, pane),
+                         foreground_identity_evidence(info, pane))
     return matches[0]
 
 
@@ -101,6 +115,8 @@ def foreground_identity_evidence(info, pane):
     rows = processes if isinstance(processes, list) else ()
     return {
         "pane": pane,
+        "shell_pid": info.get("shell_pid") if isinstance(info, dict) else None,
+        "foreground_process_group_id": info.get("foreground_process_group_id") if isinstance(info, dict) else None,
         "foreground_pids": [
             row["pid"] for row in rows
             if isinstance(row, dict) and type(row.get("pid")) is int and row["pid"] > 0
@@ -165,7 +181,49 @@ def verify_running_permissions(client, agent, pane):
     verify_worker_permissions(agent.kind, process["argv"])
 
 
-def _start_seat(client, name, kind, pane, tier, launch_args, *, owned_fresh=False):
+def await_started(client, kind, pane, tier, launch_args, shell, sleep):
+    """Observe one admitted start; never send another start or assignment.
+
+    Queue admission can precede exec. Utilities are not agent proof: wait for
+    the requested executable and exact flags in the original owned root.
+    """
+    last = {}
+    previous = None
+    for attempt in range(SHELL_POLL_ATTEMPTS):
+        info = client.pane_process_info(pane)
+        last = foreground_identity_evidence(info, pane)
+        if (not isinstance(info, dict) or info.get("pane_id", pane) != pane
+                or info.get("shell_pid") != shell):
+            raise HerdrError("The owned startup pane or root shell changed; preserve the launch outcome and inspect it before retrying.", last)
+        processes = info.get("foreground_processes")
+        if "foreground_processes" in info and (not isinstance(processes, list) or any(
+                not isinstance(row, dict) or type(row.get("pid")) is not int or row["pid"] <= 0
+                for row in processes)):
+            raise HerdrError("Startup process evidence is malformed; inspect Herdr before retrying.", last)
+        names = last["occupant_names"]
+        if any(name in NATIVE_EXECUTABLES and name != kind for name in names):
+            raise HerdrError("The owned startup pane contains a different agent executable; no brief was sent.", last)
+        if not has_native_agent(info):
+            previous = None
+        else:
+            process = foreground_agent(client, pane, kind, info=info)
+            # A real requested executable with wrong flags is a mismatch, not
+            # startup latency. Refuse immediately instead of waiting it out.
+            try:
+                proof = verify_argv(kind, tier, process["argv"], launch_args)
+            except HerdrError as exc:
+                exc.details.update(last)
+                raise
+            if previous == process["pid"]:
+                return {**proof, "source": "process_argv", "pid": process["pid"], "pane_id": pane}
+            previous = process["pid"]
+        if attempt + 1 < SHELL_POLL_ATTEMPTS:
+            sleep(SHELL_POLL_INTERVAL)
+    raise HerdrError("The admitted worker did not prove its executable and exact flags within the startup read budget; no brief was sent and the start must not be repeated blindly.",
+                     {**last, "attempts": SHELL_POLL_ATTEMPTS})
+
+
+def _start_seat(client, name, kind, pane, tier, launch_args, *, owned_fresh=False, shell=None, sleep=time.sleep):
     """Start one named seat on `tier` and prove its launch argv."""
     result = client.agent_start(name, kind, pane, list(launch_args) + launch_flags(kind, tier))
     info = result.get("agent") if isinstance(result, dict) else None
@@ -175,17 +233,25 @@ def _start_seat(client, name, kind, pane, tier, launch_args, *, owned_fresh=Fals
         or info.get("agent") != kind or info.get("agent_status") not in observed_states
     ):
         raise HerdrError("Started worker identity or readiness differs from the requested pane and kind; no brief was sent.", {})
-    proof = verify_argv(kind, tier, result.get("argv"), launch_args)
+    argv = result.get("argv")
+    if owned_fresh:
+        if isinstance(argv, list) and argv and isinstance(argv[0], str) and PurePath(argv[0]).name == kind:
+            verify_argv(kind, tier, argv, launch_args)
+        return await_started(client, kind, pane, tier, launch_args, shell, sleep)
+    proof = verify_argv(kind, tier, argv, launch_args)
     return {**proof, "pane_id": pane}
 
 
-def start_worker(client, agent, pane, tier, before_start=None, sleep=time.sleep, *, owned_fresh=False):
+def start_worker(client, agent, pane, tier, before_start=None, sleep=time.sleep, *, owned_fresh=False, shell=None):
     launch_args = worker_launch_args(agent.kind, agent.launch_args)
     # An unsupported kind refuses here, before the retrospective hook runs.
     launch_flags(agent.kind, tier)
+    if owned_fresh and (type(shell) is not int or shell <= 0):
+        raise HerdrError("Fresh startup requires the owner's original root shell PID before native start.", {})
     if before_start is not None:
         before_start()
-    return _start_seat(client, agent.name, agent.kind, pane, tier, launch_args, owned_fresh=owned_fresh)
+    return _start_seat(client, agent.name, agent.kind, pane, tier, launch_args,
+                       owned_fresh=owned_fresh, shell=shell, sleep=sleep)
 
 
 def start_foreman(client, seat, pane, tier):

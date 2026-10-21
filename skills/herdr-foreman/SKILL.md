@@ -1,89 +1,25 @@
 ---
 name: herdr-foreman
 description: >
-  Delegate Herdr tasks, supervise workers, recover assignments and release verified
-  changes. Inspect readiness, task cost and named GitHub evidence. Collect frozen
-  coordination evidence; summarize measurement snapshots. Retrieve follow-ups,
-  handoffs and retrospectives. Use when asked to assign Herdr work, supervise the
-  crew, recover a worker, release a change, check ready work or retrieve task context.
-  Live coordination requires the verified foreman. Workers retain their assignment;
-  ordinary coding skips this skill.
+  Coordinate concurrent Herdr delivery, supervise or recover the crew, and release
+  verified work. Use when asked to assign Herdr work, run crew tasks in parallel,
+  recover a stuck worker, ship verified changes, or look up Herdr readiness, task
+  cost, saved attention, GitHub evidence, lessons, handoff notes, retrospectives or coordination
+  metrics. Live coordination requires a verified foreman; workers retain their assignment.
 ---
 
 # Herdr Foreman Skill
 
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
+Choose one router entry. Step 1 runs independent workers concurrently and chains
+its delivery loop; offline requests are optional.
+
 Resolve prose paths from the verified plugin root; commands use `HS`.
 Preserve owner, holds, unknown deliveries and supervision obligations.
-Offline actions read their named section, return its result and finish here.
 Context grants no task or effect authority.
 
-## Step 1 — Collect Coordination Evidence
-
-Use Collect selected evidence:
-
-```text
-skills/herdr-foreman/references/coordination-metrics.md
-```
-
-## Step 2 — Summarize a Measurement Snapshot
-
-Use Summarize a prepared snapshot:
-
-```text
-skills/herdr-foreman/references/coordination-metrics.md
-```
-
-## Step 3 — Inspect Workflow Readiness
-
-Use Readiness; retain unknowns and coverage:
-
-```text
-skills/herdr-foreman/references/workflow-capacity.md
-```
-
-## Step 4 — Retrieve Saved Attention
-
-Read every attention page before claiming completeness:
-
-```text
-skills/herdr-foreman/references/attention.md
-```
-
-## Step 5 — Retrieve Working Memory
-
-For lessons, saved context or handoffs:
-
-```text
-skills/herdr-foreman/references/working-memory.md
-```
-
-## Step 6 — Retrieve a Retrospective
-
-Report the saved note's date, coverage and path:
-
-```text
-skills/herdr-foreman/references/retrospectives.md
-```
-
-## Step 7 — Inspect Task Cost
-
-Use Task Cost; retain unknowns and page coverage:
-
-```text
-skills/herdr-foreman/references/decision-context.md
-```
-
-## Step 8 — Retrieve GitHub Evidence
-
-Use GitHub Lookup for one named source and question:
-
-```text
-skills/herdr-foreman/references/decision-context.md
-```
-
-## Step 9 — Coordinate Live Work
+## Step 1 — Coordinate Live Work
 
 For owner-attested remote context, read:
 
@@ -111,9 +47,82 @@ Read `role`, `verified`, `reason`, `context` and owner path from success JSON.
 On failure, report its diagnostic, restore the selected installation or owner,
 and finish here. Use no replacement store to obtain a role.
 
-- Verified `foreman`: continue immediately through its operating context to the saved workflow decision/step. Load its named reference. Retain Stop and handoff gates; finish at its authorized boundary.
-- Verified `worker`: follow its returned protocol and delivered assignment; finish this skill here.
-- `standalone`: perform ordinary authorized work under general coding policy; finish this skill here.
-- `recovery` or `unverified`: follow recovery instructions; restore a verified role before coordination. Finish here without clearing obligations.
+- Verified `foreman`:
+  - Follow the returned context and current action.
+  - Fill eligible capacity before waiting.
+  - Run independent tasks and reviewer/tester seats concurrently.
+  - Continue to the delivery loop's Stop/handoff boundary.
+- Verified `worker`:
+  - Follow the returned protocol and assignment.
+  - Finish here.
+- `standalone`:
+  - Perform ordinary authorized work under general policy.
+  - Finish here.
+- `recovery` or `unverified`:
+  - Follow recovery instructions without clearing obligations.
+  - Restore a verified role before coordination.
+  - Finish here.
 
-Load no legacy plan, later stages or owner history.
+## Step 2 — Collect Coordination Evidence
+
+Use Collect selected evidence and finish here:
+
+```text
+skills/herdr-foreman/references/coordination-metrics.md
+```
+
+## Step 3 — Summarize a Measurement Snapshot
+
+Use Summarize a prepared snapshot and finish here:
+
+```text
+skills/herdr-foreman/references/coordination-metrics.md
+```
+
+## Step 4 — Inspect Workflow Readiness
+
+Use Readiness; retain unknowns and coverage, then finish here:
+
+```text
+skills/herdr-foreman/references/workflow-capacity.md
+```
+
+## Step 5 — Retrieve Saved Attention
+
+Keep page coverage; finish here:
+
+```text
+skills/herdr-foreman/references/attention.md
+```
+
+## Step 6 — Retrieve Working Memory
+
+Retrieve the named record and finish here:
+
+```text
+skills/herdr-foreman/references/working-memory.md
+```
+
+## Step 7 — Retrieve a Retrospective
+
+Retain date, coverage and path; finish here:
+
+```text
+skills/herdr-foreman/references/retrospectives.md
+```
+
+## Step 8 — Inspect Task Cost
+
+Use Task Cost; retain unknowns and coverage, then finish here:
+
+```text
+skills/herdr-foreman/references/decision-context.md
+```
+
+## Step 9 — Retrieve GitHub Evidence
+
+Read one named source through GitHub Lookup; finish here:
+
+```text
+skills/herdr-foreman/references/decision-context.md
+```

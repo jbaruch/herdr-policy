@@ -12,7 +12,7 @@ from . import retrospective as notes
 from .chronology import latest_assignment
 from .errors import AgentBusyError, HerdrError, StartShellNotReadyError, StateError, UsageError
 from .herdr import READY_STATES
-from .launch import foreground_agent, holds_initializing_shell
+from .launch import foreground_agent, foreground_identity_evidence, has_native_agent
 from .probe import resolve_status
 from .state import STATE_SCHEMA_VERSION, save_state
 
@@ -120,11 +120,14 @@ def _observation(client, name, kind, pane=None, *, starting=False, agent=None):
                 or info.get("pane_id", pane) != pane):
             sparse = (isinstance(info, dict) and "foreground_processes" not in info
                       and valid_pid(shell) and info.get("pane_id", pane) == pane)
-            error = StartShellNotReadyError if sparse or holds_initializing_shell(info) else HerdrError
+            waitable = (isinstance(info, dict) and valid_pid(shell) and isinstance(pids, list)
+                        and all(valid_pid(pid) for pid in pids) and info.get("pane_id", pane) == pane
+                        and not has_native_agent(info))
+            error = StartShellNotReadyError if sparse or waitable else HerdrError
             raise error(
                 "Retrospective start requires the target pane's sole shell; inspect its startup or occupant "
                 "and retry only after restoring that proof. No fresh worker was looked up or started.",
-                {"pane_id": pane, "shell_pid": shell if valid_pid(shell) else None,
+                {**foreground_identity_evidence(info, pane), "pane_id": pane, "shell_pid": shell if valid_pid(shell) else None,
                  "foreground_pids": [pid if valid_pid(pid) else None for pid in pids] if pids is not None else None},
             )
         argv = processes[0].get("argv")

@@ -22,7 +22,7 @@ READ_COMMANDS = frozenset({
     "memory-list", "memory-show", "attention-list", "attention-show", "catch-up",
     "supervision-gate", "supervision-status", "supervision-drain", "supervision-watch",
     "retro-check", "retro-list", "retro-show", "capability-check", "capability-show",
-    "report-gate-status", "github-context",
+    "report-gate-status", "github-context", "foreman-reset-status",
 })
 
 
@@ -87,9 +87,9 @@ def sequence_page(rows, through, after, limit, key):
             "items": selected}
 
 
-def enforce_budget(result, recovery):
+def enforce_budget(result, recovery, *, diagnostic_text=""):
     """Check exact stdout bytes without changing an existing document schema."""
-    if len((json.dumps(result, indent=2) + "\n").encode("utf-8")) > OUTPUT_BYTES:
+    if len((json.dumps(result, indent=2) + "\n" + diagnostic_text).encode("utf-8")) > OUTPUT_BYTES:
         raise UsageError(
             recovery,
             {"reason": "context_budget_exceeded", "budget_bytes": OUTPUT_BYTES, "context_complete": False})

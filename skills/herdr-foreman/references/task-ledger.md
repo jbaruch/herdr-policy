@@ -10,8 +10,9 @@ authorized. An `applied` row there says nothing about whether the work passed.
 
 At Step 3, establish the stable task identity, original base, and absolute ledger
 path. Save that path beside the task's authorization context and include it in
-every foreman handoff. Create the document on a first run, or read the existing
-document in full before planning more work. Do not create a new ledger per fix.
+every foreman handoff. Create the document on a first run; on resume retrieve
+only the current unresolved decision and its evidence. Do not reread historical
+events before unrelated dispatch or create a new ledger per fix.
 
 Read the referenced utility state through its owner commands. Correlate each
 assignment with its dispatch ID, worker, role, and fresh report path. Never edit
@@ -25,10 +26,11 @@ accept work. A conflicting observation requires reconciliation, not a resend.
 
 ## Record Decisions as They Happen
 
-Append an event after each dispatch outcome, wait outcome, and evidence-based
-assessment. Record missing reports and unknown send outcomes before continuing
-another worker. Append blocker, judge, release, cleanup, and handoff decisions
-when they happen; Step 16 finalizes the log rather than creating it from memory.
+The utility owns mechanical dispatch, wait and delivery receipts. Reference
+them rather than copying the same fields into a second prose event. Record
+evidence-based assessments, blockers, judge, release, cleanup, and handoff decisions
+when they change a task decision. Unknown send outcomes still block that
+dispatch's retry; they do not require assessing unrelated reports first.
 
 Pick each event's `decision` from its subject's vocabulary in
 `DECISION_MEANINGS` at the top of `skills/herdr-foreman/foreman/members.py`,

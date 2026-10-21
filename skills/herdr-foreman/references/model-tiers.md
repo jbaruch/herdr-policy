@@ -109,6 +109,22 @@ authorization and permitted actions before dispatch. Worker permission prompts
 are not a second assignment gate; the brief's role, path, and authority limits
 still apply in YOLO mode.
 
+Fresh owned panes wait through startup utilities without treating them as the
+requested agent. After one admitted native start, the owner observes the same
+root until the requested executable and exact flags are stable; a real mismatch
+refuses. Existing panes retain their occupancy checks. Poll bounds and evidence
+fields are owned by `skills/herdr-foreman/foreman/launch.py`, `skills/herdr-foreman/foreman/lifecycle.py` and `skills/herdr-foreman/state-schema.md`.
+The host's start result acknowledges queue admission, so this readiness check
+belongs in the policy before it sends usage or assignment input.
+
+After resolving a measurement failure, use `measure --retry-failed`. It measures
+failed, missing, skipped or expired profiles and reuses valid successful windows
+from the latest snapshot. No additional cache file is written. Reuse requires
+unchanged profiles/account windows and transport context within the existing
+capacity freshness bound in `skills/herdr-foreman/foreman/tier_routing.py`; shared windows retry
+together. The combined snapshot retains the older observation time. Plain
+`measure` still takes new readings, and `--agent` remains an explicit subset.
+
 `launch_args` preserves supported UI options across restarts. The launcher
 supplies each runtime's YOLO flags and refuses conflicting permission options
 before stopping a worker. The permission contract is in
@@ -130,7 +146,7 @@ under the comment block above them. Tiered proof (`verify_argv`) stays exact
 and accepts no resume form.
 Do not clear a retained worker to repair a permission mismatch. Use the normal
 fresh-dispatch boundary once the current assignment is resolved, or the
-same-session restoration in `references/dispatch-recovery.md` when the
+same-session restoration in `skills/herdr-foreman/references/dispatch-recovery.md` when the
 operator expressly requires YOLO for that retained developer.
 
 Recheck model availability and CLI flag spellings when upgrading a worker's
@@ -283,7 +299,7 @@ Codex `consultation` and `test_plan` rows at `medium` are a starting point, not
 a measured result; record a measurement in the capability table before
 relying on it. Config schema 4 refuses a tier table without a `consultation`
 row; copy the example's row, never synthesize one from `build`. A schema-3
-table keeps the judgment defaults it was written against (`state-schema.md`).
+table keeps the judgment defaults it was written against (`skills/herdr-foreman/state-schema.md`).
 
 `--round-context FILE` reads a JSON object keyed by assigned role. A
 mechanical context has this shape:
@@ -519,7 +535,7 @@ required capabilities, the selected pair, the capability-table evidence, each
 cheaper candidate with its verdict or an unknown cost, and the escalation
 conditions. Opted-in routing also records separate launch support, account
 access, qualification and capacity, candidate refusals and overrides. The
-record shape is plan schemas 17/18 in `state-schema.md`; it
+record shape is plan schemas 17/18 in `skills/herdr-foreman/state-schema.md`; it
 explains a selection and never changes one.
 
 `cost-report` reports each task's resource use through acceptance from the
@@ -527,7 +543,7 @@ state file alone, as JSON, each quantity separately. Token counts are not in
 any owner record and read `unknown`, listed under `unrecorded`. A shared or
 concurrently used window keeps `attribution: unknown`. The report makes no
 savings claim: a tier's quota or multiplier change is never read as a cost
-reduction. The output contract is in `state-schema.md` (Writer / Reader
+reduction. The output contract is in `skills/herdr-foreman/state-schema.md` (Writer / Reader
 Contract); what each field counts is `skills/herdr-foreman/foreman/cost_report.py`.
 
 ## What stands in for a validation battery
@@ -553,4 +569,4 @@ cover what one would catch:
 The pinned judge start path keeps its own launch proof. The operator owns
 billing inputs inside config.json; these readers never write or migrate that
 file. The state owner records launch proof in assignment rows; see
-`state-schema.md` for reader behavior.
+`skills/herdr-foreman/state-schema.md` for reader behavior.

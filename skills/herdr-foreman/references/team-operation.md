@@ -2,6 +2,13 @@
 
 The legacy Herdr team round contract. `skills/herdr-foreman/references/team-scope.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. Its scoped admitted task-workflow exception follows `skills/herdr-foreman/references/task-workflow.md` instead. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through its scoped workflow. Every legacy worker brief instead names `skills/herdr-foreman/references/worker-context.md`; workers follow that protocol and their role template without loading this foreman contract.
 
+The objective is delivery of authorized, verified work. Apply each section to the
+action it protects; these sections are not a cycle to complete before dispatch.
+Keep ready independent tasks moving. Administrative records, lesson curation,
+cadence checks and context reconstruction never outrank an available delivery
+action. An internal policy or quota deadlock is not a reason to request a user
+pause. Consult this detailed contract for a current question, not as a preload.
+
 ## Bounded Factual Lookup
 
 Narrow exception for a foreman answering a read-only fact request without a
@@ -113,7 +120,7 @@ monetary savings remain unknown.
 - Ground capability declarations in available skills, tools and observed work
 - Apply capability and contribution eligibility before task familiarity and measured subscription headroom through the owner planner
 - Headroom is the minimum remaining window per worker, never the average
-- Measure the declared roster before planning
+- Use a valid current capacity snapshot; retry only failed, missing or expired readings
 - A snapshot missing a declared worker plans no seat
 - A ranked seat measured against one worker is a forced pick, never a headroom ranking
 - Each assignment-scoped worker starts fresh and its assessed pane closes; legacy standing-worker installs retain context only under Fix Loops or Specialist Consultations
@@ -575,7 +582,7 @@ refuse only the stage whose harm it prevents.
 - Herdr lifecycle and completion statuses are unreliable observations, never task-completion evidence
 - Maintain the foreman-owned task ledger outside Herdr throughout the task
 - Read which tasks wait for a seat from the owner's derived queue, never from memory
-- Record each dispatch outcome and each assessed worker outcome before continuing the round
+- Preserve dispatch outcomes in their canonical owner receipts; record assessed judgments once without duplicating those receipts in prose
 - Distinguish report delivery, accepted assignment work, and completion of the whole task
 - Bind acceptance to the actual report and the required artifact, VCS, and gate evidence
 - Reconcile recalled ledger entries against their sources on resume
@@ -591,13 +598,13 @@ lessons, stow and supervision gates remain required. It never clears the
 workstation's thin anchor.
 
 - Curate applicable lessons with their scope and evidence through the foreman-owned memory commands
-- Consult relevant lessons before composing assignments
+- Retrieve lessons only for a specific unresolved task question; reuse unchanged known evidence
 - Revalidate a lesson before relying on recalled operational facts
 - Preserve superseded lessons and immutable retrospective notes
 - Keep the foreman's context and active goal across round boundaries
 - Record the round's outcomes and continuation step
-- Curate the round's lessons
-- Save a stow with the active goal and outstanding work
+- Curate useful lessons during maintenance, outside dispatch and delivery
+- Save a stow with the active goal and outstanding work for a real context transition or knowledge otherwise at risk, never as a routine dispatch prerequisite
 - Continue the saved step and enrolled supervision without stopping for the checkpoint
 - Never automatically reset the foreman or ask for reset permission at each boundary
 - Only an explicit operator-requested maintenance reset uses `foreman foreman-reset --explicit-reset`, never input into the foreman's pane
@@ -611,11 +618,11 @@ workstation's thin anchor.
   5. Before clearing, the operator confirms the pane is not already running a foreman resumed from that reset
   6. A pane already running that resumed foreman is reconciled as delivered, never cleared
 - Every other explicitly requested reset runs through `foreman foreman-reset --explicit-reset`
-- A reset foreman follows the bounded Resume Route in `skills/herdr-foreman/references/round-completion.md`, preserving operator holds before the queue and saved continuation
+- A reset foreman follows the bounded Resume Route in `skills/herdr-foreman/references/round-completion.md`, preserving current holds before the saved continuation; unrelated queue and historical progress replay are not prerequisites
 - Save conversation-only knowledge and open work before a planned foreman reset, compaction, or replacement
 - Give the next foreman an ordered set of bounded owner queries and selected evidence references for its pending decision, under `skills/herdr-foreman/references/working-memory.md`
 - Preserve required-file receipts for provenance and revalidation; they do not require replaying whole owner files or earlier reports. Read selected evidence through the bounded decision/evidence flow, and retain unavailable evidence as an explicit gap
-- Require the next foreman to explicitly set `/goal <saved objective>` and verify it is active under `skills/herdr-foreman/references/working-memory.md` Successor Goal before dispatch or retirement of the outgoing foreman
+- Use the verified reset owner's host-goal handoff under `skills/herdr-foreman/references/working-memory.md` Successor Goal; never recreate a goal from rewritten prompt text
 - Record uncaptured or unavailable context as an explicit handoff gap
 - A handoff gap names what is missing, the task it affects, and how to recover it
 - Narrow exception for a gap migrated from a version-1 stow.
@@ -649,6 +656,7 @@ workstation's thin anchor.
 - Observe all enrolled workers while awaiting reports
 - Preserve wake events until the foreman records their handling
 - Acknowledging an observation never accepts the assignment or completes the task
+- An authenticated completed delivery may end observation through the existing acknowledgment/resolution owner while its report remains unassessed; this grants no pane cleanup, task acceptance or release
 - Reconcile interrupted supervision against its saved events and live process evidence
 - Continue the foreground watch after a quiet deadline while authorized work remains
 - A saved handoff never proves a transferred continuation
@@ -658,7 +666,7 @@ workstation's thin anchor.
 ## Retrospectives
 
 - The foreman observes retrospective cadence at least once per `INTERVAL` (`skills/herdr-foreman/foreman/retrospective.py`) during active team work
-- Check the cadence on active resume, before planning or dispatch, and between report waits
+- Check cadence at maintenance checkpoints, not before each dispatch or resume
 - A daily cadence due is maintenance to schedule outside the selected task's delivery stages; it never refuses dispatch
 - Complete a retrospective before clearing or relaunching an existing worker, or changing its seat, model, or effort
 - Missing transition coverage still blocks that exact worker transition

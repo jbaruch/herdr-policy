@@ -57,7 +57,7 @@ from .planner import plan as build_plan
 from .planner import ASSIGNMENT_PLAN_SCHEMA_VERSION, headroom_of
 from .tiers import (COORDINATION_ROUND, FOREMAN_ROLE, JUDGMENT_ROUNDS, MissingTierError,
                     parse_launch_args, parse_tiers, select_tier, worker_launch_args)
-from . import context_output, cost_report, decision_budget, github_context, selection, successors, tier_routing
+from . import context_output, cost_report, github_context, measurement_retry, selection, successors, tier_routing
 from .launch import configured_running_tier, restart_worker, start_foreman, start_worker, verify_foreman, verify_running, require_empty_shell
 from .state import (
     add_assignment,
@@ -231,7 +231,10 @@ def build_parser():
             "reported as skipped, not interrupted."
         ),
     )
-    measure_parser.add_argument(
+    measurement_scope = measure_parser.add_mutually_exclusive_group()
+    measurement_scope.add_argument("--retry-failed", action="store_true",
+        help="Retry failed, missing or expired profiles; reuse still-valid successes from the latest snapshot.")
+    measurement_scope.add_argument(
         "--agent",
         action="append",
         dest="agents",
@@ -479,6 +482,9 @@ def build_parser():
     reconcile_parser.add_argument("--pane", required=True)
     reconcile_parser.add_argument("--stow", required=True)
     reconcile_parser.add_argument("--outcome", required=True, choices=["delivered", "failed"])
+    reset_status = sub.add_parser("foreman-reset-status", parents=[common], help="Read one bounded reset and host-goal receipt without dumping history.")
+    reset_status.add_argument("--stow", required=True)
+    reset_status.add_argument("--pane", help="Select the exact pane when the stow appears in more than one reset.")
     close_member = sub.add_parser("close-member", parents=[common], help="Acknowledge an enrollment's pending events and resolve it, once the task ledger records its assessed outcome; an `accepted` reviewer, tester or consultation outcome needs its report's recorded contract lines.")
     close_member.add_argument("--enrollment", required=True)
     close_member.add_argument("--ledger", required=True, help="Absolute path of the task's TASK-LEDGER.md.")
@@ -504,7 +510,7 @@ def build_parser():
     cost_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
     cost_parser.add_argument("--offset", type=int, default=0)
     github_context.register_parser(sub, common)
-    load_parser = sub.add_parser("load-set", parents=[common], help="Return current decision context and debit its aggregate read allowance without replaying task history.")
+    load_parser = sub.add_parser("load-set", parents=[common], help="Return bounded current decision context without replaying task history or writing read counters.")
     load_parser.add_argument("--decision", required=True, choices=load_set.DECISIONS)
     load_target = load_parser.add_mutually_exclusive_group(required=True)
     load_target.add_argument("--task", help="Task identity for plan, brief, gate and diagnose.")
@@ -1059,17 +1065,25 @@ def _read_record(path, contents=None):
 
 
 def cmd_measure(args, client=None, warn=None, trace=None):
-    agents = select_agents(load_config(_config_path(args)), args.agents)
+    roster = load_config(_config_path(args))
+    agents = select_agents(roster, args.agents)
     client = client if client is not None else _client(args, trace=trace)
+    state_path = _state_path(args)
+    state = _load_state_for_write(state_path, warn)
+    previous = latest_snapshot(state)
+    digest = measurement_retry.context_digest(roster, client)
+    at = args.now or now_iso()
+    reused = {}
+    if args.retry_failed:
+        agents, reused = measurement_retry.split(roster, previous, digest, at)
     measure_fn = lifecycle.measure_worker_kinds if agents and all(agent.assignment_scoped for agent in agents) else measure
     snapshot = measure_fn(
-        client, agents, args.now or now_iso(), marker_timeout_ms=args.marker_timeout,
+        client, agents, at, marker_timeout_ms=args.marker_timeout,
         read_lines=args.lines, warn=warn, poll_attempts=args.marker_poll_attempts,
         poll_interval_sec=args.marker_poll_interval, settle_sec=args.composer_settle,
         allow_recovery=args.allow_recovery,
         **({"state_path": _state_path(args), "config_path": _config_path(args)} if measure_fn is lifecycle.measure_worker_kinds else {}))
-    state_path = _state_path(args)
-    state = _load_state_for_write(state_path, warn)
+    snapshot = measurement_retry.combine(snapshot, reused, previous, digest)
     add_snapshot(state, snapshot)
     save_state(state_path, state)
     if not snapshot["failed_agents"]:
@@ -1077,7 +1091,7 @@ def cmd_measure(args, client=None, warn=None, trace=None):
     return snapshot, {
         "error": "measure_incomplete",
         "message": "Could not measure {} - see the `error` field on each agent "
-        "in the snapshot on stdout.".format(", ".join(snapshot["failed_agents"])),
+        "in the snapshot on stdout. After its specific recovery, run `{} --retry-failed` to keep still-valid successful readings.".format(", ".join(snapshot["failed_agents"]), runnable.command("measure")),
         "details": {"failed_agents": snapshot["failed_agents"]},
     }
 
@@ -2257,7 +2271,8 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
     plan = foreman_reset.preflight(stow, data, caller)
     native_session = foreman_reset.bound_session(data)
     client = client if client is not None else _client(args, trace=trace)
-    foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    live = foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    host_goal = foreman_reset.prepare_host_goal(state_path, live["agent"], native_session)
     log = Path(str(state_path) + ".foreman-reset.log")
     # The deliverer runs from the package directory, so every path it gets is absolute.
     argv = [sys.executable, "-m", "foreman", "foreman-reset-deliver", "--pane", plan["pane_id"], "--stow", plan["stow"],
@@ -2277,7 +2292,7 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
             raise StateError("Could not start the reset deliverer ({}); nothing was sent.".format(exc),
                              {"log": str(log)}) from None
 
-    row = foreman_reset.schedule(state_path, plan, at, start, native_session=native_session, options=options)
+    row = foreman_reset.schedule(state_path, plan, at, start, native_session=native_session, options=options, host_goal=host_goal)
     return {"schema_version": foreman_reset.RESET_SCHEMA_VERSION, "scheduled": True, **row, "log": str(log),
             "next": "End this turn now; the deliverer clears the pane once it is idle."}, None
 
@@ -2391,7 +2406,12 @@ def cmd_foreman_reset_deliver(args, client=None, warn=None, trace=None):
 def cmd_foreman_reset_reconcile(args, client=None, warn=None, trace=None):
     state_path = Path(_state_path(args)).expanduser().resolve()
     return foreman_reset.reconcile(state_path, {"pane_id": args.pane, "stow": args.stow}, args.outcome,
-                                   getattr(args, "now", None) or now_iso()), None
+                                   getattr(args, "now", None) or now_iso(),
+                                   client=client if client is not None else _client(args, trace=trace)), None
+
+
+def cmd_foreman_reset_status(args, client=None, warn=None, trace=None):
+    return foreman_reset.status(_state_path(args), args.stow, args.pane), None
 
 
 def cmd_close_member(args, client=None, warn=None, trace=None):
@@ -2508,11 +2528,8 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
             args.task, runnable.command("foreman-queue"), runnable.command("supervision-status --compact")), {})
     packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
                             exists=_file_present, supervision_view=supervision_view)
-    state_digest = decision_budget.generation(state, packet, supervision_document)
     if args.read_file is not None:
         packet = load_set.read_evidence(packet, args.read_file, args.question, args.offset)
-    packet = decision_budget.consume(state_path, packet, state_digest,
-                                     (supervision_document["binding"] or {}).get("identity"))
     return packet, None
 
 
@@ -3452,6 +3469,7 @@ COMMANDS = {
     "foreman-reset": cmd_foreman_reset,
     "foreman-reset-deliver": cmd_foreman_reset_deliver,
     "foreman-reset-reconcile": cmd_foreman_reset_reconcile,
+    "foreman-reset-status": cmd_foreman_reset_status,
     "close-member": cmd_close_member,
     "check-member": cmd_check_member,
     "load-set": cmd_load_set,
@@ -3515,17 +3533,8 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
     def warn(message):
         diagnostic(DIAGNOSTIC_PREFIX + message)
 
-    def context_failure(exc, *, charge):
+    def context_failure(exc):
         text = context_output.error_text(exc, "".join(diagnostics))
-        if charge and args.command in context_output.READ_COMMANDS | {"load-set"}:
-            try:
-                binding = supervision.load(_state_path(args))["binding"]
-                decision_budget.consume_diagnostic(_state_path(args), text,
-                    binding["identity"] if binding is not None else None)
-            except ForemanError as allowance_error:
-                # Return only allowance recovery when the original data-bearing
-                # error cannot be charged. Keep this inside the home guard.
-                text = context_output.error_text(allowance_error)
         stderr.write(text)
         return 1
 
@@ -3580,7 +3589,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "close-member", "progression-run"}
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run"}
             authority_transaction = service_capability is not None
             lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:
@@ -3594,28 +3603,20 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
                 try:
                     with retro_lock:
                         payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)
-                    if args.command in context_output.READ_COMMANDS:
-                        supervised = supervision.load(_state_path(args))
-                        binding = supervised["binding"]
+                    if context_call:
                         diagnostic_text = "".join(diagnostics)
                         if failure:
                             diagnostic_text += context_output.printed_json(failure)
-                        decision_budget.consume_view(_state_path(args), payload,
-                            binding["identity"] if binding is not None else None,
+                        context_output.enforce_budget(payload,
+                            "Select a narrower task, page or evidence question; this response exceeds its output bound.",
                             diagnostic_text=diagnostic_text)
-                    elif args.command == "load-set" and diagnostics:
-                        binding = supervision.load(_state_path(args))["binding"]
-                        decision_budget.consume_diagnostic(_state_path(args), "".join(diagnostics),
-                            binding["identity"] if binding is not None else None)
                 except ForemanError as exc:
                     if context_call:
-                        return context_failure(exc, charge=True)
+                        return context_failure(exc)
                     raise
     except ForemanError as exc:
         if context_call:
-            # Preflight/route refusal precedes any selected-context handler.
-            # In particular, a failed home guard must create no counter there.
-            return context_failure(exc, charge=False)
+            return context_failure(exc)
         json.dump(exc.to_dict(), stderr, indent=2)
         stderr.write("\n")
         return 1

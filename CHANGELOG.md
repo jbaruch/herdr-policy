@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.2 — 2026-10-20
+
+- Replace the foreman's mandatory round cycle with a delivery loop: dispatch ready authorized work, handle deliveries independently, and address actual blockers before routine administration. Keep legacy step names as an action index rather than a replay requirement (#57, #60).
+- Resume the selected task directly after current hold/reset/event checks. Remove mandatory historical progress, fleet attention, queue replay and round-start preparation before continuation; keep task gates and atomic complete-set hold recovery (#45, #57).
+- Keep supervision available after legacy context exhaustion. Let authenticated completed deliveries end observation using existing receipts without accepting reports, cleaning panes or opening release gates; never solicit a fictitious user pause to escape an internal deadlock (#60).
+- Remove cumulative per-session/per-decision read accounting and its lock/write/reset loop. Keep bounded individual responses and evidence reads; retire existing counter files without deleting owner history. Reuse unchanged plans and assignment inputs, and make routine lesson, retrospective and checkpoint work conditional rather than dispatch prerequisites (#57).
+- Wait through temporary shell utilities in fresh owned panes, then verify one admitted native start against the same root and stable, exact agent flags. Preserve immediate actual-agent/flag mismatch refusal, unknown-start safety and guarded cleanup; existing panes retain their occupancy checks (#54).
+- Retry failed, missing or expired usage profiles with `measure --retry-failed`, reusing valid successes from the latest snapshot without another cache store. Keep shared windows together, invalidate changed configuration/transport context, and retain the older observation timestamp rather than refreshing reused headroom.
+- Migrate snapshot schema 5 to 6 without inventing reuse proof. Preserve bounded startup timing, root/process-group identity, observed process names and expected tier flags in failure receipts; the host exposes no parent PID. Verify retries avoid repeated successful-provider probes and refuse mismatched or unsupported state before native effects.
+
+- Transfer Codex host goals through the existing app-server during an explicitly requested foreman reset. The native hook retires the source and verifies the incoming binding before admission; the admitted continuation reads its saved scope/holds and completes restoration. Preserve the exact objective, lifecycle and remaining budget without fake completion, pause or blocked status; a blocked hook never activates target work (#51).
+- Journal transfer intent and cumulative prior-executor usage in the existing reset record, with schema-1/2/3 owner migration to schema 4. Recover lost host responses through the already bound successor without repeating native input or replenishing budget. Add one bounded `foreman-reset-status` receipt instead of exposing reset history.
+- Preserve native Claude/Grok resets without inventing an external host goal. Codex goal control must be available before scheduling; other external schedulers remain an explicit integration boundary. Exercise one continuing executor, repeated resets, inactive/unbudgeted goals, changed authority and host failures through native-hook and Unix WebSocket regression tests.
+
 ## 0.13.0 — 2026-10-20
 
 - Migrate native task releases to the independent Codex policy and Claude code-quality verdicts. Require both on the reviewed head; either blocking verdict holds release. Retain all-author review reading and historical Copilot feedback without requiring a Copilot verdict.

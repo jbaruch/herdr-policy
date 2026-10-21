@@ -1077,7 +1077,7 @@ class SnapshotTest(unittest.TestCase):
             {"claude": CLAUDE_PANE, "grok": GROK_PANE},
         )
         snapshot = measure(HerdrClient(runner=runner), AGENTS, AT)
-        self.assertEqual(snapshot["schema_version"], 5)
+        self.assertEqual(snapshot["schema_version"], 6)
         self.assertEqual(snapshot["measured_at"], AT)
         self.assertEqual(sorted(snapshot["agents"]), ["claude", "codex", "grok"])
         self.assertEqual(snapshot["failed_agents"], [])

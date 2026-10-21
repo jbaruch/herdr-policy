@@ -15,10 +15,16 @@ The shape of one task round, and what the foreman does between the steps of
 | judge | none | completed dispute or weighing ruling (binding), or a non-binding `insufficient` |
 
 Activate the responsibilities the next task decision needs. Add specialty
-requirements through `references/specialists.md`; a profile on the bench needs
+requirements through `skills/herdr-foreman/references/specialists.md`; a profile on the bench needs
 no worker or monitoring loop. One worker holds one assignment in a dispatch.
 Compatible expertise may share a responsibility. Consultations with the same
 canonical responsibility use separate dispatches, each with its own engagement.
+
+Run independent tasks concurrently; do not wait for one task's round to finish
+before dispatching the next eligible task. Use separate owned checkouts for
+independent implementation scopes. Once a pushed head is ready, dispatch its
+reviewer and tester together, preserving independence. A shared report-assessment
+queue or routine maintenance is no reason to leave other eligible workers idle.
 
 The owner planner applies capability and contribution eligibility before
 affordable task familiarity and measured headroom. Step 5 in the skill names
@@ -62,7 +68,8 @@ PR" contract in `skills/herdr-foreman/references/specialists.md`. Its external
 classification requires staffing every fired trigger and leaves source intact;
 it never substitutes for Phase 2 or authorizes release.
 
-**Phase 2 — post-push verification (mandatory).** The reviewer reviews the
+**Phase 2 — post-push verification (mandatory).** Dispatch both seats together.
+The reviewer reviews the
 pushed branch and posts a COMMENT review (Mode B). The tester runs the gates
 and the acceptance tests against that same branch (Mode C). Both report against
 the current tip by SHA.
@@ -110,7 +117,8 @@ evidence fails that stage closed.
 2. **Authority** — `verify-authority.sh <owner/repo>` answers whether the
    operator owns the repo. Ownership is the namespace, never write permission,
    and the answer becomes the authority line in every brief.
-3. **Measure** — `foreman.sh measure` reads each worker's own usage numbers.
+3. **Measure when needed** — `foreman.sh measure --retry-failed` fills failed,
+   missing or expired readings; reuse valid successes from the latest snapshot.
    A worker that is `working` or `blocked` is skipped with null windows rather
    than interrupted.
 4. **Plan** — `foreman.sh plan` assigns the requested responsibilities with
@@ -132,20 +140,20 @@ evidence fails that stage closed.
    It re-reads live status and refuses to type into a busy worker.
 9. **Observe** — `supervision-watch` observes every enrolled worker. Verify
    candidates with `wait-report.sh --once`, ledger outcomes, and acknowledge
-   handled events under `references/supervision.md`.
+   handled events under `skills/herdr-foreman/references/supervision.md`.
 10. **Gate** — the foreman reads every report in full and gates on its recorded
    contract lines, its classifier gates and the judge's rulings: another
    round, or the release hand-off.
 
 Before relying on a reviewer, tester or consultation report, save its delivery
-receipt and run `assess-specialist` under `references/specialists.md`. Record
+receipt and run `assess-specialist` under `skills/herdr-foreman/references/specialists.md`. Record
 the outcome its lines support in the task ledger and resolve its supervision
 obligations separately. Keep
 useful sessions available for likely follow-up, while preserving scoped lessons
 outside the session. No idle specialist counts as active work.
 
 The foreman appends decisions throughout this flow to the persistent task ledger,
-including before pauses and handoffs. `references/task-ledger.md` separates
+including before pauses and handoffs. `skills/herdr-foreman/references/task-ledger.md` separates
 dispatch and report observations from assignment acceptance and task completion.
 All references to the round log here mean that ledger.
 
@@ -168,7 +176,8 @@ checkpoint's `exit` and delivery JSON as `wait`:
 
 Then act on the checkpoint:
 
-- Read delivered reports in full
+- Read delivered reports in full before substantive assessment or acceptance;
+  a successful delivery receipt alone can reconcile observation
 - Pass the worker's checkout as `--worktree` when it has one
 - An exit 1 carries either `reason: checkpoint_pending` or a `stall` object
 - A `stall` is classified only when `--worktree` names the checkout
@@ -184,8 +193,10 @@ skills/herdr-foreman/references/dispatch-recovery.md
 ```
 
 Save each reviewer, tester and consultation report's successful delivery
-receipt and record its contract lines with `assess-specialist` under
-`skills/herdr-foreman/references/specialists.md` before retiring its enrollment. A refusal names
+receipt. Record its contract lines with `assess-specialist` under
+`skills/herdr-foreman/references/specialists.md` before relying on its content or
+using the assessed pane-cleanup route. Observation can end earlier on authenticated
+delivery, preserving the unassessed task obligation. A refusal names
 the report's gap; what it saves is the `assess-specialist` contract in
 `skills/herdr-foreman/references/dispatch-recovery.md`. Record `needs_work` in Step 12 and
 re-dispatch the same responsibility with that gap named. A reviewer or tester
@@ -498,7 +509,7 @@ an approved new direction starts at `continue` rather than inheriting the rungs
 the approaches it replaced spent.
 
 `skills/herdr-foreman/references/team-operation.md` Judge Seat carries the contract; the record
-shapes are the owner's, in `references/dispatch-recovery.md`.
+shapes are the owner's, in `skills/herdr-foreman/references/dispatch-recovery.md`.
 
 It is read-only without exception in either mode: no file edit, no mutating
 git or `gh` command, no GitHub post, no subagent dispatch.
@@ -561,7 +572,7 @@ and no degraded ruling.
 ## Dispatch Results
 
 Step 10 of `skills/herdr-foreman/references/foreman-workflow.md` follows these outcomes. Before a
-finish, apply the whole-fleet pause/handoff contract in `references/supervision.md`.
+finish, apply the whole-fleet pause/handoff contract in `skills/herdr-foreman/references/supervision.md`.
 
 - **Exit 0** — proceed to Step 11.
 - **Busy target** — no dispatch occurred. Wait for readiness or replan; stay
@@ -580,7 +591,7 @@ finish, apply the whole-fleet pause/handoff contract in `references/supervision.
 ## Ruling Outcomes
 
 `skills/herdr-foreman/references/judge-round.md` step 7 follows these branches. Before a finish, preserve any user question and
-apply the whole-fleet pause/handoff contract in `references/supervision.md`.
+apply the whole-fleet pause/handoff contract in `skills/herdr-foreman/references/supervision.md`.
 
 A completed `RULING:` line binds the round. Only the operator overrides it. `insufficient` binds nothing.
 

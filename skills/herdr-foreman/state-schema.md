@@ -155,7 +155,7 @@ remain readable without rewriting; they may not carry the new field.
 `window_group` names the usage window a worker kind shares with other kinds.
 Schema-7 `measure` starts one short-lived probe per group, reads usage once,
 closes it, and copies the result onto every kind in that group (snapshot schema
-2 introduced the field; current schema 5). `plan` charges a seat's cost
+2 introduced the field; current schema 6). `plan` charges a seat's cost
 against every kind in that window. A kind declaring none has a window to itself.
 
 The optional top-level `judge` key pins the judge worker kind, model, and effort.
@@ -607,8 +607,10 @@ skills/herdr-foreman/references/retrospectives.md
 | `schema_version` | integer | Currently `11`. Version 11 adds `reconciled_not_sent` context provenance with cleared true for an owner-proved closed immutable no-brief retry; older records migrate without inventing that proof. Version 10 adds the non-counting assignment status `maintenance`; version 9 adds `judge_mode` to every row: the judge seat's declared mode, `unknown` for a judge row migrated from before it, null for other roles. Version 8 drops the retired qualification battery's summary from `tier`; migration removes it from older rows. Version 7 adds `pressure_headroom` and `de_escalated` to a row's `tier`; an older tier row migrates to null headroom and `de_escalated: false`, since nothing could de-escalate before it. Bumped on any shape change |
 | `snapshots` | array | Whole `measure` documents, oldest first; the ring holds the last 20 |
 | `assignments` | array | Append-only ledger of who held which role |
-| `snapshots[].schema_version` | integer | Currently `5`. Version 2 added `window_group`; version 3 adds per-round `tier_billing`; version 4 adds `error.details` to failed agent records; version 5 lets `error.details` carry the optional cleanup evidence keys below. Older snapshots migrate on read, preserving headroom and shared-window membership |
-| `snapshots[].agents[].error.details` | object | Bounded, redacted failure evidence. Optional keys, each present only when recorded: `pending_cli_update` (boolean `true`), `failure_kind` (non-empty string), `pane` and `pane_id` (non-empty strings), `foreground_pids` (array of positive integers), `occupant_names` (array of non-empty strings). A missing key means not recorded, never an observed empty pane or occupant set. Argv, environment, composer text and nested errors are never stored. Hints, not authority: cleanup still proves live ownership |
+| `snapshots[].schema_version` | integer | Currently `6`. Versions 2–5 added window membership, tier billing and failure/cleanup evidence. Version 6 adds retry context, reused names and bounded startup evidence. The owner migrates 5 → 6 with null context and an empty reused list, preserving readings without inventing reuse proof |
+| `snapshots[].measurement_context_sha256` | string or null | SHA-256 of parsed worker profiles/account windows and the bound transport/host context; null means no reuse proof. Never authority or account credentials |
+| `snapshots[].reused_agents` | array of strings | Sorted names copied from the latest still-valid snapshot by `measure --retry-failed`; empty for new observations. `measured_at` retains the older observation time when any reading is reused |
+| `snapshots[].agents[].error.details` | object | Bounded, redacted failure evidence. Optional keys: `pending_cli_update` (true), `failure_kind`, `pane`, `pane_id`, `expected_kind`, `expected_model`, `expected_effort` (nonempty strings); `foreground_pids` (positive integers); `occupant_names`, `expected_flags` (strings); `startup_elapsed_ms`, `shell_pid`, `foreground_process_group_id` (nonnegative integers). Process/flag lists retain at most 16 items, with text capped at 256 bytes per item. A missing key means not recorded. Expected flags are generated model/effort flags, never raw observed argv or operator arguments. Environment, composer text and nested errors are never stored. Shell/group IDs do not establish parent lineage; the installed Herdr process-info API exposes no parent PID. Hints only: cleanup still proves live ownership |
 | `snapshots[].agents[].window_group` | string | The usage window this agent shares with others; empty means a window of its own. Present on every agent record, including skipped and failed ones — pool membership is config, not a measurement result |
 | `assignments[].schema_version` | integer | The row's own version, stamped on write |
 | `assignments[].at` | string | ISO-8601 timestamp, from `--now` or the CLI's clock |
@@ -733,8 +735,8 @@ gains empty `hand_clearances` and `historical_attempts` arrays. Existing
 record shapes, contents and evidence remain unchanged. Recovery 4 → 5 changes
 only the enclosing version. Older stores containing future dispatch fields or
 versions are refused without rewriting. State and assignment versions migrate
-independently; snapshot schemas 4 and 5 carry failed-record details and cleanup
-evidence through their own 3 → 4 and 4 → 5 migrations.
+independently; snapshot schemas 4–6 carry failed-record details, cleanup/startup
+evidence and measurement reuse through their own migration chain.
 Every record carries `at` and `task`. Authorizations contain the actual operator
 message `source` and `quote`; evidence receipts contain absolute `path` and
 `sha256` of the bytes read by the owner. Receipts are audit evidence, not a
@@ -884,7 +886,7 @@ to the recorded path plus `.retired` before final removal. Mismatches preserve
 the moved bytes. The manifest clears when retirement completes.
 
 The primary owner migrates delivery 1 to 2 on read and rewrites it before use.
-Before committing that whole-file format change, `foreman/workflow_upgrade.py`
+Before committing that whole-file format change, `skills/herdr-foreman/foreman/workflow_upgrade.py`
 checks every unfinished service against the executing policy identity. A
 mismatch refuses with a state error and leaves the original file unchanged,
 including on read-only previews. Restore the exact admitted policy to drain or
@@ -1058,7 +1060,8 @@ original `input`, `evidence_receipt`, and later `observed_state`/`observed_sessi
 An applied recovery appends a new assignment with null contemporaneous session
 proof and marks its result `recovered: true`; it preserves the original row.
 
-Each snapshot is one `measure` document: `schema_version`, `measured_at`, an
+Each snapshot is one `measure` document: `schema_version`, `measured_at`,
+`measurement_context_sha256`, `reused_agents`, an
 `agents` object keyed by agent name (`kind`, `state`, `herdr_state`,
 `state_source`, `pane_id`, `windows`, `credits`, `plan`, `headroom_pct`,
 `skipped`), and `failed_agents`. A failed agent carries `error.code`,
@@ -1173,7 +1176,6 @@ The independent continuity stores do not change this dispatch-state schema.
 | Model capabilities, sourced and dated | `<selected-state>.capabilities.json` | `skills/herdr-foreman/references/model-tiers.md`, Capability table |
 | Provisional successor placements and recalibration history | Same capability-table schema 2; entries remain schema 1 | `skills/herdr-foreman/references/successor-placement.md`, Saved schema and readers |
 | Report gates from classifier labels and blocking verdicts | `<selected-state>.report-gates.json` | `skills/herdr-foreman/references/report-classifier.md`, Sidecar schema 2 |
-| Aggregate decision-context allowance and creation receipt | `<selected-state>.context.json`, `<selected-state>.context-presence.json` | `skills/herdr-foreman/references/decision-context.md`, Counter schema |
 
 Resolve the selected state path before deriving these locations. Each store and
 its records have their own schema version and lock. Their offline readers never
@@ -1181,6 +1183,11 @@ migrate or write dispatch state. Preserve these files during task cleanup and
 include their locations in foreman handoffs. A saved observation is never task
 acceptance or permission to act. The referenced contracts own full field shapes,
 retry and unsupported-schema behavior; only their owner commands mutate them.
+
+The former schema-1 context counter (`<selected-state>.context.json`) and fixed
+presence receipt (`<selected-state>.context-presence.json`) are retired. No
+reader, writer, migration or runtime gate uses them. Existing bytes remain
+untouched; home relocation carries them as opaque files. See `skills/herdr-foreman/references/decision-context.md`.
 
 ### Supervision schema 1
 
@@ -1303,7 +1310,9 @@ Only the owner migrates, and it reads a version in one of three directions.
   empty `tier_billing` maps, preserving window groups and readings. Snapshot
   `3 → 4` adds an empty `error.details` object to failed records, preserving
   their code and message. Snapshot `4 → 5` stamps the version only: it keeps every
-  `error.details` as stored and adds none of the cleanup evidence keys. Each row is migrated even in
+  `error.details` as stored and adds none of the cleanup evidence keys. Snapshot
+  `5 → 6` adds `measurement_context_sha256: null` and `reused_agents: []` without
+  inventing context/reuse proof or changing existing observations. Each row is migrated even in
   a document already at the current version.
 - **Newer** — this build is the lagging reader, not the migrator. The caller
   gets an empty document in memory, the file on disk is left exactly as found,
@@ -1381,14 +1390,14 @@ file's own state lock, never the main state lock.
 for an existing explicit operator-requested maintenance reset. Without the flag,
 the CLI refuses before owner reads/writes, child startup or input. Ordinary
 round checkpoints schedule nothing and preserve the current goal and context.
-Existing reset rows and recovery commands remain readable; no schema changes.
+Existing reset rows and recovery commands remain readable.
 The reader
 checks every field, and the `result` shape each `status` requires.
 `foreman-reset-deliver` claims that row and finishes it.
 
-Envelope: `{"schema_version": 3, "resets": [<row>, ...]}`, rows in append
+Envelope: `{"schema_version": 4, "resets": [<row>, ...]}`, rows in append
 order. A missing file means no prior reset. A file whose envelope carries an
-integer `schema_version` above 3 was written by a newer build: a read takes it
+integer `schema_version` above 4 was written by a newer build: a read takes it
 as no prior reset, and a write refuses with `reset_record_newer`, leaving the
 file untouched (`rules/stateful-artifacts.md` Migration Policy). A record that
 is a link, cannot be read or parsed, fails any row's validation, or holds two
@@ -1398,12 +1407,15 @@ an outcome that would not validate is refused before it is written. The
 deliverer waits up to `CLAIM_LOCK_BUDGET_SEC` for the record lock, which
 `foreman-reset` holds until it has saved the deliverer's identity.
 
-Schema 2 added `native_session` (#523). Schema 3 adds `foreground` and
-`accepted_session` (#707). The owner migrates schema 1/2 on read
+Schema 2 added `native_session` (#523). Schema 3 added `foreground` and
+`accepted_session` (#707). Schema 4 adds `host_goal` (#51).
+The owner migrates schema 1/2/3 on read
 (`foreman_reset._migrate`): every row first validates against its own version;
 invalid records remain untouched. Schema-1 rows gain `native_session: null`;
-all older rows gain `foreground: null` and `accepted_session: null`. Row,
-delivered-result and envelope versions become 3. The owner rewrites
+schemas 1/2 gain `foreground: null` and `accepted_session: null`. Schema-3
+pins and acceptance remain intact. Every legacy row gains `host_goal: null`;
+that value proves no host-goal transfer and cannot admit a Codex reset input.
+Row, delivered-result and envelope versions become 4. The owner rewrites
 the upgraded record on that read, under the record lock, `catch-up`'s read
 included. A deliverer of the schema-1 build still running then reads a newer
 record and cannot record its outcome: its row stays `scheduled` or
@@ -1413,9 +1425,10 @@ could not take.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schema_version` | integer, always `3` | Row version |
-| `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before continuation input. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
+| `schema_version` | integer, always `4` | Row version |
+| `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before the first clear keystroke. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
+| `host_goal` | null or goal-receipt schema 1 | Legacy null grants no goal authority. New rows carry host preflight and the journal below. The input hook retires the source before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
 | `stow` | string | The stow id the resume prompt names |
 | `status` | one of `scheduled`, `delivering`, `delivered`, `failed`, `interrupted`, `reconciled` | `scheduled` → `delivering` → `delivered`; `failed` before any keystroke; `interrupted` after one; `reconciled` when the operator confirmed through `foreman-reset-reconcile` that the foreman resumed |
@@ -1424,6 +1437,49 @@ could not take.
 | `process` | `{"pid": integer, "identity": string}`, or null | The deliverer's process: its pid and a digest of its start time and command line (`supervision_runtime.process_identity`). A reused pid carries another identity. Null only on a `scheduled` row before its deliverer is identified, or on a `failed` row whose deliverer never started or was gone before identification. Every `delivering`, `delivered` and `interrupted` row carries one |
 | `native_session` | `{"kind": "id" \| "path", "value": non-empty string}`, or null | Original native binding. Null is retained only from schema-1 migration and authorizes no input. The per-keystroke session/process contract is `skills/herdr-foreman/foreman/foreman_reset.py` (`deliver`); hook transfer is `skills/herdr-foreman/foreman/reset_input_hook.py` (`check`) |
 | `result` | null, the delivery object, or the failure object | `scheduled` and `delivering` hold null. `delivered` holds exactly `{"schema_version", "pane_id", "stow", "agent", "cleared": true, "resume": {"landed": true, "started": true}}`, whose `schema_version`, `pane_id` and `stow` equal the row's. `failed` and `interrupted` hold exactly `{"error": string, "message": string, "details": object, "resume_prompt": string}`; the saved prompt is used only when the recovery instruction requires operator input. `reconciled` holds exactly `{"outcome": "delivered", "reconciled_at": ISO-8601 string}` |
+
+The reset owner writes and reads goal-receipt schema 1 through
+`skills/herdr-foreman/foreman/host_goals.py`; the host adapter is
+`skills/herdr-foreman/foreman/codex_goals.py`. Native Claude/Grok receipts contain
+only `schema_version`, `runtime` and `phase: not_applicable`: they create no
+Codex goal and prove nothing about an external scheduler. Codex receipts contain:
+
+| Field | Contract |
+| --- | --- |
+| `schema_version`, `runtime` | Integer `1`, literal `codex` |
+| `socket` | Absolute existing daemon control socket selected during read-only preflight |
+| `source_thread`, `source_goal` | Original native ID and its authoritative host goal snapshot, or null when no goal exists. Snapshot fields are `threadId`, `objective`, `status`, nullable `tokenBudget`, `tokensUsed`, `timeUsedSeconds`, `createdAt`, `updatedAt`; additional host fields are preserved |
+| `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration |
+| `phase` | `prepared`, `quiescing`, `retiring`, `retired`, `restoring`, `restored`, `verified`; intermediate intent is never proof the corresponding host mutation succeeded |
+| `retiring_turn`, `resume_status` | Exact outgoing turn ID selected for host interruption, or null; original goal lifecycle restored on the successor, or null with no source goal. A real interruption may pause the outgoing host goal; it never changes the saved objective's intended lifecycle |
+| `carried_tokens`, `carried_seconds` | Nonnegative cumulative usage from prior executors of this goal. The successor's native counters remain native; its token cap is only the remaining allowance |
+
+Each host mutation is preceded by a saved phase. Recovery reads live source and
+target state, preserves changed goals and never blindly repeats a lost mutation.
+An already-running obsolete continuation is interrupted by its exact host turn
+ID before final usage is captured; no new turn is started to stop it.
+The explicit reset request authorizes retiring its obsolete executor through
+host control; no completion, pause or blocked status represents retirement.
+Only a matching verified generation carries accounting into the next reset.
+`foreman-reset-status --stow <id> [--pane <pane>]` emits one bounded selected
+receipt under the per-response output bound; it prints no objective or
+history. A missing or ambiguous selection refuses. Its output is a receipt,
+not a substitute for live host/owner verification.
+Codex receipts bind `source_thread` to the row's original native session and
+any accepted session to `target_thread`. Non-prepared phases require a distinct
+target; restored/verified goals require their created generation. An absent
+source goal carries no generation, usage or interrupted-turn authority.
+Restoring/restored/verified Codex rows require native acceptance. Reconciliation
+matches that accepted identity to the live pane/runtime before host effects;
+it cannot label admitted input failed. An older failed row with accepted,
+unfinished restoration remains recoverable through delivered reconciliation.
+An unadmitted Codex terminal failure with foreground proof carries the existing
+guarded resume prompt in `result.resume_prompt`. Native submission in the same
+pinned session verifies it and writes `accepted_session` once before restoration;
+there is no automatic resend or new owner record. With no journaled target and
+supervision still bound to the source, operator recovery clears that same
+pinned runtime first. Once either target or rebound supervision exists, recovery
+preserves the incoming session without another clear or process restart.
 
 One claimed delivery attempt per pane and stow, never retried automatically.
 Production startup uses a private inherited pipe: the loaded child supplies
@@ -1434,7 +1490,7 @@ preclaim recovery follows `skills/herdr-foreman/foreman/foreman_reset.py` (`sche
 `STARTUP_ATTEMPTS`): under the record lock the owner proves its row remains
 unclaimed, reaps only its own child and revokes that process identity before
 another start. The private reset log retains each lost startup's attempt,
-process identity and fixed failure reason. No row shape changes. Exhaustion
+process identity and fixed failure reason. Exhaustion
 finishes `failed`; a claimed failure or uncertain send never retries.
 A
 retry replays before every precondition the reset itself changes (stow
@@ -1481,9 +1537,9 @@ reasons. An unnamed target uses `reset_foreman_unnamed`, reason
 record `phase: unclaimed` for a never-claimed child and `phase: unknown` for a
 claimed delivery whose outcome is unknown. Older reconciled failures without
 that phase retain the indeterminate operator route. Row/envelope shapes remain
-schema 3; no new stored field or legacy authority is introduced.
+schema 4; migration introduces no legacy host-goal authority.
 
-The Stop evaluator reads this record without migrating or rewriting it. A schema-1/2
+The Stop evaluator reads this record without migrating or rewriting it. A schema-1/2/3
 record supplies no usable prior state and refuses Stop with `reset_record_older`;
 the diagnostic names the owner's `catch-up` migration and rewrite. Only the sole current
 handoff whose id equals `stow` can use a live claimed `delivering` row. A live

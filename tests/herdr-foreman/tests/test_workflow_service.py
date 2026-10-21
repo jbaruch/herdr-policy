@@ -131,7 +131,7 @@ class WorkflowServiceTest(unittest.TestCase):
         self.ordinal, self.clock_calls = 0, 0
         state = self.owner.state()
         state["recovery"]["tasks"]["one"]["base_revision"] = self.base
-        add_snapshot(state, {"schema_version": 5, "measured_at": self.now(), "agents": {
+        add_snapshot(state, {"schema_version": 6, "measurement_context_sha256": None, "reused_agents": [], "measured_at": self.now(), "agents": {
             name: {"kind": name, "state": "idle", "headroom_pct": 90.0}
             for name in ("claude", "codex", "grok")}, "failed_agents": [], "skipped_agents": []})
         save_state(self.path, state)
@@ -729,7 +729,7 @@ class WorkflowServiceTest(unittest.TestCase):
         self.admit()
         self.foreign_enrollment()
         state = self.owner.state()
-        add_snapshot(state, {"schema_version": 5, "measured_at": self.now(), "agents": {
+        add_snapshot(state, {"schema_version": 6, "measurement_context_sha256": None, "reused_agents": [], "measured_at": self.now(), "agents": {
             name: {"kind": name, "state": "idle", "headroom_pct": 0.0}
             for name in ("claude", "codex", "grok")}, "failed_agents": [], "skipped_agents": []})
         save_state(self.path, state)

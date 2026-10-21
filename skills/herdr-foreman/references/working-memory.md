@@ -11,7 +11,12 @@ command emits JSON; report a non-zero command's diagnostic before continuing.
 
 After synthesizing a retrospective, inspect the current lessons. Add a lesson only when it changes a future decision or brief. State the behavior, its relevance scope, the evidence supporting it, when the foreman last verified that evidence, and when the lesson must be revalidated. Link the actual retrospective, report, review, or source document. Capture unevidenced hypotheses as unresolved stow knowledge with an explicit gap.
 
-Before planning a round or composing a brief, use `memory-list` with the relevant project, task and role scopes. Read the source and verify the lesson against current conditions before applying it. Include only applicable lessons in the brief, with their source links. A `same_bytes` observation says the local file matches its saved receipt; it does not confirm the claim or renew verification. HTTPS evidence is never fetched by these offline commands. Expired, changed or unavailable evidence requires investigation before use.
+Retrieve a lesson only when a task-specific question needs it. Unchanged known
+lessons need no repeated list/read cycle before planning or briefing. Before
+relying on a recalled operational fact, verify its live source. Include only
+applicable lessons in the brief, with their source links. A `same_bytes`
+observation verifies file bytes, not the claim. Expired or unavailable evidence
+cannot support a decision, but unrelated lesson maintenance does not block it.
 
 Keep the active set concise. Merge overlapping lessons through a new revision, retaining the replaced record. Archive lessons that no longer affect active work with a concrete reason. A new active revision can reactivate an archived lesson after verification. Never delete historical revisions or rewrite the retrospective to make a lesson appear supported. These operations do not change policy, task authority, correction budgets or user preferences.
 
@@ -69,7 +74,7 @@ selected knowledge through `KNOWLEDGE` in the consultation brief or
 Before releasing a useful session, capture decisions, rejected alternatives,
 unresolved evidence and lessons that would otherwise disappear. Link the outgoing
 report, report-contract assessment and retrospective from the task handoff. A warm session
-can support follow-up under `references/dispatch-recovery.md`; it is never the
+can support follow-up under `skills/herdr-foreman/references/dispatch-recovery.md`; it is never the
 only copy of valuable knowledge. Give a fresh worker the durable sources without
 claiming that recalled context proves present competence or independence.
 
@@ -131,17 +136,32 @@ Do not work around refusal by dumping the index or replaying the archive.
 
 ## Successor Goal
 
-For a new foreman taking over outstanding work, explicitly set
-`/goal <saved objective>` in that foreman's host runtime after reading the
-handoff and before resuming dispatch or retiring the outgoing foreman.
-Restore the saved remaining budget when the runtime supports a budget; never
-grant a fresh full budget for the same goal. Verify the runtime reports the
-goal active and that its objective and remaining work match the saved authority.
-A prompt saying "continue the goal" or naming the objective is not this action.
-If the saved goal or the runtime's `/goal` facility is unavailable, keep the
-outgoing foreman responsible and recover that gap; never silently skip goal
-activation or claim a healthy successor. A requested in-place reset uses the
-same goal restoration after resume; it does not implement successor takeover.
+For a requested maintenance reset, the native reset hook owns the host-goal
+handoff. Use `foreman-reset-status --stow <stow-id>` with the same owner flags
+to read that one receipt; do not open the reset history. The Codex receipt must
+report `host_goal.phase: verified` before dispatch. Its carried usage belongs
+to the same objective; the host's successor counter records only that thread's
+usage. Never grant a fresh full budget or recreate a goal from prompt text.
+At `phase: retired`, the native hook has admitted the continuation without
+creating a target goal. After reading the saved scope and holds, finish it with
+`foreman-reset-reconcile --outcome delivered` for that pane/stow. The model
+receives its continuation instructions before automatic target work can start.
+An unfinished admitted restoration remains in catch-up even if prompt delivery
+completed; it never counts as verified takeover. Reconciliation finishes the
+existing transfer before dispatch, with no pause, new reset or repeated input.
+Goal restoration requires a matching native admission and live pane/session.
+If the original hook blocked, use the owner's saved guarded operator-recovery
+prompt in the same pinned session without clearing it; delivery assertions alone
+cannot activate its goal. The hook consumes that recovery input once.
+
+Native Claude/Grok report `not_applicable` for the Codex goal scheduler and
+create no host goal. An external scheduler is outside that receipt's proof.
+If such a host owns an automatic goal, retain its executor and use its supported
+transfer integration before resetting; this plugin cannot claim its retirement.
+Fresh-foreman succession outside the requested reset also requires a supported
+host transfer. A new active goal alone never retires the outgoing executor.
+An unavailable or unfinished transfer remains recovery work; never emulate it
+with completion, a user pause, or blocked status.
 
 ## Reset Outcome Routing
 
@@ -218,10 +238,10 @@ foreman load-set --decision wake --enrollment <enrollment-id>
 foreman load-set --decision diagnose --task <task> --read-file <listed-reference> --question <specific-question> [--offset <byte-offset>]
 ```
 
-Schema 3 retains `budget`, `history_included: false` and
-`authorizes_progression: false`, and adds `aggregate_budget`. The command debits
-one bounded private context counter and retains its fixed creation receipt; operational owner schemas remain
-unchanged. It retains task/budget facts, task-local and global open attention,
+Schema 4 retains `budget`, `history_included: false` and
+`authorizes_progression: false`, removing aggregate read accounting. Reads create
+no counter or creation receipt. Operational owner schemas remain unchanged.
+It retains task/budget facts, task-local and global open attention,
 unknown deliveries of every role, and current-round references.
 The supervision view retains unresumed hold references even when an event changes
 their original boundary. `boundary_held: false` never means the operator cleared
@@ -236,7 +256,7 @@ acceptance, or no unresolved findings. Recheck the current head and owner gates
 before acting. Required unavailable or unexamined evidence keeps the decision held.
 Evidence reads return a task-bound `kind: evidence_chunk` response with
 `decision_context_included: false`; they do not repeat or replace the decision
-packet. Retain the current decision context and reload it before acting. Byte
+packet. Reuse unchanged current decision context; owners revalidate effects. Byte
 continuations end at complete UTF-8 sequences. Invalid UTF-8 or an offset inside
 a character refuses with a recovery instruction; no replacement characters are
 substituted. Escaped text still obeys the printed output budget.
@@ -244,10 +264,10 @@ substituted. Escaped text still obeys the printed output budget.
 The response and evidence-read bounds belong to `OUTPUT_BYTES` and `READ_BYTES`
 in `skills/herdr-foreman/foreman/load_set.py`. Oversized current obligations fail
 visibly rather than being silently truncated. Unknown tasks or enrollments refuse.
-Readers requiring earlier view schemas must update before consuming schema 3; no shape
+Readers requiring earlier view schemas must update before consuming schema 4; no shape
 grants progression authority.
 
-The aggregate allowance, error recovery and counter schema bind here:
+Response bounds and the retired counter's lifecycle are documented here:
 
 ```text
 skills/herdr-foreman/references/decision-context.md

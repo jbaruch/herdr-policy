@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
-from foreman import attention, cli, decision_budget, memory
+from foreman import attention, cli, memory
 
 
 NOW = "2025-01-01T12:00:00Z"
@@ -51,7 +51,7 @@ class ContinuityCliTests(unittest.TestCase):
                 "resolution_condition": "Record the user's review outcome.",
                 "sources": [{"schema_version": 1, "kind": "task_ledger", "ref": str(self.source)}]}
 
-    def test_empty_read_writes_only_exposure_accounting_with_unreadable_dispatch_content(self):
+    def test_empty_read_writes_nothing_with_unreadable_dispatch_content(self):
         self.state.write_text("not valid dispatch JSON", encoding="utf-8")
         before = {str(path): path.read_bytes() for path in self.root.iterdir()}
         for command in ("memory-list", "memory-show", "catch-up", "attention-list"):
@@ -65,12 +65,7 @@ class ContinuityCliTests(unittest.TestCase):
                     self.assertEqual(code, 0, errors)
                     self.assertIsNotNone(payload)
         after = {str(path): path.read_bytes() for path in self.root.iterdir()}
-        counter = decision_budget.location(self.state)
-        for path in (counter, Path(str(counter) + ".lock"), decision_budget.presence_location(self.state)):
-            self.assertIn(str(path), after)
-            del after[str(path)]
         self.assertEqual(before, after)
-        self.assertGreater(json.loads(counter.read_text())["returned_bytes"], 0)
 
     def test_lesson_and_stow_survive_new_cli_invocations_and_lost_source(self):
         lesson = {"id": "lesson-1", "lesson_id": "report-source", "supersedes": None,

@@ -325,6 +325,14 @@ class SupervisionTest(unittest.TestCase):
         self.assertIsNone(self.stop())
         self.assertFalse(self.path.exists(), "Supervision must not rewrite dispatch/task state")
 
+    def test_unrelated_newer_or_unusable_reset_record_cannot_block_an_empty_foreman(self):
+        record = foreman_reset.record_path(self.path)
+        for body in ('{"schema_version":999,"resets":[]}', 'corrupt unrelated reset record'):
+            with self.subTest(body=body):
+                record.write_text(body)
+                self.assertIsNone(self.stop())
+                self.assertEqual(record.read_text(), body)
+
     def test_active_worker_always_blocks_stop_even_with_loop_guard(self):
         self.member()
         self.assertEqual(self.stop()["decision"], "block")

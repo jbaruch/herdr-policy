@@ -91,7 +91,7 @@ Proceed immediately to Step 4.
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/foreman.sh" measure
+bash "$HS/foreman.sh" measure --retry-failed
 ```
 
 Sends each configured worker its own usage command and parses the reply. Emits
@@ -183,8 +183,8 @@ never weaken required independence to fill a seat.
 Planning also refuses a field nothing could have been ranked in: a snapshot
 missing an agent `config.json` declares, an `--exclude` list naming nobody the
 snapshot measured, and a ranked seat measured against a single agent beside the
-pinned judge. Re-run Step 4's `measure` over the whole roster rather than
-planning from a single-worker snapshot; the pinned judge seat and a config whose
+pinned judge. Use Step 4's `measure --retry-failed` to fill missing or expired
+readings while retaining valid successes; the pinned judge seat and a config whose
 rankable roster holds one worker are the only exemptions.
 
 For a retained fix, plan `--roles developer` and exclude every other rotating
@@ -196,7 +196,7 @@ post-push verification.
 For a follow-up that will use `--retain-specialist`, plan the consultation alone
 with its original requirements and worker. Use exclusions to preserve that
 worker; a changed candidate requires a fresh handoff. Follow the owner checks in
-`references/dispatch-recovery.md` instead of treating a warm pane as dispatch proof.
+`skills/herdr-foreman/references/dispatch-recovery.md` instead of treating a warm pane as dispatch proof.
 
 `--roles` keys the output document. Configured `role_costs` calibrate its costs.
 `skills/herdr-foreman/foreman/composition.py` owns capability, contribution and familiarity evidence;
@@ -210,7 +210,7 @@ round choice never overrides a model. Supply the fix number when planning
 fixes; pass that same number at dispatch. Register the original task/base with
 `foreman task` and use the same `--task` on plan and apply. Authorized extra
 fixes also share `--correction-plan` and `--work`; their owner-managed bounds
-are documented in `references/dispatch-recovery.md`. Keep YOLO mode and supported
+are documented in `skills/herdr-foreman/references/dispatch-recovery.md`. Keep YOLO mode and supported
 UI options across worker restarts. The config, round-input, and
 billing-evidence contracts are in:
 
@@ -291,9 +291,9 @@ dispatch a brief whose worktree does not exist. Proceed immediately to Step 8.
 
 ## Step 8 — Compose the Briefs
 
-Consult the applicable working-memory lessons and verify any operational fact
-the assignment relies on. Include concise relevant lessons with source pointers
-in the role's task text; do not copy the whole memory store into every brief.
+Use the task's existing assignment evidence. Retrieve lessons only for a specific
+unresolved question, and verify operational facts the assignment relies on.
+Reuse unchanged common/role input; do not copy the memory store into each brief.
 Follow `skills/herdr-foreman/references/team-operation.md` Judgment Routes.
 Recorded accepted behavior, reproducible failure and a bounded correction route
 directly to development without another advisor. Unsettled behavior, evidence,

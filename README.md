@@ -30,7 +30,7 @@ These limits are not measured throughput or token savings.
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.13.0** with coding-policy **0.5.0**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.13.2** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
@@ -56,6 +56,12 @@ Tessl uses `.tessl-plugin/plugin.json`; ACR uses `agent-plugin.yaml`. ACR v1 has
 ## Supported Execution
 
 Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR also realizes Cursor's canonical hook surface; installation and lifecycle behavior are covered by conformance checks. Grok uses the Claude-compatible settings contract; the reset and Stop subprocess regression tests preserve its shell-command form. Portable Tessl startup uses the same role reader and defers to the registered native hooks. All ordinary-session hooks return before checking Python, Herdr or owner files.
+
+Requested Codex foreman resets also verify host-goal transfer through the existing
+Codex app-server control socket. The successor retains the objective and remaining
+budget; the outgoing goal executor is retired before continuation is admitted.
+Use the selected `foreman-reset-status --stow <id>` receipt for recovery. Native
+Claude/Grok resets create no external goal. See [reset integration and validation](skills/herdr-foreman/references/reset-hooks.md).
 
 Only the small [routing rule](rules/herdr-scope.md) loads automatically. The
 skill entrypoints route to decision-specific references. SessionStart verifies
