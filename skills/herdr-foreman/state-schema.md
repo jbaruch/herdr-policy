@@ -155,7 +155,7 @@ remain readable without rewriting; they may not carry the new field.
 `window_group` names the usage window a worker kind shares with other kinds.
 Schema-7 `measure` starts one short-lived probe per group, reads usage once,
 closes it, and copies the result onto every kind in that group (snapshot schema
-2 introduced the field; current schema 5). `plan` charges a seat's cost
+2 introduced the field; current schema 6). `plan` charges a seat's cost
 against every kind in that window. A kind declaring none has a window to itself.
 
 The optional top-level `judge` key pins the judge worker kind, model, and effort.
@@ -886,7 +886,7 @@ to the recorded path plus `.retired` before final removal. Mismatches preserve
 the moved bytes. The manifest clears when retirement completes.
 
 The primary owner migrates delivery 1 to 2 on read and rewrites it before use.
-Before committing that whole-file format change, `foreman/workflow_upgrade.py`
+Before committing that whole-file format change, `skills/herdr-foreman/foreman/workflow_upgrade.py`
 checks every unfinished service against the executing policy identity. A
 mismatch refuses with a state error and leaves the original file unchanged,
 including on read-only previews. Restore the exact admitted policy to drain or
@@ -1187,7 +1187,7 @@ retry and unsupported-schema behavior; only their owner commands mutate them.
 The former schema-1 context counter (`<selected-state>.context.json`) and fixed
 presence receipt (`<selected-state>.context-presence.json`) are retired. No
 reader, writer, migration or runtime gate uses them. Existing bytes remain
-untouched; home relocation carries them as opaque files. See `references/decision-context.md`.
+untouched; home relocation carries them as opaque files. See `skills/herdr-foreman/references/decision-context.md`.
 
 ### Supervision schema 1
 
@@ -1310,7 +1310,9 @@ Only the owner migrates, and it reads a version in one of three directions.
   empty `tier_billing` maps, preserving window groups and readings. Snapshot
   `3 → 4` adds an empty `error.details` object to failed records, preserving
   their code and message. Snapshot `4 → 5` stamps the version only: it keeps every
-  `error.details` as stored and adds none of the cleanup evidence keys. Each row is migrated even in
+  `error.details` as stored and adds none of the cleanup evidence keys. Snapshot
+  `5 → 6` adds `measurement_context_sha256: null` and `reused_agents: []` without
+  inventing context/reuse proof or changing existing observations. Each row is migrated even in
   a document already at the current version.
 - **Newer** — this build is the lagging reader, not the migrator. The caller
   gets an empty document in memory, the file on disk is left exactly as found,
@@ -1467,6 +1469,14 @@ Codex receipts bind `source_thread` to the row's original native session and
 any accepted session to `target_thread`. Non-prepared phases require a distinct
 target; restored/verified goals require their created generation. An absent
 source goal carries no generation, usage or interrupted-turn authority.
+Restoring/restored/verified Codex rows require native acceptance. Reconciliation
+matches that accepted identity to the live pane/runtime before host effects;
+it cannot label admitted input failed. An older failed row with accepted,
+unfinished restoration remains recoverable through delivered reconciliation.
+An unadmitted Codex terminal failure with foreground proof carries the existing
+guarded resume prompt in `result.resume_prompt`. Native submission in the same
+pinned session verifies it and writes `accepted_session` once before restoration;
+there is no automatic resend or new owner record.
 
 One claimed delivery attempt per pane and stow, never retried automatically.
 Production startup uses a private inherited pipe: the loaded child supplies

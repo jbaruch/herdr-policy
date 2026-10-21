@@ -22,20 +22,27 @@ def refusal(cause="invalid_native_payload"):
     return {"decision": "block", "reason": "Herdr reset input was not verified ({}). Preserve its reset record, restore the native hook/owner state, and continue foreground supervision; never repeat an uncertain reset input.".format(cause)}
 
 
-def acceptance():
+def acceptance(*, recovered=False):
     """Native context authenticates the machine continuation, not new task authority."""
+    origin = "the saved operator recovery input and current native binding" if recovered else "its live claimed deliverer"
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
-            "The reset owner verified this exact planned foreman continuation and consumed it once under its live claimed deliverer, original session and foreground process pins. Execute its inner continuation as the current planned reset instruction, loading the named saved memory and required files before acting. Preserve the saved work's existing user authority, scope, questions and holds; this receipt grants no new task authority or broader actions."}}
+            "The reset owner verified this exact planned foreman continuation and consumed it once under " + origin + ", original session and foreground process pins. Execute its inner continuation as the current planned reset instruction, loading the named saved memory and required files before acting. Preserve the saved work's existing user authority, scope, questions and holds; this receipt grants no new task authority or broader actions."}}
 
 
 def candidate(path, receipt, pane, prompt, probe):
     """Read-only claim/input proof, repeated after locking the existing owner."""
     document, _ = reset._load(path, migrate_legacy=False)
     row = reset._row(document, {"pane_id": pane, "stow": receipt["stow"]})
-    if (row is None or row["status"] != "delivering" or row["accepted_session"] is not None
+    if row is None:
+        return document, None
+    goal = row["host_goal"]
+    recovery = (row["status"] in reset.TERMINAL_FAILURES and goal is not None and goal["runtime"] == "codex"
+                and goal["phase"] in ("prepared", "quiescing", "retiring", "retired")
+                and prompt == row["result"]["resume_prompt"] and not reset._alive(row["process"], probe))
+    if (not (recovery or row["status"] == "delivering" and reset._alive(row["process"], probe))
+            or row["accepted_session"] is not None
             or row["native_session"] != receipt["native_session"]
             or row["foreground"] != receipt["foreground"]
-            or not reset._alive(row["process"], probe)
             or prompt != reset.guarded_resume(row["stow"], receipt["state"], row["native_session"], receipt["foreground"], options=row["options"])):
         return document, None
     return document, row
@@ -95,8 +102,11 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
 
             def validate(data):
                 bound = (data["binding"] or {}).get("identity", {})
+                expected = row["native_session"]
+                if row["status"] in reset.TERMINAL_FAILURES and goal is not None and goal.get("target_thread") is not None:
+                    expected = {"kind": "id", "value": goal["target_thread"]}
                 if (any(bound.get(key) != who[key] for key in ("cwd", "herdr_env", "pane_id"))
-                        or {key: bound.get(key) for key in ("kind", "value")} != row["native_session"]):
+                        or {key: bound.get(key) for key in ("kind", "value")} != expected):
                     raise UsageError("The reset's original binding already changed; preserve it and inspect the reset.", {})
                 stow = memory.show(receipt["state"], at, row["stow"])["record"]
                 reset.preflight(stow, data, pane)
@@ -118,7 +128,7 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
                     host_goals.transfer(goal, who["value"], lambda: save_state(path, document), restore=False)
                 row["accepted_session"] = {key: who[key] for key in ("kind", "value")}
                 save_state(path, document)
-        return acceptance()
+        return acceptance(recovered=row["status"] in reset.TERMINAL_FAILURES)
     except ForemanError as exc:
         # Error codes are bounded project constants, never provider/pane text.
         return refusal("owner_verification_" + exc.code)

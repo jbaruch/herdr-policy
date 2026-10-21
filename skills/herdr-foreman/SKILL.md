@@ -4,7 +4,7 @@ description: >
   Coordinate concurrent Herdr delivery, supervise or recover the crew, and release
   verified work. Use when asked to assign Herdr work, run crew tasks in parallel,
   recover a stuck worker, ship verified changes, or look up Herdr readiness, task
-  cost, GitHub evidence, lessons, handoff notes, retrospectives or coordination
+  cost, saved attention, GitHub evidence, lessons, handoff notes, retrospectives or coordination
   metrics. Live coordination requires a verified foreman; workers retain their assignment.
 ---
 
@@ -47,12 +47,21 @@ Read `role`, `verified`, `reason`, `context` and owner path from success JSON.
 On failure, report its diagnostic, restore the selected installation or owner,
 and finish here. Use no replacement store to obtain a role.
 
-- Verified `foreman`: follow the returned context and current action. Fill eligible capacity before waiting; run independent tasks and reviewer/tester seats concurrently. Continue the delivery loop to its Stop/handoff boundary.
-- Verified `worker`: follow its returned protocol and delivered assignment; finish this skill here.
-- `standalone`: perform ordinary authorized work under general coding policy; finish this skill here.
-- `recovery` or `unverified`: follow recovery instructions; restore a verified role before coordination. Finish here without clearing obligations.
-
-Load no legacy plan, later stages or owner history.
+- Verified `foreman`:
+  - Follow the returned context and current action.
+  - Fill eligible capacity before waiting.
+  - Run independent tasks and reviewer/tester seats concurrently.
+  - Continue to the delivery loop's Stop/handoff boundary.
+- Verified `worker`:
+  - Follow the returned protocol and assignment.
+  - Finish here.
+- `standalone`:
+  - Perform ordinary authorized work under general policy.
+  - Finish here.
+- `recovery` or `unverified`:
+  - Follow recovery instructions without clearing obligations.
+  - Restore a verified role before coordination.
+  - Finish here.
 
 ## Step 2 — Collect Coordination Evidence
 

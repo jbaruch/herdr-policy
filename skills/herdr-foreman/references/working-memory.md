@@ -149,6 +149,10 @@ receives its continuation instructions before automatic target work can start.
 An unfinished admitted restoration remains in catch-up even if prompt delivery
 completed; it never counts as verified takeover. Reconciliation finishes the
 existing transfer before dispatch, with no pause, new reset or repeated input.
+Goal restoration requires a matching native admission and live pane/session.
+If the original hook blocked, use the owner's saved guarded operator-recovery
+prompt in the same pinned session without clearing it; delivery assertions alone
+cannot activate its goal. The hook consumes that recovery input once.
 
 Native Claude/Grok report `not_applicable` for the Codex goal scheduler and
 create no host goal. An external scheduler is outside that receipt's proof.

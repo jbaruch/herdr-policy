@@ -77,7 +77,7 @@ from .herdr import DEFAULT_SETTLE_TIMEOUT_MS
 from . import supervision, host_goals, context_output
 from .chronology import timestamp
 from .runnable import command, launcher
-from .supervision_runtime import process_identity
+from .supervision_runtime import process_identity, read_client
 from .state import save_state, state_lock
 
 RESET_SCHEMA_VERSION = 4
@@ -200,6 +200,8 @@ UNTOUCHED_RECOVERY = ("Do not run `{}` again for this stow. Nothing was typed by
 
 def recovery_instruction(status, result):
     """Failed delivery typed nothing; operator-reconciled uncertainty is not that proof."""
+    if "\n" + RESET_RECEIPT_PREFIX in result.get("resume_prompt", ""):
+        return "The input was not admitted. The operator pastes the saved recovery prompt into this same bound native session without clearing or restarting it; its native hook verifies admission before goal restoration."
     if status == "failed" and (result["details"].get("reconciled") != "failed"
                                or result["details"].get("phase") == "unclaimed"):
         return UNTOUCHED_RECOVERY
@@ -558,6 +560,7 @@ def _valid_row(row, version=RESET_SCHEMA_VERSION):
     if version >= 4 and row["host_goal"] is not None and row["host_goal"]["runtime"] == "codex":
         goal, source, accepted = row["host_goal"], row["native_session"], row["accepted_session"]
         if (source is None or source["kind"] != "id" or goal["source_thread"] != source["value"]
+                or goal["phase"] in ("restoring", "restored", "verified") and accepted is None
                 or accepted is not None and (accepted["kind"] != "id" or goal["target_thread"] != accepted["value"])):
             return False
     options = row["options"]
@@ -870,7 +873,7 @@ def outstanding(state_path, *, alive=_alive):
         elif row["status"] in TERMINAL_FAILURES:
             prompt = row["result"]["resume_prompt"]
             needed = row["result"]["message"].replace(OPERATOR_RECOVERY, "").strip() + " " + recovery_instruction(row["status"], row["result"])
-            if row["status"] == "interrupted":
+            if row["status"] == "interrupted" and "\n" + RESET_RECEIPT_PREFIX not in prompt:
                 # Typing began, so the pane may already hold a resumed foreman:
                 # the record alone cannot say, and clearing it would erase that context.
                 needed = ("Look at pane {} first: if a foreman resumed from this reset is running there, run `{}` "
@@ -900,7 +903,7 @@ def outstanding(state_path, *, alive=_alive):
 RECONCILE_OUTCOMES = ("delivered", "failed")
 
 
-def reconcile(state_path, plan, outcome, at, *, alive=_alive):
+def reconcile(state_path, plan, outcome, at, *, alive=_alive, client=None):
     """Close a reset whose deliverer is gone without an outcome; the operator says which one happened.
 
     The owner's repair for a record that could not say how a delivery ended.
@@ -909,7 +912,9 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
     operator saw resume (`delivered` only). A live deliverer is still working,
     and any other finished row already has its outcome. `failed` records the failure with the resume prompt built
     from the row's own settings; `delivered` records that the operator saw the
-    foreman resume.
+    foreman resume. Codex goal restoration additionally requires this native
+    hook's admitted session and a matching live pane; an operator outcome alone
+    never admits model input or activates a goal.
     """
     if outcome not in RECONCILE_OUTCOMES:
         raise UsageError("Reconcile outcome is delivered or failed.", {"outcome": outcome})
@@ -929,27 +934,36 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
         # A `scheduled` row was never claimed, so nothing was typed and it can
         # only have failed; a delivery that began may have resumed the foreman.
         goal = row["host_goal"]
+        if outcome == "failed" and row["accepted_session"] is not None:
+            raise UsageError("This continuation was admitted. Preserve that delivery fact and finish its saved goal restoration with --outcome delivered; do not classify admitted input as failed.", {})
         admitted_goal = (outcome == "delivered" and row["accepted_session"] is not None
                          and goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified")
         reopenable = ((row["status"] == "scheduled" and outcome == "failed")
                       or row["status"] == "delivering"
-                      or row["status"] == "delivered" and admitted_goal
+                      or row["status"] in ("delivered", "failed") and admitted_goal
                       or (row["status"] == "interrupted" and outcome == "delivered"))
         if not reopenable:
             raise UsageError("The reset from stow {} already ended {}{}; there is nothing to reconcile.".format(
                 row["stow"], row["status"], " (reconciled as {})".format(previous) if previous else ""),
                 {"record": str(path), "status": row["status"]})
-        live_deliverer = row["status"] != "interrupted" and alive(row["process"])
+        live_deliverer = row["status"] in ("scheduled", "delivering") and alive(row["process"])
         if live_deliverer and not admitted_goal:
             raise UsageError("The reset from stow {} still has its deliverer running; let it finish instead of "
                              "reconciling.".format(row["stow"]), {"record": str(path), "process": row["process"]})
         if outcome == "delivered":
             if goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified":
+                if row["accepted_session"] is None:
+                    raise UsageError("The reset input was not admitted. Keep its goals unchanged; use the owner's saved native recovery prompt after the deliverer ends, then reconcile from that admitted continuation.", {"record": str(path)})
                 data = boundary.enter_context(supervision.effect_boundary(state_path))
                 bound = data["binding"]["identity"]
                 if (bound.get("kind") != "id" or bound.get("value") != goal["target_thread"]
-                        or bound.get("pane_id") != row["pane_id"]):
+                        or bound.get("pane_id") != row["pane_id"]
+                        or row["accepted_session"] != {key: bound.get(key) for key in ("kind", "value")}):
                     raise UsageError("The incoming host-goal executor is not the bound foreman. Restore its verified native binding before reconciling; no goal was changed.", {})
+                native = client or read_client(binary=row["options"].get("herdr_bin"))
+                if (_foreman_record(native, row["pane_id"]).get("agent") != "codex"
+                        or pane_session(native, row["pane_id"]) != row["accepted_session"]):
+                    raise UsageError("The live foreman pane no longer matches the admitted goal target. Preserve the reset and restore its verified native session before reconciling; no goal was changed.", {})
                 host_goals.transfer(goal, bound["value"], lambda: save_state(path, document))
             if not live_deliverer:
                 row.update(status="reconciled", result={"outcome": "delivered", "reconciled_at": at})
@@ -959,6 +973,7 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
                                "phase": "unclaimed" if row["status"] == "scheduled" else "unknown"})
             row.update(status="failed", result=failure(lost, row["stow"], str(Path(state_path).expanduser().resolve()),
                                                        **row["options"]))
+            _guard_recovery(row, state_path)
         if not _valid_row(row):
             raise UsageError("The reconciled row does not validate; nothing was written.", {"record": str(path)})
         save_state(path, document)
@@ -1061,10 +1076,21 @@ def finish(state_path, plan, status, result):
                                       "not recorded. The operator reconciles the record before any reset.".format(
                                           path, plan["stow"], plan["pane_id"], status), {"record": str(path)})
         row.update(status=status, result=result)
+        _guard_recovery(row, state_path)
         if not _valid_row(row):
             raise ResetRecordUnusable("The {} outcome for stow {} does not match the reset record's shape; it was not recorded.".format(
                 status, plan["stow"]), {"record": str(path)})
         save_state(path, document)
+
+
+def _guard_recovery(row, state_path):
+    """Reuse the saved recovery input; its native hook attests admission once."""
+    goal = row["host_goal"]
+    if (row["status"] in TERMINAL_FAILURES and row["accepted_session"] is None
+            and goal is not None and goal["runtime"] == "codex" and row["foreground"] is not None):
+        row["result"] = {**row["result"], "resume_prompt": guarded_resume(
+            row["stow"], str(Path(state_path).expanduser().resolve()), row["native_session"],
+            row["foreground"], options=row["options"])}
 
 
 def _handoff_held(data, stow=None):

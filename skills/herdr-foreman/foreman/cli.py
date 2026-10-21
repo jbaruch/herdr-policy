@@ -2406,7 +2406,8 @@ def cmd_foreman_reset_deliver(args, client=None, warn=None, trace=None):
 def cmd_foreman_reset_reconcile(args, client=None, warn=None, trace=None):
     state_path = Path(_state_path(args)).expanduser().resolve()
     return foreman_reset.reconcile(state_path, {"pane_id": args.pane, "stow": args.stow}, args.outcome,
-                                   getattr(args, "now", None) or now_iso()), None
+                                   getattr(args, "now", None) or now_iso(),
+                                   client=client if client is not None else _client(args, trace=trace)), None
 
 
 def cmd_foreman_reset_status(args, client=None, warn=None, trace=None):

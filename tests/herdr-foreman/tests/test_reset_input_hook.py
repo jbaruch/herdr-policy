@@ -58,6 +58,11 @@ class ResetHookTest(unittest.TestCase):
             return hook.check(self.payload if payload is None else payload, self.env if env is None else env,
                               AT, client=client, root=self.root, probe=probe)
 
+    def reconcile(self, *, alive=lambda _: False, client=None):
+        native = client or FakeClient(["idle"], kind="codex")
+        native.cleared = True
+        return reset.reconcile(self.state, self.plan, "delivered", AT, alive=alive, client=native)
+
     def test_all_three_agents_transfer_the_same_verified_owner_and_refuse_replay(self):
         # Each subtest has independent owner files and a fixed native payload.
         for kind in ("claude", "codex", "grok"):
@@ -183,7 +188,7 @@ class ResetHookTest(unittest.TestCase):
         self.assertIsNone(self.host.goal(CLEARED))
         # The admitted continuation has received its saved-scope instructions.
         with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
-            reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: True)
+            self.reconcile(alive=lambda _: True)
         self.host.end_turn(SESSION["value"])
         self.host.end_turn(CLEARED)
         self.assertEqual(self.host.continuations, [CLEARED])
@@ -217,7 +222,7 @@ class ResetHookTest(unittest.TestCase):
         self.assertIn("host-goal restoration", outstanding[0]["needed"])
         self.assertEqual(reset.record_path(self.state).read_bytes(), before)
         with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
-            reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: False)
+            self.reconcile(alive=lambda _: False)
         self.assertEqual(reset.outstanding(self.state), [])
 
     def test_a_lost_activation_response_occurs_only_after_input_was_admitted(self):
@@ -238,7 +243,7 @@ class ResetHookTest(unittest.TestCase):
         with patch("foreman.host_goals.AppServer", side_effect=self.host.connect), \
                 patch.object(self.host, "call", side_effect=immediate_work):
             with self.assertRaises(reset.ForemanError):
-                reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: True)
+                self.reconcile(alive=lambda _: True)
         self.assertEqual(self.host.continuations, [CLEARED])
 
     def test_failed_host_transfer_blocks_input_and_reconciliation_recovers_without_duplicate_goal(self):
@@ -249,9 +254,16 @@ class ResetHookTest(unittest.TestCase):
         self.assertIsNone(self.host.goal(CLEARED))
         self.assertIsNone(reset.accepted_resume(self.state, PANE, "round-7", SESSION))
         with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
-            result = reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: False)
+            with self.assertRaisesRegex(reset.UsageError, "not admitted"):
+                self.reconcile(alive=lambda _: False)
+        ended = reset.failure(reset.StateError("Host retirement response was lost.", {}), "round-7", str(self.state))
+        reset.finish(self.state, self.plan, "interrupted", ended)
+        self.assertEqual(self.invoke(probe=lambda _: None), hook.acceptance(recovered=True))
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            result = self.reconcile(alive=lambda _: False)
         self.assertEqual(result["host_goal"]["phase"], "verified")
         self.assertEqual(self.host.goals[CLEARED]["tokenBudget"], None)
+        self.assertEqual(self.invoke(probe=lambda _: None)["decision"], "block")
         self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
 
     def test_a_rebind_before_the_transfer_boundary_refuses_without_touching_goals(self):
@@ -285,14 +297,48 @@ class ResetHookTest(unittest.TestCase):
 
     def test_reconciliation_serializes_a_concurrent_rebind_through_host_transfer(self):
         self.setUp(source=goal(SESSION["value"]))
-        with patch("foreman.reset_input_hook.host_goals.transfer", side_effect=OSError("fixture interruption")):
-            self.assertEqual(self.invoke()["decision"], "block")
-        self.host.before_clear = self.assert_concurrent_rebind_blocked
-        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
-            result = reset.reconcile(self.state, self.plan, "delivered", AT, alive=lambda _: False)
+        self.assertEqual(self.invoke(), hook.acceptance())
+        call = self.host.call
+        def guarded(method, params):
+            if method == "thread/goal/set":
+                self.assert_concurrent_rebind_blocked()
+            return call(method, params)
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect), \
+                patch.object(self.host, "call", side_effect=guarded):
+            result = self.reconcile(alive=lambda _: False)
         self.assertEqual(result["status"], "reconciled")
         self.assertEqual(result["host_goal"]["phase"], "verified")
         self.assertEqual(store.load(self.state)["binding"]["identity"]["value"], CLEARED)
+
+    def test_live_target_change_refuses_before_any_goal_rpc(self):
+        for native in (FakeClient(["idle"], kind="codex", sessions=[SESSION["value"]]),
+                       FakeClient(["idle"], kind="claude", sessions=[CLEARED])):
+            self.setUp(source=goal(SESSION["value"]))
+            self.assertEqual(self.invoke(), hook.acceptance())
+            calls = list(self.host.calls)
+            with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+                with self.assertRaisesRegex(reset.UsageError, "live foreman pane"):
+                    self.reconcile(client=native)
+            self.assertEqual(self.host.calls, calls)
+            self.assertIsNone(self.host.goal(CLEARED))
+
+    def test_admitted_input_cannot_be_reclassified_failed_and_old_failed_receipts_recover(self):
+        self.setUp(source=goal(SESSION["value"]))
+        self.assertEqual(self.invoke(), hook.acceptance())
+        before = reset.record_path(self.state).read_bytes()
+        with self.assertRaisesRegex(reset.UsageError, "was admitted"):
+            reset.reconcile(self.state, self.plan, "failed", AT, alive=lambda _: False)
+        self.assertEqual(reset.record_path(self.state).read_bytes(), before)
+        # Recover a receipt produced by an older writer that allowed that contradiction.
+        path = reset.record_path(self.state)
+        document = json.loads(path.read_text())
+        document["resets"][0].update(status="failed", result=reset.failure(
+            reset.StateError("Older writer reported failure after admission.", {}), "round-7", str(self.state)))
+        path.write_text(json.dumps(document))
+        self.assertIn("host-goal restoration", reset.outstanding(self.state)[0]["needed"])
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            self.assertEqual(self.reconcile()["status"], "reconciled")
+        self.assertEqual(reset.outstanding(self.state), [])
 
     def test_legacy_codex_reset_without_host_preflight_is_refused_before_rebinding(self):
         path = reset.record_path(self.state)

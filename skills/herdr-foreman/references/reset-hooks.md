@@ -34,6 +34,14 @@ reads its scope and holds, then uses `foreman-reset-reconcile --outcome delivere
 to restore the original lifecycle. A blocked hook can never activate automatic
 target work. Goal activation and its recovery therefore happen after the
 continuation instructions have reached the model, without a synthetic pause.
+Reconciliation requires matching durable native admission and verifies the live
+Herdr pane/session under the existing binding boundary before goal RPCs. An
+operator's delivery assertion alone cannot activate an unadmitted target.
+After an interrupted, unadmitted Codex input, the existing saved recovery prompt
+is guarded too: the operator pastes it into the same pinned native session
+without clearing. Its hook verifies the saved input, foreground and binding,
+then records admission once; the admitted continuation finishes reconciliation.
+No automated input is repeated and no new recovery record is added.
 The existing daemon's `appServerVersion` must match `SUPPORTED_CODEX_VERSIONS`
 in `skills/herdr-foreman/foreman/codex_goals.py` (currently `0.163.0`), checked at discovery and each
 connection to the saved socket. An unknown version or changed daemon refuses
