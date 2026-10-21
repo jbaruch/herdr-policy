@@ -109,6 +109,22 @@ authorization and permitted actions before dispatch. Worker permission prompts
 are not a second assignment gate; the brief's role, path, and authority limits
 still apply in YOLO mode.
 
+Fresh owned panes wait through startup utilities without treating them as the
+requested agent. After one admitted native start, the owner observes the same
+root until the requested executable and exact flags are stable; a real mismatch
+refuses. Existing panes retain their occupancy checks. Poll bounds and evidence
+fields are owned by `foreman/launch.py`, `foreman/lifecycle.py` and `state-schema.md`.
+The host's start result acknowledges queue admission, so this readiness check
+belongs in the policy before it sends usage or assignment input.
+
+After resolving a measurement failure, use `measure --retry-failed`. It measures
+failed, missing, skipped or expired profiles and reuses valid successful windows
+from the latest snapshot. No additional cache file is written. Reuse requires
+unchanged profiles/account windows and transport context within the existing
+capacity freshness bound in `foreman/tier_routing.py`; shared windows retry
+together. The combined snapshot retains the older observation time. Plain
+`measure` still takes new readings, and `--agent` remains an explicit subset.
+
 `launch_args` preserves supported UI options across restarts. The launcher
 supplies each runtime's YOLO flags and refuses conflicting permission options
 before stopping a worker. The permission contract is in

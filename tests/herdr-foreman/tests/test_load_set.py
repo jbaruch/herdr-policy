@@ -336,7 +336,7 @@ else:
         code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
         self.assertEqual(code, 0, err)
         result = json.loads(out)
-        self.assertEqual(result["schema_version"], 3)
+        self.assertEqual(result["schema_version"], 4)
         self.assertFalse(result["history_included"])
         self.assertFalse(result["authorizes_progression"])
         self.assertEqual((result["decision"], result["core"]["task"]["scope"]), ("plan", "fix it"))
@@ -374,8 +374,7 @@ else:
                 self.assertEqual(code, 1)
                 self.assertIn(message, err)
 
-    def test_the_command_debits_context_without_changing_operational_owner_facts(self):
-        from foreman.decision_budget import location
+    def test_the_command_returns_context_without_writing_operational_or_read_state(self):
         state = empty_state()
         register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "fix it",
                                           "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
@@ -385,12 +384,10 @@ else:
         code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
         self.assertEqual(code, 0, err)
         self.assertEqual(self.state.read_bytes(), before)
-        counter = json.loads(location(self.state).read_text())
-        self.assertEqual(counter["tasks"]["t"]["returned_bytes"], len(out.encode()))
-        self.assertEqual(json.loads(out)["aggregate_budget"]["previously_returned_bytes"], 0)
+        self.assertNotIn("aggregate_budget", json.loads(out))
+        self.assertFalse(Path(str(self.state) + ".context.json").exists())
 
-    def test_repeated_cli_reads_share_the_allowance_and_preserve_all_owner_obligations(self):
-        from foreman.decision_budget import location
+    def test_repeated_cli_reads_remain_bounded_and_preserve_all_owner_obligations(self):
         state = empty_state()
         register_task(state["recovery"], {"task": "t", "base_revision": "a" * 40, "scope": "x" * 3500,
                                           "allowed_paths": ["src/*"], "authorization": {"source": "operator", "quote": "go"}}, DEV_0)
@@ -400,17 +397,12 @@ else:
         for _ in range(20):
             self.out, self.err = io.StringIO(), io.StringIO()
             code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "t"])
-            if code:
-                self.assertEqual(out, "")
-                self.assertIn("decision_context_budget_exceeded", err)
-                break
+            self.assertEqual(code, 0, err)
             results.append(json.loads(out))
-        else:
-            self.fail("CLI repeated the same task context without exhausting allowance")
-        self.assertGreater(len(results), 1)
-        self.assertGreater(results[-1]["aggregate_budget"]["previously_returned_bytes"], 0)
+        self.assertEqual(len(results), 20)
+        self.assertTrue(all("aggregate_budget" not in result for result in results))
         self.assertEqual(self.state.read_bytes(), before)
-        self.assertEqual(len(json.loads(location(self.state).read_text())["tasks"]), 1)
+        self.assertFalse(Path(str(self.state) + ".context.json").exists())
 
     def test_an_unreadable_listed_path_fails_with_a_diagnostic(self):
         from foreman import cli

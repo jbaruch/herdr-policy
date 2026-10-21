@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
-from foreman import decision_budget, home, retrospective, runnable
+from foreman import home, retrospective, runnable
 from foreman.cli import main
 from foreman.errors import StateError, UsageError
 
@@ -58,52 +58,15 @@ class HomeCase(unittest.TestCase):
 
 
 class MigrateTest(HomeCase):
-    def charged_context(self):
+    def test_retired_context_files_move_as_opaque_bytes_without_blocking_migration(self):
         old_state = self.legacy_home()
-        packet = {"schema_version": 3, "task": "t", "authorizes_progression": False}
-        generation = home._digest(old_state)
-        decision_budget.consume(old_state, packet, generation, None)
-        before = json.loads(decision_budget.location(old_state).read_text())
-        return old_state, packet, generation, before
-
-    def test_context_counter_and_creation_receipt_move_without_refunding_charges(self):
-        old_state, packet, generation, before = self.charged_context()
+        legacy = {".context.json": b"corrupt obsolete counter", ".context-presence.json": b"old receipt"}
+        for suffix, body in legacy.items():
+            Path(old_state + suffix).write_bytes(body)
         new_state = self.state_root / "foreman" / "state.json"
         home.migrate(self.env)
-        after = json.loads(decision_budget.location(new_state).read_text())
-        self.assertEqual(after, {**before, "state_path": str(new_state)})
-        receipt = json.loads(decision_budget.presence_location(new_state).read_text())
-        self.assertEqual(receipt["state_path_sha256"], home._digest(str(new_state)))
-        # The task-state hash deliberately equals the old location hash; its
-        # differently named field is task evidence and must remain unchanged.
-        self.assertEqual(after["tasks"]["t"]["state_sha256"], generation)
-        result = decision_budget.consume(new_state, packet, generation, None)
-        self.assertEqual(result["aggregate_budget"]["previously_returned_bytes"], before["returned_bytes"])
-        saved = decision_budget.location(new_state).read_bytes()
-        receipt_saved = decision_budget.presence_location(new_state).read_bytes()
-        home.migrate(self.env)
-        self.assertEqual(decision_budget.location(new_state).read_bytes(), saved)
-        self.assertEqual(decision_budget.presence_location(new_state).read_bytes(), receipt_saved)
-
-    def test_interrupted_context_rebinding_preserves_charges_and_finishes_on_retry(self):
-        old_state, packet, generation, before = self.charged_context()
-        new_state = self.state_root / "foreman" / "state.json"
-        real_save = home.save_state
-
-        def fail_counter(path, value):
-            if path.name == "state.json.context.json":
-                raise StateError("injected counter rewrite failure", {})
-            return real_save(path, value)
-
-        with mock.patch.object(home, "save_state", side_effect=fail_counter):
-            with self.assertRaisesRegex(StateError, "injected counter rewrite failure"):
-                home.migrate(self.env)
-        self.assertEqual(json.loads(decision_budget.location(new_state).read_text()), before)
-        with self.assertRaises(StateError):
-            decision_budget.consume(new_state, packet, generation, None)
-        home.migrate(self.env)
-        result = decision_budget.consume(new_state, packet, generation, None)
-        self.assertEqual(result["aggregate_budget"]["previously_returned_bytes"], before["returned_bytes"])
+        for suffix, body in legacy.items():
+            self.assertEqual(Path(str(new_state) + suffix).read_bytes(), body)
 
     def retrospective_record(self, old_state):
         old_home = self.state_root / "teamlead"

@@ -311,8 +311,7 @@ class RemoteOwnerTest(RemoteOwnerFixture):
         self.assertIn("remote_owner_state_path_changed", stderr.getvalue())
         self.assertEqual(self.calls, [])
 
-    def test_bound_remote_load_sets_share_the_allowance_and_preserve_owner_state(self):
-        from foreman.decision_budget import location
+    def test_bound_remote_load_sets_preserve_owner_state_without_read_accounting(self):
         state = empty_state()
         recovery.register_task(state["recovery"], {"task": "remote-task", "base_revision": "a" * 40,
             "scope": "bounded remote query", "allowed_paths": ["src/*"],
@@ -328,11 +327,11 @@ class RemoteOwnerTest(RemoteOwnerFixture):
                                "--task", "remote-task"], client=self.client, stdout=stdout, stderr=stderr)
             self.assertEqual(result, 0, stderr.getvalue())
             packet = json.loads(stdout.getvalue())
-            self.assertEqual(packet["schema_version"], 3)
+            self.assertEqual(packet["schema_version"], 4)
             self.assertFalse(packet["authorizes_progression"])
-            self.assertEqual(packet["aggregate_budget"]["foreman_previously_returned_bytes"], total)
+            self.assertNotIn("aggregate_budget", packet)
             total += len(stdout.getvalue().encode())
-        self.assertEqual(json.loads(location(self.owner.state_path).read_text())["returned_bytes"], total)
+        self.assertFalse(Path(str(self.owner.state_path) + ".context.json").exists())
         self.assertEqual(self.owner.state_path.read_bytes(), state_before)
         self.assertEqual(self.store.read_bytes(), owner_before)
         self.assertEqual(supervision.load(self.owner.state_path)["binding"], binding_before)

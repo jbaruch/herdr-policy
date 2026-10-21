@@ -138,12 +138,17 @@ pages use `--offset`. Compact acknowledgements return handled IDs and the
 remaining count without echoing the pending batch. None of these display views
 authorizes progression or replaces report checks.
 
-Once the foreman has reconciled an assignment's actual outcome in the task ledger,
+Once the foreman has authenticated and reconciled an assignment's actual delivery,
 run `supervision-resolve --record <file>` with `id`, `outcome`, and `evidence`
 paths. It ends that enrollment's observation obligation only. Pending events
 for the enrollment must already have handled outcomes. A missing worker can be
 resolved as unavailable only after recording the concrete recovery/handoff;
 resolution is never a substitute for the task's acceptance and release gates.
+Use the existing successful report-delivery receipt as evidence and explicitly
+retain any unassessed report/task obligation; no second report or acceptance is
+needed to stop observing a completed delivery. Pending or unknown delivery cannot
+use this route. Pane cleanup and reuse retain their own checks. Internal context
+limits or a stopped watcher never justify inventing an operator pause.
 
 ## Pause, hand off, and resume
 

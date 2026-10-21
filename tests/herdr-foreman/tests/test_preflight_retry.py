@@ -26,7 +26,7 @@ from tests.test_cli import AT, SNAPSHOT, FreshOwnerNative
 
 
 class PreflightNative(FreshOwnerNative):
-    """A late unknown foreground process appears at the real retrospective read."""
+    """A real competing agent appears at the retrospective read."""
 
     def __init__(self):
         super().__init__()
@@ -40,8 +40,7 @@ class PreflightNative(FreshOwnerNative):
         self.reads[pane_id] = self.reads.get(pane_id, 0) + 1
         if self.fail_preflight and self.reads[pane_id] == 3:
             value["foreground_processes"] += [
-                {"pid": 73181, "name": "unknown", "argv": ["unknown"]},
-                {"pid": 73178, "name": "unknown", "argv": ["unknown"]}]
+                {"pid": 73181, "name": "codex", "argv": ["codex"]}]
         return value
 
     def pane_close(self, pane_id):

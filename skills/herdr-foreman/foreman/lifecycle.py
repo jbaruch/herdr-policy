@@ -21,7 +21,7 @@ from .errors import (IDENTIFIER_ERROR_CODES, IDENTIFIER_UNAVAILABLE_KIND, IDENTI
                      TRANSIENT_LAUNCH_ERROR_CODES, TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND, ForemanError, HerdrError,
                      StartShellNotReadyError, UsageError, owner_recovery)
 from .herdr import READY_STATES, error_code, format_argv, scrub_for_trace
-from .launch import (foreground_identity_evidence, holds_initializing_shell, holds_only_shell,
+from .launch import (await_started, foreground_identity_evidence, has_native_agent, holds_initializing_shell, holds_only_shell,
                      require_empty_shell, start_worker, verify_running)
 from . import probe_recovery, runnable
 from .tiers import launch_flags, worker_launch_args
@@ -72,7 +72,7 @@ def _fresh_shell_info(client, pane, expected_shell=None, *, allow_absent_foregro
     absent_foreground = isinstance(info, dict) and "foreground_processes" not in info
     pids = [row.get("pid") if isinstance(row, dict) else None for row in foreground] if isinstance(foreground, list) else None
     valid_pid = lambda pid: isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
-    evidence = {"pane": pane, "shell_pid": shell if valid_pid(shell) else None,
+    evidence = {**foreground_identity_evidence(info, pane), "shell_pid": shell if valid_pid(shell) else None,
                 "foreground_pids": [pid if valid_pid(pid) else None for pid in pids] if pids is not None else None}
     if (not valid_pid(shell) or (pids is None and not (allow_absent_foreground and absent_foreground))
             or any(not valid_pid(pid) for pid in (pids or []))
@@ -145,7 +145,7 @@ def _classified_start_error(exc, worker, pane, tier):
 
 
 def _start_fresh_worker(client, worker, pane, tier, shell, before_start, sleep):
-    """Bound late login-shell forks and Herdr's atomic pre-input busy refusal.
+    """Wait out activity in our fresh root; trust only a sole shell to start.
 
     HerdrClient requires its running-server dependency floor before trusting
     agent_pane_busy as a pre-registration, pre-input refusal. No other failure is
@@ -158,7 +158,7 @@ def _start_fresh_worker(client, worker, pane, tier, shell, before_start, sleep):
         if attempt > 1:
             info, evidence = _fresh_shell_info(client, pane, shell, allow_absent_foreground=True)
             if not holds_only_shell(info):
-                if "foreground_processes" in info and not holds_initializing_shell(info):
+                if has_native_agent(info):
                     require_empty_shell(client, pane, info)
                 if attempt < FRESH_SHELL_POLL_ATTEMPTS:
                     sleep(FRESH_SHELL_POLL_INTERVAL)
@@ -170,7 +170,8 @@ def _start_fresh_worker(client, worker, pane, tier, shell, before_start, sleep):
             if exc.details.get("pane_id") != pane or exc.details.get("shell_pid") != shell:
                 raise
             evidence = {"pane": pane, "shell_pid": shell,
-                        "foreground_pids": exc.details.get("foreground_pids")}
+                        **{key: exc.details.get(key) for key in
+                           ("foreground_pids", "occupant_names", "foreground_process_group_id")}}
         except HerdrError as exc:
             # The retrospective callback only observes; native start below has
             # not run. Earlier loop iterations can only have returned the
@@ -181,12 +182,11 @@ def _start_fresh_worker(client, worker, pane, tier, shell, before_start, sleep):
                 "and a persisted launch-budget attempt; preserve the actual observation without inferring its cause.")
         else:
             info, evidence = _fresh_shell_info(client, pane, shell, allow_absent_foreground=True)
-            if not holds_only_shell(info):
-                if "foreground_processes" in info and not holds_initializing_shell(info):
-                    require_empty_shell(client, pane, info)
-            else:
+            if has_native_agent(info):
+                require_empty_shell(client, pane, info)
+            if holds_only_shell(info):
                 try:
-                    start_worker(client, worker, pane, tier, owned_fresh=True)
+                    start_worker(client, worker, pane, tier, owned_fresh=True, shell=shell, sleep=sleep)
                 except HerdrError as exc:
                     if error_code(exc) == "agent_not_ready":
                         live = client.agent_get(worker.name)
@@ -195,7 +195,8 @@ def _start_fresh_worker(client, worker, pane, tier, shell, before_start, sleep):
                             # A known first-start refusal can leave its native
                             # dialog alive. Prove that exact seat, never launch
                             # again or grant it readiness for assignment input.
-                            verify_running(client, worker, pane, tier)
+                            await_started(client, worker.kind, pane, tier,
+                                          worker_launch_args(worker.kind, worker.launch_args), shell, sleep)
                             return
                     if error_code(exc) != "agent_pane_busy":
                         classified = _classified_start_error(exc, worker, pane, tier)
@@ -281,6 +282,7 @@ def spawn(client, worker, tier, *, cwd=None, history=None, before_start=None, ow
     workspace_options = {"env": workspace_env} if workspace_env else {}
     pane = client.workspace_create(cwd=cwd or os.getcwd(), label=worker.name, focus=False, **workspace_options)
     completed = False
+    started_at = time.monotonic()
     shell = None
     provisional = {}
     try:
@@ -294,6 +296,11 @@ def spawn(client, worker, tier, *, cwd=None, history=None, before_start=None, ow
         _start_fresh_worker(client, worker, pane, tier, shell, before_start, sleep)
         verify_running(client, worker, pane, tier)
         completed = True
+    except ForemanError as exc:
+        exc.details.update(startup_elapsed_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+                           expected_kind=worker.kind, expected_model=tier.get("model"),
+                           expected_effort=tier.get("effort"), expected_flags=launch_flags(worker.kind, tier))
+        raise
     finally:
         if not completed:
             primary = sys.exc_info()[1]
@@ -307,7 +314,8 @@ def spawn(client, worker, tier, *, cwd=None, history=None, before_start=None, ow
                     cleanup, pane, pane, format_argv(client.argv_pane_close(pane)))
                 if isinstance(primary, ForemanError):
                     evidence = {key: primary.details[key] for key in
-                                ("pane", "foreground_pids", "occupant_names")
+                                ("pane", "foreground_pids", "occupant_names", "shell_pid", "foreground_process_group_id",
+                                 "startup_elapsed_ms", "expected_kind", "expected_model", "expected_effort", "expected_flags")
                                 if key in primary.details}
                     raise HerdrError(
                         "Worker spawn failed for {} in pane {}: {} {}".format(
@@ -773,4 +781,5 @@ def measure_worker_kinds(client, templates, measured_at, *, state_path=None, con
             if "error" in copied:
                 failures.append(member.name)
     return {"schema_version": MEASURE_SCHEMA_VERSION, "measured_at": measured_at,
+            "measurement_context_sha256": None, "reused_agents": [],
             "agents": records, "failed_agents": failures}

@@ -20,6 +20,12 @@ no worker or monitoring loop. One worker holds one assignment in a dispatch.
 Compatible expertise may share a responsibility. Consultations with the same
 canonical responsibility use separate dispatches, each with its own engagement.
 
+Run independent tasks concurrently; do not wait for one task's round to finish
+before dispatching the next eligible task. Use separate owned checkouts for
+independent implementation scopes. Once a pushed head is ready, dispatch its
+reviewer and tester together, preserving independence. A shared report-assessment
+queue or routine maintenance is no reason to leave other eligible workers idle.
+
 The owner planner applies capability and contribution eligibility before
 affordable task familiarity and measured headroom. Step 5 in the skill names
 the executable contract. Use measured costs to improve calibration; preserve
@@ -62,7 +68,8 @@ PR" contract in `skills/herdr-foreman/references/specialists.md`. Its external
 classification requires staffing every fired trigger and leaves source intact;
 it never substitutes for Phase 2 or authorizes release.
 
-**Phase 2 — post-push verification (mandatory).** The reviewer reviews the
+**Phase 2 — post-push verification (mandatory).** Dispatch both seats together.
+The reviewer reviews the
 pushed branch and posts a COMMENT review (Mode B). The tester runs the gates
 and the acceptance tests against that same branch (Mode C). Both report against
 the current tip by SHA.
@@ -110,7 +117,8 @@ evidence fails that stage closed.
 2. **Authority** — `verify-authority.sh <owner/repo>` answers whether the
    operator owns the repo. Ownership is the namespace, never write permission,
    and the answer becomes the authority line in every brief.
-3. **Measure** — `foreman.sh measure` reads each worker's own usage numbers.
+3. **Measure when needed** — `foreman.sh measure --retry-failed` fills failed,
+   missing or expired readings; reuse valid successes from the latest snapshot.
    A worker that is `working` or `blocked` is skipped with null windows rather
    than interrupted.
 4. **Plan** — `foreman.sh plan` assigns the requested responsibilities with
@@ -168,7 +176,8 @@ checkpoint's `exit` and delivery JSON as `wait`:
 
 Then act on the checkpoint:
 
-- Read delivered reports in full
+- Read delivered reports in full before substantive assessment or acceptance;
+  a successful delivery receipt alone can reconcile observation
 - Pass the worker's checkout as `--worktree` when it has one
 - An exit 1 carries either `reason: checkpoint_pending` or a `stall` object
 - A `stall` is classified only when `--worktree` names the checkout
@@ -184,8 +193,10 @@ skills/herdr-foreman/references/dispatch-recovery.md
 ```
 
 Save each reviewer, tester and consultation report's successful delivery
-receipt and record its contract lines with `assess-specialist` under
-`skills/herdr-foreman/references/specialists.md` before retiring its enrollment. A refusal names
+receipt. Record its contract lines with `assess-specialist` under
+`skills/herdr-foreman/references/specialists.md` before relying on its content or
+using the assessed pane-cleanup route. Observation can end earlier on authenticated
+delivery, preserving the unassessed task obligation. A refusal names
 the report's gap; what it saves is the `assess-specialist` contract in
 `skills/herdr-foreman/references/dispatch-recovery.md`. Record `needs_work` in Step 12 and
 re-dispatch the same responsibility with that gap named. A reviewer or tester

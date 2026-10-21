@@ -416,6 +416,12 @@ def _migrate_snapshot_4_to_5(snapshot):
     return snapshot
 
 
+def _migrate_snapshot_5_to_6(snapshot):
+    """Older readings have no config/transport proof and cannot be reused."""
+    snapshot.update(schema_version=6, measurement_context_sha256=None, reused_agents=[])
+    return snapshot
+
+
 #: Document migrations, keyed by the version being upgraded FROM. Each value is
 #: (version_produced, upgrade_callable). `_apply_migrations` walks the chain
 #: until it reaches STATE_SCHEMA_VERSION, so a future 1->2 is one entry.
@@ -446,11 +452,12 @@ SNAPSHOT_MIGRATIONS = {
     2: (3, _migrate_snapshot_2_to_3),
     3: (4, _migrate_snapshot_3_to_4),
     4: (5, _migrate_snapshot_4_to_5),
+    5: (6, _migrate_snapshot_5_to_6),
 }
 
 #: The snapshot version this build owns. Kept beside the migration table so
 #: the two move together; `measure.MEASURE_SCHEMA_VERSION` writes it.
-SNAPSHOT_SCHEMA_VERSION = 5
+SNAPSHOT_SCHEMA_VERSION = 6
 
 
 MIGRATIONS = {

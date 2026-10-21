@@ -131,15 +131,19 @@ def snapshot_error(exc):
     if isinstance(exc.details, dict) and exc.details.get("pending_cli_update") is True:
         details["pending_cli_update"] = True
     if isinstance(exc.details, dict):
-        for key in ("failure_kind", "pane", "pane_id"):
+        for key in ("failure_kind", "pane", "pane_id", "expected_kind", "expected_model", "expected_effort"):
             if isinstance(exc.details.get(key), str) and exc.details[key]:
                 details[key] = scrub_for_trace(exc.details[key])
-        for key in ("foreground_pids", "occupant_names"):
+        for key in ("startup_elapsed_ms", "shell_pid", "foreground_process_group_id"):
+            value = exc.details.get(key)
+            if type(value) is int and value >= 0:
+                details[key] = value
+        for key in ("foreground_pids", "occupant_names", "expected_flags"):
             value = exc.details.get(key)
             if key == "foreground_pids" and isinstance(value, list):
-                details[key] = [pid for pid in value if type(pid) is int and pid > 0]
-            elif key == "occupant_names" and isinstance(value, list):
-                details[key] = [scrub_for_trace(name) for name in value if isinstance(name, str) and name]
+                details[key] = [pid for pid in value if type(pid) is int and pid > 0][:16]
+            elif isinstance(value, list):
+                details[key] = [scrub_for_trace(name, cap=256) for name in value if isinstance(name, str) and name][:16]
     return {
         "code": exc.code,
         "message": scrub_for_trace(exc.message),
@@ -434,6 +438,8 @@ def measure(client, agents, measured_at, marker_timeout_ms=DEFAULT_MARKER_TIMEOU
     return {
         "schema_version": MEASURE_SCHEMA_VERSION,
         "measured_at": measured_at,
+        "measurement_context_sha256": None,
+        "reused_agents": [],
         "agents": {
             agent.name: {**records[agent.name], "tier_billing": tier_billing(agent.tiers)}
             for agent in agents

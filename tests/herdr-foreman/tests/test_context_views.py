@@ -10,6 +10,8 @@ import hashlib
 import io
 import json
 import os
+import re
+import shlex
 import unittest
 from argparse import Namespace
 from unittest.mock import Mock, patch
@@ -60,6 +62,38 @@ class ContextViewsTest(CliCase):
             for _ in range(count):
                 store.append_event(data, AT, None, "unknown_observed", {"private_detail": "Ω" * 1000})
         store.transaction(self.state, append)
+
+    def test_generated_resume_skips_frozen_size_history_before_selected_work(self):
+        state = empty_state()
+        for index in range(54):
+            register(state, "task-{:02}".format(index))
+        save_state(self.state, state)
+        for index in range(42):
+            attention.write(self.state, "record", obligation("question-{:02}".format(index)), AT)
+        for index in range(46):
+            attention.write(self.state, "progress", {
+                "id": "old-progress-{:02}".format(index), "task": "unrelated",
+                "summary": "Historical body must not replay. " + "x" * 1000,
+                "assessment": "reported", "sources": [{"schema_version": 1, "kind": "task_ledger",
+                                                           "ref": str(self.source)}]}, AT)
+        before = (self.state.read_bytes(), attention.storage_path(self.state).read_bytes())
+        prompt = foreman_reset.resume_prompt("handoff", str(self.state))
+        commands = [shlex.split(command)[2:] for command in re.findall(r"`(bash [^`]+)`", prompt)]
+        self.assertFalse(any(command[0] == "foreman-queue" for command in commands))
+        catch_up = next(command for command in commands if command[0] == "catch-up")
+        view, out = self.output(catch_up + ["--now", AT])
+        self.assertEqual(view["section"], "resets")
+        self.assertEqual((view["attention"]["total"], view["progress"]["total"]), (42, 46))
+        self.assertEqual((view["attention"]["items"], view["progress"]["items"]), ([], []))
+        self.assertNotIn("Historical body", out)
+        self.assertFalse(view["context_complete"])
+        # The selected task can be inspected immediately; omission never resolves history.
+        self.out, self.err = io.StringIO(), io.StringIO()
+        code, out, err = self.run_cli(self.base() + ["load-set", "--decision", "plan", "--task", "task-00"])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["task"], "task-00")
+        self.assertLessEqual(len(out.encode()), context_output.OUTPUT_BYTES)
+        self.assertEqual((self.state.read_bytes(), attention.storage_path(self.state).read_bytes()), before)
 
     def test_queue_pages_long_task_ids_without_losing_or_mutating_tasks(self):
         state = empty_state()

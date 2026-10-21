@@ -9,7 +9,7 @@ import json
 import os as _os
 import sys as _sys
 import unittest
-from unittest.mock import Mock, call, patch
+from unittest.mock import ANY, Mock, call, patch
 
 _ROOT = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "../../../skills/herdr-foreman"))
 if _ROOT not in _sys.path:
@@ -96,7 +96,7 @@ class SpawnCloseTest(unittest.TestCase):
         client.workspace_create.assert_called_once_with(cwd="/work", label=worker.name, focus=False)
         client.pane_split.assert_not_called()
         self.assertEqual(client.pane_process_info.call_args_list, [call("pane-new")] * 3)
-        start.assert_called_once_with(client, worker, "pane-new", tier, owned_fresh=True)
+        start.assert_called_once_with(client, worker, "pane-new", tier, owned_fresh=True, shell=10, sleep=ANY)
         verify.assert_called_once_with(client, worker, "pane-new", tier)
 
     def test_spawn_runs_first_start_preflight_while_the_pane_is_still_a_shell(self):
@@ -376,7 +376,7 @@ class FreshShellStartupTest(unittest.TestCase):
         sleeps = Mock()
         worker = template()
         self.assertEqual(spawn(client, worker, worker.tiers["coordination"], history=[], sleep=sleeps), "pane-new")
-        self.assertEqual(sleeps.call_count, 2)
+        self.assertEqual(sleeps.call_count, 3)
         client.agent_start.assert_called_once_with("claude", "claude", "pane-new", self.ARGV[1:])
         client.pane_close.assert_not_called()
 
@@ -399,6 +399,58 @@ class FreshShellStartupTest(unittest.TestCase):
                 client.agent_prompt.assert_not_called()
                 client.pane_send_keys.assert_not_called()
 
+    def utility(self, name):
+        return {"shell_pid": self.SHELL["shell_pid"], "foreground_process_group_id": 52707,
+                "foreground_processes": [{"pid": 52707, "name": name, "argv": [name]}]}
+
+    def test_late_git_and_who_finish_before_one_native_start(self):
+        client = self.client([self.SHELL, self.SHELL, self.utility("git"), self.utility("who"),
+                              self.SHELL, self.SHELL, self.running()])
+        worker = template()
+        self.assertEqual(spawn(client, worker, worker.tiers["coordination"], history=[], sleep=lambda _: None), "pane-new")
+        client.agent_start.assert_called_once()
+        client.agent_prompt.assert_not_called()
+        client.pane_close.assert_not_called()
+
+    def test_admitted_start_waits_for_exec_instead_of_relaunching_a_utility(self):
+        client = self.client([self.SHELL] * 3 + [self.utility("git"), self.utility("who"),
+                              self.SHELL, self.running(), self.running()])
+        client.agent_start.return_value["argv"] = ["git", "status"]
+        worker = template()
+        self.assertEqual(spawn(client, worker, worker.tiers["coordination"], history=[], sleep=lambda _: None), "pane-new")
+        client.agent_start.assert_called_once()
+        client.agent_prompt.assert_not_called()
+        client.pane_close.assert_not_called()
+
+    def test_actual_wrong_agent_or_wrong_flags_refuses_after_one_admitted_start(self):
+        import copy
+        for name, argv in (("grok", ["grok"]), ("claude", self.ARGV[:-1] + ["high"])):
+            with self.subTest(name=name, argv=argv):
+                observed = copy.deepcopy(self.running())
+                observed["foreground_processes"][0].update(name=name, argv=argv)
+                client, worker = self.client([self.SHELL] * 3 + [observed]), template()
+                with self.assertRaises(HerdrError):
+                    spawn(client, worker, worker.tiers["coordination"], history=[], sleep=lambda _: None)
+                client.agent_start.assert_called_once()
+                client.agent_prompt.assert_not_called()
+
+    def test_readiness_exhaustion_retains_observed_process_and_expected_launch(self):
+        client = self.client([self.SHELL] * 3 + [self.utility("who")] * FRESH_SHELL_POLL_ATTEMPTS)
+        worker = template()
+        with self.assertRaises(HerdrError) as caught:
+            spawn(client, worker, worker.tiers["coordination"], history=[], sleep=lambda _: None)
+        from foreman.measure import snapshot_error
+        evidence = snapshot_error(caught.exception)["details"]
+        self.assertEqual(evidence["occupant_names"], ["who"])
+        self.assertEqual(evidence["shell_pid"], 52704)
+        self.assertEqual(evidence["foreground_process_group_id"], 52707)
+        self.assertEqual(evidence["expected_kind"], "claude")
+        self.assertEqual(evidence["expected_model"], "sonnet-5")
+        self.assertEqual(evidence["expected_flags"], ["--model", "sonnet-5", "--effort", "low"])
+        self.assertGreaterEqual(evidence["startup_elapsed_ms"], 0)
+        client.agent_start.assert_called_once()
+        client.agent_prompt.assert_not_called()
+
     def test_blocked_start_with_a_changed_tier_is_not_accepted_or_restarted(self):
         running = self.running()
         running["foreground_processes"][0]["argv"] = ["claude", "--dangerously-skip-permissions", "--model", "opus-5", "--effort", "high"]
@@ -416,7 +468,7 @@ class FreshShellStartupTest(unittest.TestCase):
         sleeps = Mock()
         worker = template()
         spawn(client, worker, worker.tiers["coordination"], history=[], sleep=sleeps)
-        self.assertEqual(sleeps.call_count, 1)
+        self.assertEqual(sleeps.call_count, 2)
         client.agent_start.assert_called_once()
 
     def test_late_recorded_initialization_recovers_inside_the_spawn_owner(self):
@@ -530,7 +582,7 @@ class FreshShellStartupTest(unittest.TestCase):
         worker, callback, sleeps = template(), Mock(), Mock()
         spawn(client, worker, worker.tiers["coordination"], history=[], before_start=callback, sleep=sleeps)
         callback.assert_called_once_with("pane-new")
-        self.assertEqual(sleeps.call_count, 2)
+        self.assertEqual(sleeps.call_count, 3)
         client.agent_start.assert_called_once_with("claude", "claude", "pane-new", self.ARGV[1:])
         client.pane_close.assert_not_called()
 
@@ -538,7 +590,7 @@ class FreshShellStartupTest(unittest.TestCase):
         client = self.client([self.SHELL, self.SPARSE, self.SHELL, self.SHELL, self.SHELL, self.running()])
         worker, sleeps = template(), Mock()
         spawn(client, worker, worker.tiers["coordination"], history=[], sleep=sleeps)
-        self.assertEqual(sleeps.call_count, 3)
+        self.assertEqual(sleeps.call_count, 4)
         client.agent_start.assert_called_once()
 
     def test_persistent_absence_times_out_without_callback_start_or_input(self):
@@ -738,20 +790,20 @@ class FreshShellStartupTest(unittest.TestCase):
         client.agent_start.assert_not_called()
         client.pane_close.assert_called_once_with("pane-new")
 
-    def test_late_unknown_children_are_not_reclassified_as_login_initialization(self):
+    def test_persistent_non_agent_occupants_exhaust_the_wait_without_starting(self):
         import copy
         for change in ({"argv": ["zsh", "-c", "work"]}, {"argv": None}, {"name": None}, {"name": "vim"}):
             with self.subTest(change=change):
                 occupied = copy.deepcopy(self.INITIALIZING)
                 occupied["foreground_processes"][0].update(change)
                 client, worker = self.client([self.SHELL, self.SHELL, occupied]), template()
-                with self.assertRaisesRegex(HerdrError, "occupied"):
+                with self.assertRaisesRegex(HerdrError, "did not settle"):
                     spawn(client, worker, worker.tiers["coordination"], history=[], sleep=lambda _: None)
                 client.agent_start.assert_not_called()
                 client.pane_close.assert_called_once_with("pane-new")
         moved_group = {**self.INITIALIZING, "foreground_process_group_id": 52707}
         client, worker = self.client([self.SHELL, self.SHELL, moved_group]), template()
-        with self.assertRaisesRegex(HerdrError, "occupied"):
+        with self.assertRaisesRegex(HerdrError, "did not settle"):
             spawn(client, worker, worker.tiers["coordination"], history=[], sleep=lambda _: None)
         client.agent_start.assert_not_called()
 
@@ -775,7 +827,7 @@ class FreshShellStartupTest(unittest.TestCase):
         client = self.client([self.SHELL, self.INITIALIZING, self.SHELL, self.SHELL, self.SHELL, self.running()])
         worker, sleeps = template(), Mock()
         spawn(client, worker, worker.tiers["coordination"], history=[], sleep=sleeps)
-        self.assertEqual(sleeps.call_count, 3)
+        self.assertEqual(sleeps.call_count, 4)
         client.agent_start.assert_called_once_with("claude", "claude", "pane-new", self.ARGV[1:])
         client.pane_close.assert_not_called()
 
@@ -965,7 +1017,7 @@ class WindowProbeTest(unittest.TestCase):
                 patch("foreman.lifecycle.verify_running", return_value={"pid": 42}), \
                 patch("foreman.measure.measure", side_effect=measured) as usage:
             result = measure_worker_kinds(client, [template()], "2026-10-01T00:00:00+00:00", sleep=sleeps)
-        self.assertEqual(sleeps.call_count, 2)
+        self.assertEqual(sleeps.call_count, 3)
         usage.assert_called_once()
         self.assertEqual(result["failed_agents"], ["claude"])
         self.assertIsNone(result["agents"]["claude"]["headroom_pct"])

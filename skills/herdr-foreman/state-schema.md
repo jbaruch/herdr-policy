@@ -607,8 +607,10 @@ skills/herdr-foreman/references/retrospectives.md
 | `schema_version` | integer | Currently `11`. Version 11 adds `reconciled_not_sent` context provenance with cleared true for an owner-proved closed immutable no-brief retry; older records migrate without inventing that proof. Version 10 adds the non-counting assignment status `maintenance`; version 9 adds `judge_mode` to every row: the judge seat's declared mode, `unknown` for a judge row migrated from before it, null for other roles. Version 8 drops the retired qualification battery's summary from `tier`; migration removes it from older rows. Version 7 adds `pressure_headroom` and `de_escalated` to a row's `tier`; an older tier row migrates to null headroom and `de_escalated: false`, since nothing could de-escalate before it. Bumped on any shape change |
 | `snapshots` | array | Whole `measure` documents, oldest first; the ring holds the last 20 |
 | `assignments` | array | Append-only ledger of who held which role |
-| `snapshots[].schema_version` | integer | Currently `5`. Version 2 added `window_group`; version 3 adds per-round `tier_billing`; version 4 adds `error.details` to failed agent records; version 5 lets `error.details` carry the optional cleanup evidence keys below. Older snapshots migrate on read, preserving headroom and shared-window membership |
-| `snapshots[].agents[].error.details` | object | Bounded, redacted failure evidence. Optional keys, each present only when recorded: `pending_cli_update` (boolean `true`), `failure_kind` (non-empty string), `pane` and `pane_id` (non-empty strings), `foreground_pids` (array of positive integers), `occupant_names` (array of non-empty strings). A missing key means not recorded, never an observed empty pane or occupant set. Argv, environment, composer text and nested errors are never stored. Hints, not authority: cleanup still proves live ownership |
+| `snapshots[].schema_version` | integer | Currently `6`. Versions 2–5 added window membership, tier billing and failure/cleanup evidence. Version 6 adds retry context, reused names and bounded startup evidence. The owner migrates 5 → 6 with null context and an empty reused list, preserving readings without inventing reuse proof |
+| `snapshots[].measurement_context_sha256` | string or null | SHA-256 of parsed worker profiles/account windows and the bound transport/host context; null means no reuse proof. Never authority or account credentials |
+| `snapshots[].reused_agents` | array of strings | Sorted names copied from the latest still-valid snapshot by `measure --retry-failed`; empty for new observations. `measured_at` retains the older observation time when any reading is reused |
+| `snapshots[].agents[].error.details` | object | Bounded, redacted failure evidence. Optional keys: `pending_cli_update` (true), `failure_kind`, `pane`, `pane_id`, `expected_kind`, `expected_model`, `expected_effort` (nonempty strings); `foreground_pids` (positive integers); `occupant_names`, `expected_flags` (strings); `startup_elapsed_ms`, `shell_pid`, `foreground_process_group_id` (nonnegative integers). Process/flag lists retain at most 16 items, with text capped at 256 bytes per item. A missing key means not recorded. Expected flags are generated model/effort flags, never raw observed argv or operator arguments. Environment, composer text and nested errors are never stored. Shell/group IDs do not establish parent lineage; the installed Herdr process-info API exposes no parent PID. Hints only: cleanup still proves live ownership |
 | `snapshots[].agents[].window_group` | string | The usage window this agent shares with others; empty means a window of its own. Present on every agent record, including skipped and failed ones — pool membership is config, not a measurement result |
 | `assignments[].schema_version` | integer | The row's own version, stamped on write |
 | `assignments[].at` | string | ISO-8601 timestamp, from `--now` or the CLI's clock |
@@ -733,8 +735,8 @@ gains empty `hand_clearances` and `historical_attempts` arrays. Existing
 record shapes, contents and evidence remain unchanged. Recovery 4 → 5 changes
 only the enclosing version. Older stores containing future dispatch fields or
 versions are refused without rewriting. State and assignment versions migrate
-independently; snapshot schemas 4 and 5 carry failed-record details and cleanup
-evidence through their own 3 → 4 and 4 → 5 migrations.
+independently; snapshot schemas 4–6 carry failed-record details, cleanup/startup
+evidence and measurement reuse through their own migration chain.
 Every record carries `at` and `task`. Authorizations contain the actual operator
 message `source` and `quote`; evidence receipts contain absolute `path` and
 `sha256` of the bytes read by the owner. Receipts are audit evidence, not a
@@ -1058,7 +1060,8 @@ original `input`, `evidence_receipt`, and later `observed_state`/`observed_sessi
 An applied recovery appends a new assignment with null contemporaneous session
 proof and marks its result `recovered: true`; it preserves the original row.
 
-Each snapshot is one `measure` document: `schema_version`, `measured_at`, an
+Each snapshot is one `measure` document: `schema_version`, `measured_at`,
+`measurement_context_sha256`, `reused_agents`, an
 `agents` object keyed by agent name (`kind`, `state`, `herdr_state`,
 `state_source`, `pane_id`, `windows`, `credits`, `plan`, `headroom_pct`,
 `skipped`), and `failed_agents`. A failed agent carries `error.code`,
@@ -1173,7 +1176,6 @@ The independent continuity stores do not change this dispatch-state schema.
 | Model capabilities, sourced and dated | `<selected-state>.capabilities.json` | `skills/herdr-foreman/references/model-tiers.md`, Capability table |
 | Provisional successor placements and recalibration history | Same capability-table schema 2; entries remain schema 1 | `skills/herdr-foreman/references/successor-placement.md`, Saved schema and readers |
 | Report gates from classifier labels and blocking verdicts | `<selected-state>.report-gates.json` | `skills/herdr-foreman/references/report-classifier.md`, Sidecar schema 2 |
-| Aggregate decision-context allowance and creation receipt | `<selected-state>.context.json`, `<selected-state>.context-presence.json` | `skills/herdr-foreman/references/decision-context.md`, Counter schema |
 
 Resolve the selected state path before deriving these locations. Each store and
 its records have their own schema version and lock. Their offline readers never
@@ -1181,6 +1183,11 @@ migrate or write dispatch state. Preserve these files during task cleanup and
 include their locations in foreman handoffs. A saved observation is never task
 acceptance or permission to act. The referenced contracts own full field shapes,
 retry and unsupported-schema behavior; only their owner commands mutate them.
+
+The former schema-1 context counter (`<selected-state>.context.json`) and fixed
+presence receipt (`<selected-state>.context-presence.json`) are retired. No
+reader, writer, migration or runtime gate uses them. Existing bytes remain
+untouched; home relocation carries them as opaque files. See `references/decision-context.md`.
 
 ### Supervision schema 1
 

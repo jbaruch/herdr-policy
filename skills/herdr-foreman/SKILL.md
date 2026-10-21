@@ -1,8 +1,8 @@
 ---
 name: herdr-foreman
 description: >
-  Delegate Herdr tasks, supervise workers, recover assignments and release verified
-  changes. Inspect readiness, task cost and named GitHub evidence. Collect frozen
+  Deliver authorized Herdr work concurrently through the crew, supervise workers,
+  recover assignments and release verified changes. Inspect readiness, task cost and named GitHub evidence. Collect frozen
   coordination evidence; summarize measurement snapshots. Retrieve follow-ups,
   handoffs and retrospectives. Use when asked to assign Herdr work, supervise the
   crew, recover a worker, release a change, check ready work or retrieve task context.
@@ -12,7 +12,9 @@ description: >
 
 # Herdr Foreman Skill
 
-This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
+Choose the entry point matching the request. Live coordination follows the
+delivery loop, including concurrent independent assignments through Herdr owners.
+Offline retrieval steps are named requests, not prerequisites to live work.
 
 Resolve prose paths from the verified plugin root; commands use `HS`.
 Preserve owner, holds, unknown deliveries and supervision obligations.

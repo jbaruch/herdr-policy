@@ -50,10 +50,11 @@ skills/herdr-foreman/references/round-flow.md — Report Checkpoint Outcomes
 ```
 
 Record user-facing obligations in the attention queue. Acknowledge only handled
-event IDs through the saved snapshot; schedule pending rechecks. Record no
-assessed outcome and close no enrollment here.
-Step 12 records acceptance after the round's gates exist. Complete due
-retrospectives between checkpoints without interrupting workers. Resume the fleet
-watch while any observation obligation remains; one blocked worker never hides
-another worker's report. Proceed to Step 12 when the required reports are delivered
-or their unavailability and recovery are recorded.
+event IDs through the saved snapshot; batch handled outcomes and schedule genuine
+pending rechecks. Authenticated completed delivery can end that enrollment's
+observation through `supervision-resolve` using its saved delivery receipt. This
+does not accept its report, close its pane or satisfy any task/release gate.
+Unknown or pending delivery stays enrolled. Step 12 separately assesses the
+selected report. Do not wait for all reports or maintenance before taking one
+task's next action. Resume the watch while observation obligations remain;
+one blocked worker never hides another worker's report.

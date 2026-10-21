@@ -254,8 +254,9 @@ class LaunchTest(unittest.TestCase):
         with self.assertRaises(HerdrError) as refused:
             start_worker(client, worker(), "w1:p2", TIER)
         self.assertNotIn("apply", str(refused.exception))
-        proof = start_worker(client, worker(), "w1:p2", TIER, owned_fresh=True)
-        self.assertEqual(proof["source"], "launch_argv")
+        client.process["argv"] = ["claude", "--dangerously-skip-permissions", "--model", "opus-5", "--effort", "high"]
+        proof = start_worker(client, worker(), "w1:p2", TIER, owned_fresh=True, shell=100, sleep=lambda _: None)
+        self.assertEqual(proof["source"], "process_argv")
 
     def test_existing_worker_uses_live_arguments_without_relaunch(self):
         client = Client()
