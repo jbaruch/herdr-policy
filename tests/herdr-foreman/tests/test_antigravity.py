@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from foreman import antigravity_native as native, config, measure, planner, report_delivery, session_start_hook, tiers
+from foreman import antigravity_native as native, config, launch, measure, planner, report_delivery, session_start_hook, tiers
 from foreman.assign import native_context_session
 from foreman.errors import ConfigError, HerdrError, ParseError
 from tests import agy_capture as capture
@@ -130,6 +130,38 @@ class AntigravityTest(unittest.TestCase):
         result = planner.plan(["developer"], snapshot)
         self.assertEqual(result["assignments"]["developer"], worker.name)
 
+    def test_native_display_proves_only_the_model_it_shows(self):
+        opus, sonnet = ({"model": model, "effort": None} for model in ("claude-opus-4-6-thinking", "claude-sonnet-4-6"))
+        proof = {"source": "native_display", "effort": "unknown"}
+        self.assertEqual(native.admit_model(opus, capture.OPUS_DISPLAY), {**proof, "label": "Claude Opus 4.6 (Thinking)"})
+        self.assertEqual(native.admit_model(sonnet, capture.SONNET_DISPLAY), {**proof, "label": "Claude Sonnet 4.6 (Thinking)"})
+        self.assertEqual(native.displayed_model(capture.FALLBACK_DISPLAY), "Gemini 3.8 Flash · high")
+        for tier, display in ((sonnet, capture.FALLBACK_DISPLAY), (sonnet, capture.OPUS_DISPLAY), (opus, capture.SONNET_DISPLAY)):
+            with self.subTest(tier=tier["model"], display=native.displayed_model(display)), \
+                    self.assertRaisesRegex(HerdrError, "not the requested"):
+                native.admit_model(tier, display)
+
+    def test_unproven_requests_or_missing_footers_are_refused_before_input(self):
+        for tier in ({"model": "claude-sonnet-4-6", "effort": "high"}, {"model": "gemini-fixture-model", "effort": "high"},
+                     {"model": "claude-opus-4-6-thinking", "effort": "high"}):
+            with self.subTest(tier=tier), self.assertRaisesRegex(HerdrError, "no captured native label"):
+                native.admit_model(tier, capture.OPUS_DISPLAY)
+        startup = capture.OPUS_DISPLAY.rsplit("? for shortcuts", 1)[0]
+        for display in (startup, "", capture.OPUS_DISPLAY.replace("shortcuts    ", "shortcuts\n   ")):
+            with self.subTest(display=display[-40:]), self.assertRaisesRegex(HerdrError, "footer is not visible"):
+                native.admit_model({"model": "claude-opus-4-6-thinking", "effort": None}, display)
+
+    def test_the_raw_effort_warning_capture_is_refused_through_the_live_reader(self):
+        worker = SimpleNamespace(kind="agy")
+        reads = []
+        client = SimpleNamespace(pane_read=lambda pane, lines: reads.append((pane, lines)) or capture.FALLBACK_WARNING_ANSI)
+        with self.assertRaises(HerdrError) as raised:
+            launch.verify_native_model(client, worker, "worker-pane", {"model": "claude-sonnet-4-6", "effort": None})
+        self.assertEqual(raised.exception.details["displayed"], "Gemini 3.8 Flash · high")
+        self.assertEqual(reads, [("worker-pane", launch.NATIVE_MODEL_LINES)])
+        self.assertIsNone(launch.verify_native_model(client, SimpleNamespace(kind="claude"), "worker-pane", {}))
+        self.assertEqual(len(reads), 1)
+
     def test_foreman_adapter_is_not_inferred_from_worker_support(self):
         raw = {"schema_version": 7, "worker_kinds": [], "foreman": {"agent": "foreman", "kind": "agy"}}
         with self.assertRaisesRegex(ConfigError, "supplies workers"):
@@ -217,6 +249,7 @@ class AntigravityTest(unittest.TestCase):
         assert altered is not None
         self.assertFalse(report_delivery.prompt_matches(altered["request"], OPUS_REQUEST, "agy"))
         # Each known block is optional; its order and uniqueness are not.
+        # Recovery separately requires the model selection (#73).
         self.assertEqual(native.user_request(head + settings),
                          {"request": OPUS_REQUEST, "model_selection": "Claude Opus 4.6 (Thinking)"})
         self.assertEqual(native.user_request(head), {"request": OPUS_REQUEST, "model_selection": None})
