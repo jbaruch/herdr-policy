@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.1 — 2026-10-25
+
+- Keep fresh/no-clear dispatch context evidence canonical, and reject inconsistent pairs before appending assignment history (#75).
+- Add bound-native-foreman context quarantine for the exact historical writer contradiction. Preserve original ledger bytes and the original row in private immutable evidence, replace only the contradictory pair with unknown, and preserve task authority, counters, holds, dispatch results and active workers. Derive private requests through the owner command. Support dry runs and interrupted-write replay without resending an assignment or claiming a clear happened.
+
 ## 0.16.0 — 2026-10-25
 
 - Assign full verification gates once to the tester, reuse independently executed exact-head CI artifacts, and reserve reviewer/security execution for distinct concerns (#53). Stagger expensive gates on shared constrained hosts while preserving full acceptance coverage, independence and actual failure evidence.

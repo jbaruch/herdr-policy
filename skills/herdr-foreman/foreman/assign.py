@@ -1074,7 +1074,7 @@ def apply(client, assignments, agents_by_name, paths, at, no_clear=False, settle
     if prior is not None and tiers.get("developer"):
         tiers["developer"] = retained_tier(agents_by_name[assignments["developer"]], tiers["developer"], prior.get("tier"))
     skip_clear = fresh or no_clear or retain_context or retain_specialist
-    clear_reason = "retained" if retain_context or retain_specialist else "hand" if no_clear else "automatic"
+    clear_reason = "automatic" if fresh else "retained" if retain_context or retain_specialist else "hand" if no_clear else "automatic"
     # Resolve the sink once. Every helper below defaults it too, but this
     # function calls it directly on the label path, and a None there would
     # raise instead of warning -- exactly when something already went wrong.
@@ -1132,7 +1132,7 @@ def apply(client, assignments, agents_by_name, paths, at, no_clear=False, settle
         if on_prepare is not None:
             on_prepare(step, statuses[name])
         cleared = fresh
-        clear_reason = "retained" if retain_context or retain_specialist else "hand" if no_clear else "automatic"
+        clear_reason = "automatic" if fresh else "retained" if retain_context or retain_specialist else "hand" if no_clear else "automatic"
         if retrospective_guard is not None and isinstance(getattr(retrospective_guard, "retries", None), dict) and name in retrospective_guard.retries:
             clear_reason = "reconciled_not_sent"
         tier = tiers.get(step["role"])
@@ -1401,7 +1401,7 @@ def dry_run(client, assignments, agents_by_name, paths, no_clear=False, settle_t
         "schema_version": APPLY_SCHEMA_VERSION,
         "dry_run": True,
         "sent": False,
-        "clear_reason": "retained" if retain_context or retain_specialist else "hand" if no_clear else "automatic",
+        "clear_reason": "automatic" if fresh else "retained" if retain_context or retain_specialist else "hand" if no_clear else "automatic",
         "assignment_scoped": assignment_scoped,
         "task": task,
         "fix_round": fix_round,
