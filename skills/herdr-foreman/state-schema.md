@@ -40,12 +40,21 @@ under its canonical state transaction lock. This maintenance command requires th
 existing bound native foreman; standalone callers, workers and remote callers
 cannot use it. It issues no terminal input, dispatch, clear or task-authority grant.
 
+The owner command `prepare-context-quarantine` accepts the selected existing
+state, original assignment index, dispatch id, repair id, explicit authorization
+source/quote and output path. Under the canonical state transaction lock it
+validates the same native authority and whole-owner conditions, derives the row
+digest and publishes the schema-1 input immutably as a private file in an existing
+parent directory. Success returns its path, id, row index/digest and false dispatch
+authority. It prints no ledger history and changes no owner or quarantine evidence.
+A conflicting output is preserved and refused; retry uses the original request.
+
 The input is a schema-1 object with `id`, `assignment_index`,
 `assignment_sha256`, `dispatch`, and explicit operator `authorization` (`source`
 and `quote`). `assignment_sha256` is the canonical JSON digest of the original
 row, not a guessed replacement. The id is a safe filename component. See
 `skills/herdr-foreman/foreman/context_evidence.py` — `FIELDS`, `digest()` and
-`quarantine()` — for the accepted input and evidence predicates.
+`quarantine()` and `prepare()` — for the accepted input and evidence predicates.
 The original applied dispatch must bind the selected assignment and
 the same contradictory writer result. Every other part of the owner must validate
 without migration. Other corruption remains refused and unchanged.

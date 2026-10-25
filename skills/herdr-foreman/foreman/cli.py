@@ -468,6 +468,14 @@ def build_parser():
         else:
             record_parser.add_argument("--record", required=True, metavar="FILE", help="Structured evidence JSON; see dispatch-recovery.md.")
         record_parser.add_argument("--now", metavar="ISO8601")
+    prepare_context = sub.add_parser("prepare-context-quarantine", parents=[common], help="Derive and validate an immutable private quarantine request through the existing bound foreman; see state-schema.md.")
+    prepare_context.add_argument("--assignment-index", type=int, required=True)
+    prepare_context.add_argument("--dispatch", required=True)
+    prepare_context.add_argument("--id", required=True)
+    prepare_context.add_argument("--authorization-source", required=True)
+    prepare_context.add_argument("--authorization-quote", required=True)
+    prepare_context.add_argument("--output", required=True)
+    prepare_context.add_argument("--now", metavar="ISO8601")
     quarantine_parser = sub.add_parser("quarantine-context-evidence", parents=[common], help="Preserve and quarantine the exact fresh/no-clear writer contradiction through the bound native foreman; see state-schema.md.")
     quarantine_parser.add_argument("--record", required=True, metavar="FILE")
     quarantine_parser.add_argument("--now", metavar="ISO8601")
@@ -2218,6 +2226,13 @@ def _apply(args, client, warn, trace, hold_gates):
     }
 
 
+def cmd_prepare_context_quarantine(args, client=None, warn=None, trace=None):
+    client = client if client is not None else _client(args, trace=trace)
+    return context_evidence.prepare(_state_path(args), args.assignment_index, args.dispatch, args.id,
+                                    {"source": args.authorization_source, "quote": args.authorization_quote},
+                                    args.output, args.now or now_iso(), client), None
+
+
 def cmd_quarantine_context(args, client=None, warn=None, trace=None):
     client = client if client is not None else _client(args, trace=trace)
     return context_evidence.quarantine(_state_path(args), _read_record(args.record), args.now or now_iso(),
@@ -3471,6 +3486,7 @@ COMMANDS = {
     "plan": cmd_plan,
     "apply": cmd_apply,
     "state": cmd_state,
+    "prepare-context-quarantine": cmd_prepare_context_quarantine,
     "quarantine-context-evidence": cmd_quarantine_context,
     "status": cmd_status,
     "foreman-queue": cmd_foreman_queue,

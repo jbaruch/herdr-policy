@@ -51,11 +51,14 @@ def _json(body):
 
 
 def _private_directory(root):
-    if not root.exists() and not root.is_symlink():
-        return
-    info = root.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
-        raise StateError("Quarantine evidence directory must be owned, regular and private; preserve it before retrying.", {})
+    try:
+        if not root.exists() and not root.is_symlink():
+            return
+        info = root.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise StateError("Quarantine evidence directory must be owned, regular and private; preserve it before retrying.", {})
+    except OSError as exc:
+        raise StateError("Cannot inspect quarantine evidence directory {}; restore its private directory access and retry without changing the owner: {}.".format(root, exc), {}) from None
 
 
 def _immutable(path, body):
@@ -72,6 +75,8 @@ def _immutable(path, body):
         except FileExistsError:
             if _read(path) != body:
                 raise StateError("Context recovery evidence conflicts at {}; preserve both attempts and use the original identity.".format(path), {}) from None
+            if stat.S_IMODE(path.lstat().st_mode) != 0o600:
+                raise StateError("Retained context recovery evidence at {} must remain private mode 0600; preserve its contents and restore private access before retrying.".format(path), {})
         directory = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(directory)
@@ -200,3 +205,22 @@ def quarantine(state_path, data, at, client, *, dry_run=False):
     save_state(path, candidate)
     return {"id": data["id"], "replayed": False, "quarantined": True, "journal": str(journal_path),
             "backup": str(backup), "authorizes_dispatch": False}
+
+
+def prepare(state_path, index, dispatch, identifier, authorization, output, at, client):
+    """Derive and validate a private request without exposing ledger history."""
+    progression_owner.verify_foreman(state_path, client, native_only=True)
+    if type(index) is not int or index < 0:
+        raise UsageError("Select the exact nonnegative original assignment index.", {})
+    state = _json(_read(Path(state_path).expanduser().absolute()))
+    rows = state.get("assignments")
+    if not isinstance(rows, list) or index >= len(rows) or not isinstance(rows[index], dict):
+        raise StateError("Restore the selected original assignment before preparing its quarantine request.", {})
+    data = {"schema_version": SCHEMA_VERSION, "id": identifier, "assignment_index": index,
+            "assignment_sha256": digest(rows[index]), "dispatch": dispatch, "authorization": authorization}
+    quarantine(state_path, data, at, client, dry_run=True)
+    target = Path(output).expanduser().absolute()
+    _immutable(target, (json.dumps(data, indent=2) + "\n").encode())
+    return {"schema_version": SCHEMA_VERSION, "id": identifier, "request": str(target),
+            "assignment_index": index, "assignment_sha256": data["assignment_sha256"],
+            "authorizes_dispatch": False}

@@ -226,6 +226,80 @@ class QuarantineTests(unittest.TestCase):
             warning.assert_called_once()
         self.assertEqual(self.path.read_bytes(), self.original)
 
+    def test_prepare_cli_derives_private_exact_request_without_owner_writes(self):
+        from foreman.cli import main
+        target = self.path.with_name("prepared.json")
+        arguments = ["prepare-context-quarantine", "--state", str(self.path),
+                     "--assignment-index", "1", "--dispatch", self.data["dispatch"],
+                     "--id", self.data["id"], "--authorization-source", AUTH["source"],
+                     "--authorization-quote", AUTH["quote"], "--output", str(target), "--now", AT]
+        output, errors = io.StringIO(), io.StringIO()
+        self.assertEqual(main(arguments, stdout=output, stderr=errors, client=self.client), 0, errors.getvalue())
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(receipt["request"], str(target))
+        self.assertFalse(receipt["authorizes_dispatch"])
+        self.assertEqual(json.loads(target.read_text()), self.data)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.path.read_bytes(), self.original)
+        self.assertFalse(Path(str(self.path) + ".context-evidence").exists())
+        before = target.read_bytes()
+        self.assertEqual(main(arguments, stdout=io.StringIO(), stderr=errors, client=self.client), 0)
+        self.assertEqual(target.read_bytes(), before)
+        self.assertTrue(owner.quarantine(self.path, json.loads(before), AT, self.client)["quarantined"])
+
+    def test_prepare_refuses_unverified_caller_before_any_output(self):
+        self.verify.side_effect = UsageError("unverified fixture caller", {})
+        target = self.path.with_name("prepared.json")
+        with self.assertRaisesRegex(UsageError, "unverified"):
+            owner.prepare(self.path, 1, self.data["dispatch"], self.data["id"], AUTH, target, AT, self.client)
+        self.assertFalse(target.exists())
+        self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_prepare_refuses_wrong_dispatch_and_output_conflict_without_changes(self):
+        target = self.path.with_name("prepared.json")
+        with self.assertRaisesRegex(StateError, "unique dispatch"):
+            owner.prepare(self.path, 1, "different", self.data["id"], AUTH, target, AT, self.client)
+        self.assertFalse(target.exists())
+        target.write_text("retained conflicting input")
+        with self.assertRaisesRegex(StateError, "conflicts"):
+            owner.prepare(self.path, 1, self.data["dispatch"], self.data["id"], AUTH, target, AT, self.client)
+        self.assertEqual(target.read_text(), "retained conflicting input")
+        self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_prepare_refuses_nonprivate_matching_request_without_changing_it(self):
+        target = self.path.with_name("prepared.json")
+        target.write_text(json.dumps(self.data, indent=2) + "\n")
+        target.chmod(0o644)
+        before = target.read_bytes()
+        with self.assertRaisesRegex(StateError, "private mode 0600"):
+            owner.prepare(self.path, 1, self.data["dispatch"], self.data["id"], AUTH, target, AT, self.client)
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_prepare_cli_refuses_concurrent_owner_before_request_write(self):
+        from foreman.cli import main
+        target = self.path.with_name("prepared.json")
+        with state_lock(self.path):
+            errors = io.StringIO()
+            result = main(["prepare-context-quarantine", "--state", str(self.path),
+                           "--assignment-index", "1", "--dispatch", self.data["dispatch"],
+                           "--id", self.data["id"], "--authorization-source", AUTH["source"],
+                           "--authorization-quote", AUTH["quote"], "--output", str(target)],
+                          stdout=io.StringIO(), stderr=errors, client=self.client)
+        self.assertNotEqual(result, 0)
+        self.assertIn("Another foreman command owns", errors.getvalue())
+        self.verify.assert_not_called()
+        self.assertFalse(target.exists())
+        self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_directory_probe_failure_is_actionable_without_owner_writes(self):
+        with patch.object(Path, "exists", return_value=True), \
+                patch.object(Path, "lstat", side_effect=PermissionError("fixture directory unavailable")):
+            with self.assertRaisesRegex(StateError, "Cannot inspect quarantine evidence directory"):
+                owner._private_directory(Path(str(self.path) + ".context-evidence"))
+        self.assertEqual(self.path.read_bytes(), self.original)
+
     def test_action_router_exposes_the_guarded_unreadable_owner_recovery(self):
         skill = Path(__file__).resolve().parents[3] / "skills/herdr-foreman"
         router = (skill / "SKILL.md").read_text()

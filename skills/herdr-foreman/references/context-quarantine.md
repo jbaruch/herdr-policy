@@ -15,11 +15,19 @@ skills/herdr-foreman/state-schema.md
 ```
 
 Require existing explicit operator authorization for this recovery. Preserve the
-original dispatch and row, task authority, holds and unknown deliveries. Prepare
-the documented request from the actual original row; no replacement store or
-guessed clear evidence qualifies.
+original dispatch and row, task authority, holds and unknown deliveries.
+Generate the request through the owner using the actual original assignment index,
+dispatch receipt and existing authorization. The command derives and validates the
+row digest and writes a private immutable request; it prints no ledger history.
+Its parent output directory must already exist. Preserve its returned request path.
 
-Validate without writes using the selected existing owner path:
+```bash
+HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
+bash "$HS/foreman.sh" prepare-context-quarantine --state <existing-owner.json> --assignment-index <index> --dispatch <dispatch-id> --id <repair-id> --authorization-source <source> --authorization-quote <quote> --output <request.json>
+```
+
+On nonzero, preserve the original owner and evidence, report its diagnostic and
+finish here. On success, validate the returned request without owner writes:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
