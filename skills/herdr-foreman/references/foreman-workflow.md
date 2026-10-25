@@ -39,6 +39,10 @@ a concrete reason: dependency, authority, eligibility, actual capacity, protecte
 ownership or a binding operator limit. Use existing owner facts; no utilization
 report, new approval or busywork assignment is required.
 
+For an authorized standing optimizer objective, use
+`skills/herdr-foreman/references/optimizer.md`. Keep useful simplification moving
+alongside independent delivery through ordinary developer assignments.
+
 Context is selected for the next action. Never traverse `.hr`, exhaust unrelated
 cursors, or preload the full team contract. Use task-specific `load-set` and its
 selected evidence. Read reports fully before their content is accepted or used to

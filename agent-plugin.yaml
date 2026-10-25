@@ -17,6 +17,8 @@ artifacts:
       path: skills/herdr-standup
     - id: herdr-observer
       path: skills/herdr-observer
+    - id: herdr-optimizer
+      path: skills/herdr-optimizer
   hooks:
     - id: herdr-session-start
       event: session-start

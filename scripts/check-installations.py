@@ -300,7 +300,7 @@ def verify_skill_commands(project, host, package, variable, names, environment):
                     if target.suffix != {"bash": ".sh", "python3": ".py"}[interpreter]:
                         raise BehaviorFailure("{}: installed command has the wrong interpreter; repair the Markdown invocation".format(package))
                 count += 1
-                counts[roots[selected]] += 1
+                counts[roots[skill]] += 1
         if not count:
             raise BehaviorFailure("{}: installed skill has no exercised command selectors; restore conformance coverage".format(package))
     if not all(counts.values()):
@@ -431,7 +431,7 @@ raise SystemExit("Installed progression did not reach its policy-selection bound
     if progression != {"schema_version": 1, "version": identity["version"], "digest": identity["digest"], "authority_entered": False}:
         raise BehaviorFailure("{}: installed progression selects a different policy identity".format(agent))
     skill_commands = {"herdr-policy": verify_skill_commands(
-        project, host, "herdr-policy", "HS", ("herdr-foreman", "herdr-standup", "herdr-observer"), environment)}
+        project, host, "herdr-policy", "HS", ("herdr-foreman", "herdr-standup", "herdr-observer", "herdr-optimizer"), environment)}
     if coding_source:
         skill_commands["coding-policy"] = verify_skill_commands(
             project, host, "coding-policy", "KS", ("release", "adopt-fork-pr", "onboard-repo", "migrate-to-plugin"), environment)
