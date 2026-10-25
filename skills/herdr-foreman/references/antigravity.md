@@ -26,7 +26,10 @@ prove access, qualification or successful delivery.
 No permanent pane is reserved. Assignment-scoped workers use the existing
 launch, enrollment, report, verification and cleanup owners. Keep the existing
 Claude/Codex/Grok foreman; Antigravity foreman reset and Stop ownership are not
-enabled by this worker adapter. Remote-account measurement needs its native
+enabled by this worker adapter. Keep the observer on a supported Claude, Codex or
+Grok session too; Antigravity observer registration is rejected before cache
+writes. Antigravity workers remain visible to the observer.
+Remote-account measurement needs its native
 controller adapter; a local Google account cannot establish remote capacity.
 
 ## Quota and Delivery

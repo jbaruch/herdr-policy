@@ -101,6 +101,8 @@ def current(snapshot):
         raise ValueError("current pane must have one named native agent with a verified session")
     row = matches[0]
     session = row["agent_session"]
+    if session["agent"] == "agy":
+        raise ValueError("Antigravity supplies factory workers; launch the observer with a supported Claude, Codex or Grok native session")
     if (not isinstance(row["name"], str) or not isinstance(row.get("cwd"), str) or not Path(row["cwd"]).is_absolute()
             or session["agent"] not in report_delivery.DISPLAY_PREFIXES
             or session.get("pane_id", pane) != pane

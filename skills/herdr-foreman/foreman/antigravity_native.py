@@ -60,7 +60,7 @@ def subscription_usage(*, run=subprocess.run):
     try:
         result = run(["agy", "-p", "/usage", "--output-format", "json", "--print-timeout", "15s"],
                      capture_output=True, text=True, timeout=USAGE_TIMEOUT, check=False, env=environment)
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, UnicodeDecodeError, subprocess.TimeoutExpired):
         raise HerdrError("Antigravity quota lookup failed. Install native `agy`, sign in to the Google subscription on this controller host, then retry only this provider.", {"kind": "agy"}) from None
     if result.returncode or len(result.stdout.encode("utf-8")) > USAGE_BYTES:
         raise HerdrError("Antigravity quota lookup did not return a bounded successful result. Run `agy -p /usage --output-format json` with the worker's subscription sign-in before retrying this provider.", {"kind": "agy"})
@@ -68,7 +68,7 @@ def subscription_usage(*, run=subprocess.run):
 
 
 def sessions_root():
-    return Path.home() / ".gemini/antigravity-cli/brain"
+    return (Path.home() / ".gemini/antigravity-cli/brain").resolve()
 
 
 def transcript_path(session):

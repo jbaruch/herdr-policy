@@ -413,7 +413,7 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
 
     def test_reporter_admission_rejects_unreadable_role_formats_before_writes(self):
-        for change in ({"cwd": None}, {"cwd": "relative"}, {"provider": "unsupported"}, {"pane": "other-pane"}):
+        for change in ({"cwd": None}, {"cwd": "relative"}, {"provider": "unsupported"}, {"provider": "agy"}, {"pane": "other-pane"}):
             with self.subTest(change=change):
                 row = deepcopy(self.observer)
                 if "cwd" in change:
@@ -421,7 +421,7 @@ class ObserverTest(unittest.TestCase):
                 if "provider" in change:
                     assert isinstance(change["provider"], str)
                     row["agent_session"]["agent"] = change["provider"]
-                    row["agent_session"]["source"] = "herdr:" + change["provider"]
+                    row["agent_session"]["source"] = "herdr:antigravity_cli" if change["provider"] == "agy" else "herdr:" + change["provider"]
                 if "pane" in change:
                     row["agent_session"]["pane_id"] = change["pane"]
                 before = self.record("binding")

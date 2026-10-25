@@ -67,6 +67,26 @@ class AntigravityTest(unittest.TestCase):
             native.subscription_usage(run=lambda *a, **kw: SimpleNamespace(returncode=1, stdout=""))
         with self.assertRaises(HerdrError):
             native.subscription_usage(run=lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired("agy", 20)))
+        with self.assertRaisesRegex(HerdrError, "subscription"):
+            native.subscription_usage(run=lambda *a, **kw: (_ for _ in ()).throw(UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid byte")))
+
+    def test_a_relocated_brain_root_works_but_a_linked_conversation_cannot_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            home = root / "user"
+            parent = home / ".gemini/antigravity-cli"
+            parent.mkdir(parents=True)
+            actual = root / "native"
+            actual.mkdir()
+            (parent / "brain").symlink_to(actual, target_is_directory=True)
+            with patch.object(Path, "home", return_value=home):
+                self.assertEqual(native.sessions_root(), actual)
+                path = native.transcript_path(SESSION)
+                self.assertEqual(native.final_message(rows(), SESSION, path), rows()[-1]["content"])
+                outside = root / "outside"
+                outside.mkdir()
+                (actual / SESSION).symlink_to(outside, target_is_directory=True)
+                self.assertIsNone(native.final_message(rows(), SESSION, path))
 
     def test_profile_enters_normal_planning_with_exact_native_flags(self):
         raw = json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/config.example.json").read_text())
