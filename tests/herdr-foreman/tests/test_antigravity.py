@@ -115,9 +115,16 @@ class AntigravityTest(unittest.TestCase):
         tier = tiers.select_tier(worker, "developer")
         self.assertIsNotNone(tier)
         assert tier is not None
-        expected = ["agy", "--dangerously-skip-permissions", "--model", tier["model"], "--effort", tier["effort"]]
+        self.assertIsNone(tier["effort"])
+        self.assertTrue(all(row["effort"] is None and row["model"] in native.NO_EFFORT_MODELS
+                            for row in worker.tiers.values()))
+        self.assertFalse(set(worker.tiers) & tiers.JUDGMENT_ROUNDS)
+        expected = ["agy", "--dangerously-skip-permissions", "--model", tier["model"]]
         tiers.verify_argv("agy", tier, expected, tiers.worker_launch_args("agy"))
         tiers.verify_worker_permissions("agy", [*expected, "--conversation", SESSION])
+        for role in ("reviewer", "tester"):
+            with self.subTest(role=role), self.assertRaises(tiers.MissingTierError):
+                tiers.select_tier(worker, role)
         snapshot = {"agents": {worker.name: {"kind": "agy", "state": "idle", "headroom_pct": 40},
                                "codex": {"kind": "codex", "state": "idle", "headroom_pct": 10}}}
         result = planner.plan(["developer"], snapshot)

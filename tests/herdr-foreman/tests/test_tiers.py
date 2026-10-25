@@ -615,6 +615,58 @@ class ArgvTest(unittest.TestCase):
         tier = select_tier(agent(), "developer", "mechanical", mechanical_context())
         self.assertEqual(launch_flags("claude", tier), ["--model", "claude-haiku-4-5"])
 
+
+class AntigravityEffortGrammarTest(unittest.TestCase):
+    """Antigravity's Claude models take no effort flag; none proves a floor (#73)."""
+
+    def worker(self):
+        return SimpleNamespace(name="antigravity", kind="agy", tiers=parse_tiers({
+            "build": {"model": "claude-opus-4-6-thinking"},
+            "fix": {"model": "claude-sonnet-4-6", "effort": None},
+            "consultation": {"model": "gemini-fixture-model", "effort": "high"},
+        }, "agy"))
+
+    def test_claude_rows_launch_without_effort_and_record_none(self):
+        tier = select_tier(self.worker(), "developer")
+        self.assertIsNone(tier["effort"])
+        self.assertEqual(launch_flags("agy", tier), ["--model", "claude-opus-4-6-thinking"])
+        argv = ["agy", "--dangerously-skip-permissions", "--model", "claude-opus-4-6-thinking"]
+        self.assertIsNone(verify_argv("agy", tier, argv, worker_launch_args("agy"))["effort"])
+        with self.assertRaises(HerdrError):
+            verify_argv("agy", tier, argv + ["--effort", "high"], worker_launch_args("agy"))
+
+    def test_an_effort_on_a_claude_row_is_refused_before_launch(self):
+        for model in ("claude-opus-4-6-thinking", "claude-sonnet-4-6"):
+            with self.subTest(model=model), self.assertRaisesRegex(ConfigError, "takes no effort flag"):
+                parse_tiers({"build": {"model": model, "effort": "high"}}, "agy")
+
+    def test_no_antigravity_row_can_claim_a_judgment_floor(self):
+        for row in ({"model": "claude-opus-4-6-thinking"}, {"model": "claude-opus-4-6-thinking", "effort": None},
+                    {"model": "claude-opus-4-6-thinking", "effort": "high"}, {"model": "gemini-fixture-model", "effort": "high"}):
+            with self.subTest(row=row), self.assertRaises(ConfigError):
+                parse_tiers({"review": row}, "agy")
+        self.assertEqual(TOP_MODELS["agy"], frozenset({"claude-opus-4-6-thinking"}))
+
+    def test_other_antigravity_models_still_need_an_explicit_effort(self):
+        with self.assertRaisesRegex(ConfigError, "explicit effort"):
+            parse_tiers({"build": {"model": "gemini-fixture-model"}}, "agy")
+        self.assertEqual(select_tier(self.worker(), "advisor", "consultation")["effort"], "high")
+
+    def test_high_risk_work_gets_no_invented_effort_step(self):
+        context = {"risk_flags": ["network", "persistence"]}
+        for role, round_type in (("developer", "build"), ("developer", "fix")):
+            with self.subTest(round_type=round_type), self.assertRaisesRegex(MissingTierError, "effort step"):
+                select_tier(self.worker(), role, round_type, context)
+        declined = select_tier(self.worker(), "developer", "build", context, headroom=5)
+        self.assertEqual((declined["effort"], declined["de_escalated"]), (None, True))
+
+    def test_a_saved_launch_keeps_its_recorded_effort_readable(self):
+        saved = parse_tiers({"build": {"model": "claude-sonnet-4-6", "effort": "high"}}, "agy",
+                            no_effort_rows=frozenset({"build"}), saved=True)
+        self.assertEqual(saved["build"]["effort"], "high")
+        with self.assertRaises(ConfigError):
+            parse_tiers({"build": {"model": "claude-sonnet-4-6", "effort": "turbo"}}, "agy", saved=True)
+
     def test_wrong_missing_duplicate_or_transcript_values_do_not_verify(self):
         tier = select_tier(agent(), "reviewer")
         wanted = ["claude", "--model", "opus-5", "--effort", "high"]

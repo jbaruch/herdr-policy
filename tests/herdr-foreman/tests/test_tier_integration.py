@@ -550,6 +550,21 @@ class TierIntegrationTest(CliCase):
         self.assertEqual(result["agents"]["claude"]["tier_billing"]["build"]["window"], "unknown")
         self.assertTrue(result["agents"]["claude"]["skipped"])
 
+    def test_a_saved_antigravity_effort_stays_readable_history(self):
+        # 0.16 launched Claude agy rows with `--effort`; that argv is history,
+        # not proof of the model that ran, and it never discards the ledger.
+        argv = ["agy", "--dangerously-skip-permissions", "--model", "claude-sonnet-4-6", "--effort", "high"]
+        state = empty_state()
+        add_assignment(state, AT, "developer", "antigravity", tier={
+            "kind": "agy", "model": "claude-sonnet-4-6", "effort": "high", "launch_args": ["--dangerously-skip-permissions"],
+            "pressure_headroom": None, "de_escalated": False,
+            "verified": {"source": "process_argv", "model": "claude-sonnet-4-6", "effort": "high", "pane_id": "w1:p2",
+                         "argv": argv, "pid": 300}})
+        self.state.write_text(json.dumps(state))
+        result, usable = load_state_checked(self.state, warn=lambda _: None)
+        self.assertTrue(usable)
+        self.assertEqual(result["assignments"][0]["tier"]["verified"]["argv"], argv)
+
     def test_invalid_saved_tier_never_discards_the_ledger(self):
         for effort, argv, source in (("high", ["claude", "--model", "sonnet-5"], "launch_argv"),
                                     ({}, [], "launch_argv"), ("high", [], [])):
