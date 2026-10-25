@@ -8,6 +8,20 @@ the utility alone records the saved notes and their separate index.
 
 ## Artifacts
 
+`foreman.sh state --migrate-only` uses the state owner under its existing lock.
+It commits required supported migrations, then returns a schema-1 receipt with
+`status: ready`, `owner_present`, `state_schema_version` and
+`authorizes_progression: false`. It prints no history. A missing owner remains
+missing; corrupt or unsupported originals remain unchanged and return nonzero.
+Read-only previews prescribe this mode before retrying their original action.
+
+`skills/herdr-foreman/observer-view.py` reads selected owner metadata without
+migration. `skills/herdr-foreman/foreman/observer_projection.py` owns its schema-2 ephemeral page
+contract: section, typed rows, pagination, coverage gaps and false authority
+fields. Sections are binding, current and closures. The private observer reads
+these projections instead of complete historical state/supervision documents.
+This interface writes no owner, gate or replacement store.
+
 | Path | Owner | Purpose |
 | ---- | ----- | ------- |
 | `$XDG_STATE_HOME/foreman/state.json` (default `~/.local/state/foreman/state.json`, override `--state FILE`) | `skills/herdr-foreman/foreman/state.py` and its `skills/herdr-foreman/foreman/recovery.py` helper, within the same owner skill | Snapshots, append-only assignments, and audited task recovery |

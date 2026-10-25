@@ -57,6 +57,17 @@ logs. Source readers and their accepted owner schemas are documented in
 unavailable native logs, quota and outcomes remain explicit gaps. Native source
 files stay where their runtimes own them. No telemetry is uploaded.
 
+Current owner metadata comes from the co-shipped read-only
+`skills/herdr-foreman/observer-view.py`, backed by
+`skills/herdr-foreman/foreman/observer_projection.py`. Its binding, current and
+closure sections return byte-bounded pages with totals, omissions and continuation
+offsets. The owner reads its own state; the observer receives current identity,
+active assignment, quota and closure fields without historical briefs, reports or
+hold evidence. Collector page limits remain explicit coverage gaps. Unsupported
+owners and oversized projected rows have distinct private coverage diagnostics;
+inspect the named section rather than increasing raw-history limits or replacing
+the owner. This protocol creates no cache store, migration or delivery authority.
+
 A precheck emits `wake_agent` and `data`. It saves the same payload as one pending
 job before waking only the exact registered idle observer. Wakes are coalesced
 while the agent is busy. Persisted send intent preserves uncertainty after lost

@@ -7,6 +7,10 @@
 - Verify native `--model`, `--effort`, permission and explicit-conversation resume arguments; bind reports to the current `herdr:antigravity_cli` session and its canonical native transcript. Reject incomplete/non-model finals and arbitrary transcript archives. Support Antigravity's native SessionStart payload and injection envelope in Tessl; both packages carry the same worker adapter and scoped protocol.
 - Add the subscription's observed `claude-opus-4-6-thinking` judgment pin from native `agy models` and verify the launch/effort grammar against installed CLI 1.4.7 and Google's current CLI reference. Keep the existing foreman and judge setup; this enables workers without adding Antigravity foreman reset ownership.
 
+- Keep observer factory attribution when valid state and supervision owners exceed the raw observer reader's size cap (#64). Use read-only paginated owner projections for current identity, active assignments, quota and closure metadata; preserve byte/privacy bounds, explicit omissions and schema/oversized-row diagnostics without exporting historical briefs or reports.
+- Add `state --migrate-only` with a compact readiness receipt and prescribe it from read-only previews (#65). Commit required owner migrations without a whole-history display failure; preserve original history and refuse unsupported state unchanged.
+- Replace obsolete schema-6 downgrade advice with a compact additive foreman setup reference (#55). Preserve an existing supported schema and keep the missing optional block warning nonblocking.
+
 ## 0.15.0 — 2026-10-25
 
 - Add a crew optimizer that finds and implements useful simplifications, removes redundant code and reduces evidenced waste (#63). Keep a standing improvement objective moving through existing scoped developer assignments alongside independent feature delivery, with ordinary review, tests and release.
