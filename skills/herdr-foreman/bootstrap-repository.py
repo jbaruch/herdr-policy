@@ -71,10 +71,16 @@ def existing(repo, branch, found):
 
 def bootstrap(repo, branch, *, initialize=False, run=subprocess.run):
     repo = Path(repo).resolve()
-    if Path(checked(repo, "rev-parse", "--show-toplevel", run=run)).resolve() != repo:
-        raise BootstrapError("repository_root_required", "Pass the authorized repository's clone root; a directory inside another repository cannot establish a new repository base.")
-    checked(repo, "check-ref-format", "refs/heads/" + branch, run=run)
-    remote = checked(repo, "remote", "get-url", "origin", run=run)
+    root = git(repo, "rev-parse", "--show-toplevel", run=run)
+    if root.returncode or Path(root.stdout.strip()).resolve() != repo:
+        raise BootstrapError("repository_root_required", "Pass the authorized repository's existing, readable Git clone root. Restore its Git metadata if needed; a missing path, non-repository or nested directory cannot establish this base.")
+    valid_branch = git(repo, "check-ref-format", "refs/heads/" + branch, run=run)
+    if branch.startswith("-") or valid_branch.returncode:
+        raise BootstrapError("default_branch_invalid", "Pass the actual intended default branch as a valid Git branch name, without whitespace, ref syntax or a leading dash; no remote was initialized.")
+    origin = git(repo, "remote", "get-url", "origin", run=run)
+    if origin.returncode or not origin.stdout.strip():
+        raise BootstrapError("origin_required", "Configure origin on this clone to the authorized new repository, with one matching fetch/push target, then retry; no remote was initialized.")
+    remote = origin.stdout.strip()
     pushes = checked(repo, "remote", "get-url", "--push", "--all", "origin", run=run).splitlines()
     if pushes != [remote]:
         raise BootstrapError("origin_targets_differ", "Bootstrap needs one matching origin fetch/push target. Restore the authorized new repository's origin; no alternate remote was initialized.")

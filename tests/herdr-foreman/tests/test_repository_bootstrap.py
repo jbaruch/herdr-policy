@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -72,6 +73,38 @@ class RepositoryBootstrapTest(unittest.TestCase):
         with self.assertRaisesRegex(BOOT.BootstrapError, "--initialize-empty"):
             BOOT.bootstrap(self.shared, "main", run=self.git_run)
         self.assertEqual(self.call("git", "-C", str(self.shared), "ls-remote", "--refs", "origin"), "")
+
+    def test_cli_distinguishes_invalid_preconditions_before_native_effects(self):
+        for repo, branch, reason, recovery in (
+                (self.root / "missing", "main", "repository_root_required", "clone root"),
+                (self.root, "main", "repository_root_required", "Git metadata"),
+                (self.shared, "bad name", "default_branch_invalid", "valid Git branch"),
+                (self.shared, "-bad", "default_branch_invalid", "leading dash")):
+            with self.subTest(reason=reason, repo=repo, branch=branch):
+                result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(repo),
+                                         "--branch=" + branch, "--initialize-empty"],
+                                        env=self.environment, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(result.stdout, "")
+                error = json.loads(result.stderr)
+                self.assertEqual(error["error"], reason)
+                self.assertIn(recovery, error["message"])
+        self.assertEqual(self.call("git", "-C", str(self.shared), "ls-remote", "--refs", "origin"), "")
+        self.call("git", "-C", str(self.shared), "remote", "remove", "origin")
+        result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(self.shared),
+                                 "--branch", "main", "--initialize-empty"],
+                                env=self.environment, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stderr)["error"], "origin_required")
+        self.assertIn("Configure origin", json.loads(result.stderr)["message"])
+
+    def test_unavailable_git_remains_a_tool_failure(self):
+        def unavailable(*args, **kwargs):
+            raise FileNotFoundError("git")
+        with self.assertRaises(BOOT.BootstrapError) as caught:
+            self.initialize(run=unavailable)
+        self.assertEqual(caught.exception.code, 2)
+        self.assertEqual(caught.exception.reason, "git_unavailable")
 
     def test_existing_history_is_used_without_rewriting_it(self):
         revision = self.writer()
