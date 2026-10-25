@@ -127,8 +127,9 @@ def quarantine(state_path, data, at, client, *, dry_run=False):
     journal_path = root / (data["id"] + ".json")
     journal = _json(_read(journal_path)) if journal_path.exists() or journal_path.is_symlink() else None
     if journal is not None:
-        if (type(journal.get("schema_version")) is not int or journal["schema_version"] != SCHEMA_VERSION
-                or journal.get("input") != data or journal.get("state_path") != str(path)
+        if type(journal.get("schema_version")) is not int or journal["schema_version"] != SCHEMA_VERSION:
+            raise StateError("Unsupported context quarantine journal version at {}; update the owning herdr-policy installation to support this version, preserving the journal and original owner before retrying.".format(journal_path), {})
+        if (journal.get("input") != data or journal.get("state_path") != str(path)
                 or not isinstance(journal.get("at"), str)
                 or not isinstance(journal.get("original_state_sha256"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", journal["original_state_sha256"]) is None):

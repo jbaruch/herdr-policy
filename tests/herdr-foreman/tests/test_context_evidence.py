@@ -177,6 +177,21 @@ class QuarantineTests(unittest.TestCase):
             owner.quarantine(self.path, altered, AT, self.client)
         self.assertEqual(self.path.read_bytes(), self.original)
 
+    def test_unsupported_journal_versions_refuse_with_update_owner_diagnostic(self):
+        with patch.object(owner, "save_state", side_effect=OSError("fixture crash")):
+            with self.assertRaises(OSError):
+                self.run_repair()
+        journal_path = Path(str(self.path) + ".context-evidence") / (self.data["id"] + ".json")
+        journal = json.loads(journal_path.read_text())
+        for version in (0, 2, True, None):
+            with self.subTest(version=version):
+                journal_path.write_text(json.dumps({**journal, "schema_version": version}))
+                before = journal_path.read_bytes()
+                with self.assertRaisesRegex(StateError, "update the owning herdr-policy installation"):
+                    self.run_repair()
+                self.assertEqual(self.path.read_bytes(), self.original)
+                self.assertEqual(journal_path.read_bytes(), before)
+
     def test_changed_owner_after_preparation_is_preserved(self):
         with patch.object(owner, "save_state", side_effect=OSError("fixture crash")):
             with self.assertRaises(OSError):

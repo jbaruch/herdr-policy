@@ -66,8 +66,13 @@ intent, not proof that the owner write completed. Both are published immutably
 before the owner write; replay checks the actual current row and original backup.
 A prepared-but-unapplied repair retries only against its original whole-owner
 digest. Changed input, conflicting evidence, foreign paths, unsupported journals
-or other changed state refuse. This is the first journal version; older/newer
-versions are unavailable evidence until this owner explicitly supports them.
+or other changed state refuse. The quarantine journal uses the
+`rules/stateful-artifacts.md` gate-store exception: a retained intent withholds
+another repair until its original evidence is verified. Unsupported versions
+refuse with an actionable update-owner diagnostic; they never imply no gate.
+Version 1 is the first schema, so no older version is accepted today. This owner
+must migrate and rewrite every older version it accepts on read, preserving the
+original intent and evidence.
 
 Dry run validates the same authority, row and whole-owner conditions but creates
 no evidence and writes no owner. Success returns the repair id, quarantine/replay
