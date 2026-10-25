@@ -12,7 +12,8 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from foreman.errors import ForemanError, StateError
+from foreman.context_output import validate_page
+from foreman.errors import ForemanError, StateError, UsageError
 from foreman.observer_projection import SECTIONS, view
 
 
@@ -23,6 +24,11 @@ def main():
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=50)
     args = parser.parse_args()
+    try:
+        validate_page(args.limit, args.offset)
+    except UsageError as exc:
+        print(json.dumps({"error": "owner_projection_invalid_page", "recovery": exc.message}), file=sys.stderr)
+        return 2
     try:
         result = view(args.state, args.section, offset=args.offset, limit=args.limit)
     except (ForemanError, OSError, ValueError, TypeError, AttributeError, KeyError) as exc:

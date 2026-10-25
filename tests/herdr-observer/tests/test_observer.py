@@ -152,6 +152,19 @@ class ObserverTest(unittest.TestCase):
         _roles, _quota, _closures, _contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
         self.assertIn("owner_projection_row_exceeds_budget", gaps)
 
+    def test_projection_cli_reports_bad_pagination_as_usage_without_reading_owners(self):
+        for options in (("--limit", "0"), ("--limit", "101"), ("--offset", "-1")):
+            with self.subTest(options=options):
+                result = subprocess.run([sys.executable, str(ROOT / "skills/herdr-foreman/observer-view.py"),
+                                         "--state", str(self.root / "absent.json"), *options],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                error = json.loads(result.stderr)
+                self.assertEqual(error["error"], "owner_projection_invalid_page")
+                self.assertIn("nonnegative --offset", error["recovery"])
+                self.assertNotIn("metadata", error["recovery"])
+
     def tick(self, at=None):
         with self.store.db:
             return collect.tick(self.store, self.client, self.now if at is None else at, self.root)
