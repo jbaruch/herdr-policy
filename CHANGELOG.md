@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.17.0 — 2026-10-25
+
+- Launch Antigravity's Claude models without `--effort` (#73). Installed CLI 1.4.7 answered a Sonnet request carrying `--effort high` with a warning and ran Gemini 3.8 Flash, while the same request without the flag ran Sonnet; 0.16's argv proof recorded the requested model either way. Claude rows now omit effort, record none and leave the effort they run at unknown. No Antigravity row fills a judgment round and high-risk work refuses rather than invent an effort step; saved launches stay readable history. The example profile drops its Opus/high judgment rows and unverified Gemini rows, and a 0.16 profile carrying either is refused until edited.
+- Admit Antigravity task input only after the worker's live footer shows the requested model's captured native label, and record that display proof. A substituted, missing or uncaptured label sends nothing; Gemini rows stay unadmitted until a native launch of their exact model/effort pair is captured. Report recovery also requires the dispatched turn's native model selection to name the same label.
+- Recover Antigravity reports from the exact request inside the native `USER_REQUEST` envelope (#74). The 0.16 recovery compared the whole envelope with the bare dispatch and could never accept an authentic completed turn. Unknown prefixes, nested or quoted wrappers, unknown, repeated or reordered blocks and trailing bytes refuse. Tests replay byte-exact captured transcripts, displays and the raw effort warning instead of synthetic bare prompts.
+
 ## 0.16.0 — 2026-10-25
 
 - Assign full verification gates once to the tester, reuse independently executed exact-head CI artifacts, and reserve reviewer/security execution for distinct concerns (#53). Stagger expensive gates on shared constrained hosts while preserving full acceptance coverage, independence and actual failure evidence.
