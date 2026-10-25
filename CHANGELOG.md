@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.1 — 2026-10-25
+
+- Establish a real empty initial base for an explicitly authorized new repository before normal task provisioning (#66). Construct the empty commit in a private scratch repository, preserve local files and existing remote refs, and confirm the actual remote base after an uncertain push or concurrent initialization.
+- Link the narrow setup exception from foreman scope and provisioning recovery. Implementation, review and release continue through existing task owners; no guessed SHA, forced push, new ledger or additional approval is required.
+
 ## 0.15.0 — 2026-10-25
 
 - Add a crew optimizer that finds and implements useful simplifications, removes redundant code and reduces evidenced waste (#63). Keep a standing improvement objective moving through existing scoped developer assignments alongside independent feature delivery, with ordinary review, tests and release.
