@@ -18,6 +18,11 @@ from .errors import HerdrError, ParseError
 
 SESSION = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\Z")
 SOURCE = "herdr:antigravity_cli"
+#: Claude models launch without `--effort` (#73). CLI 1.4.7 answered
+#: `--model claude-sonnet-4-6 --effort high` with a warning and ran Gemini 3.8
+#: Flash; without the flag both models below ran as requested. Their effort is
+#: never displayed, so it stays unknown rather than measured.
+NO_EFFORT_MODELS = frozenset({"claude-opus-4-6-thinking", "claude-sonnet-4-6"})
 USAGE_TIMEOUT = 20
 USAGE_BYTES = 65_536
 #: CLI 1.4.7 stores a submitted prompt as `<USER_REQUEST>\n{prompt}\n</USER_REQUEST>`
