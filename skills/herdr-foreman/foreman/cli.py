@@ -28,7 +28,7 @@ from . import runnable
 from . import __version__
 from .assign import apply as apply_assignments
 from .assign import APPLY_SCHEMA_VERSION, dry_run, freeze_decision, freeze_paths, read_frozen, native_context_session, normalize_assignments, resolve_paths, validate_context_mode, validate_fix_history
-from . import no_work_recovery, bootstrap_recovery, model_unavailability, probe_recovery, renderable
+from . import no_work_recovery, bootstrap_recovery, context_evidence, model_unavailability, probe_recovery, renderable
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
 from . import progression_owner
 from . import progression_service
@@ -468,6 +468,10 @@ def build_parser():
         else:
             record_parser.add_argument("--record", required=True, metavar="FILE", help="Structured evidence JSON; see dispatch-recovery.md.")
         record_parser.add_argument("--now", metavar="ISO8601")
+    quarantine_parser = sub.add_parser("quarantine-context-evidence", parents=[common], help="Preserve and quarantine the exact fresh/no-clear writer contradiction through the bound native foreman; see state-schema.md.")
+    quarantine_parser.add_argument("--record", required=True, metavar="FILE")
+    quarantine_parser.add_argument("--now", metavar="ISO8601")
+    quarantine_parser.add_argument("--dry-run", action="store_true")
     status_parser = sub.add_parser("status", parents=[common], help="Show implementation budgets and paused work within the stdout budget; select one task for a large owner file.")
     status_parser.add_argument("--task", help="One known canonical task; leaves every other task unresolved.")
     reset_parser = sub.add_parser("foreman-reset", parents=[common], help="Schedule an explicitly requested maintenance reset, never an automatic round-boundary reset.")
@@ -2214,6 +2218,12 @@ def _apply(args, client, warn, trace, hold_gates):
     }
 
 
+def cmd_quarantine_context(args, client=None, warn=None, trace=None):
+    client = client if client is not None else _client(args, trace=trace)
+    return context_evidence.quarantine(_state_path(args), _read_record(args.record), args.now or now_iso(),
+                                       client, dry_run=args.dry_run), None
+
+
 def cmd_state(args, client=None, warn=None, trace=None):
     state, usable = load_state_checked(_state_path(args), warn=warn)
     if not usable:
@@ -3461,6 +3471,7 @@ COMMANDS = {
     "plan": cmd_plan,
     "apply": cmd_apply,
     "state": cmd_state,
+    "quarantine-context-evidence": cmd_quarantine_context,
     "status": cmd_status,
     "foreman-queue": cmd_foreman_queue,
     "workflow-readiness": cmd_workflow_readiness,

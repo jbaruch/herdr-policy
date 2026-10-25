@@ -1351,6 +1351,25 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(len(runner.writes()), 1)
         self.assertIn("DEVELOPER", runner.writes()[0])
 
+    def test_fresh_no_clear_writer_round_trips_without_a_false_hand_clear(self):
+        from foreman.state import add_assignment, empty_state, load_state_checked, save_state
+        runner = runner_with({"grok": "idle"})
+        state = empty_state()
+        def assigned(role, agent, at, status, context):
+            add_assignment(state, at, role, agent, status,
+                           cleared=context["cleared"], clear_reason=context["clear_reason"])
+        result = apply(HerdrClient(runner=runner), {"developer": "grok"}, BY_NAME, self.paths, AT,
+                       fresh=True, no_clear=True, assignment_scoped=True, on_assigned=assigned)
+        self.assertTrue(result["applied"][0]["cleared"])
+        self.assertEqual(result["applied"][0]["clear_reason"], "automatic")
+        self.assertEqual(len(runner.writes()), 1)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            save_state(path, state)
+            loaded, usable = load_state_checked(path)
+            self.assertTrue(usable)
+            self.assertEqual(loaded, state)
+
     def test_result_records_what_was_applied(self):
         runner = runner_with({"grok": "idle"})
         result = apply(HerdrClient(runner=runner), {"developer": "grok"}, BY_NAME, self.paths, AT)

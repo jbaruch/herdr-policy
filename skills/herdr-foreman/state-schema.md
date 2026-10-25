@@ -30,7 +30,48 @@ This interface writes no owner, gate or replacement store.
 | `<canonical-state-path>.retrospectives/` | `herdr-foreman`, through its retrospective utility | Immutable retrospective notes, versioned index, and transition coverage |
 | `<canonical-state-path>.foreman-reset.json` | `skills/herdr-foreman/foreman/foreman_reset.py` | One record per explicitly requested foreman maintenance reset; see Foreman Reset Record below |
 | `<canonical-state-path>.bootstrap.json` | `skills/herdr-foreman/foreman/bootstrap_recovery.py` | Original Codex launch provenance and durable bootstrap transport/cleanup receipts |
+| `<state-path>.context-evidence/` | `skills/herdr-foreman/foreman/context_evidence.py` | Immutable original ledgers and schema-1 quarantine intent journals for the known fresh/no-clear contradiction |
 | Controller-configured private remote owner JSON | `skills/herdr-foreman/foreman/remote_owner.py` | Attested command context, current single-controller lease, indeterminate intent and task ingress; schema and writer/reader contract in `skills/herdr-foreman/references/remote-context.md` |
+
+## Contradictory Context Evidence
+
+The state owner supports `quarantine-context-evidence --record FILE [--dry-run]`
+under its canonical state transaction lock. This maintenance command requires the
+existing bound native foreman; standalone callers, workers and remote callers
+cannot use it. It issues no terminal input, dispatch, clear or task-authority grant.
+
+The input is a schema-1 object with `id`, `assignment_index`,
+`assignment_sha256`, `dispatch`, and explicit operator `authorization` (`source`
+and `quote`). `assignment_sha256` uses `context_evidence.digest` on the original
+row; it is not a digest of a guessed replacement. The id is a safe filename
+component. See `context_evidence.py` for the exact accepted input and evidence
+predicates. The original applied dispatch must bind the selected assignment and
+the same contradictory writer result. Every other part of the owner must validate
+without migration. Other corruption remains refused and unchanged.
+
+Only the known true/hand/null-session contradiction is quarantined. The current
+row's `cleared` and `clear_reason` become null/unknown. This narrow owner repair
+is an exception to ordinary append-only history: the exact original row and
+complete original ledger bytes remain preserved, rather than being replaced by
+an invented hand or automatic clear. The dispatch result, worker enrollment,
+task/base, budgets, service grants, pending intents and holds do not change.
+Any later continuity recovery still uses its existing native-evidence contract.
+
+The owner alone writes the private evidence directory. Each `<id>.json` journal
+has `schema_version: 1`, `at`, exact `input`, `state_path`,
+`original_state_sha256` and `original_assignment`. The corresponding
+`<sha256>.original.json` holds the original ledger bytes. The journal is an
+intent, not proof that the owner write completed. Both are published immutably
+before the owner write; replay checks the actual current row and original backup.
+A prepared-but-unapplied repair retries only against its original whole-owner
+digest. Changed input, conflicting evidence, foreign paths, unsupported journals
+or other changed state refuse. This is the first journal version; older/newer
+versions are unavailable evidence until this owner explicitly supports them.
+
+Dry run validates the same authority, row and whole-owner conditions but creates
+no evidence and writes no owner. Success returns the repair id, quarantine/replay
+result, evidence paths and `authorizes_dispatch: false`. A refusal is nonzero
+with an actionable diagnostic; preserve the original row and evidence.
 
 ## Bootstrap Transport Evidence
 
