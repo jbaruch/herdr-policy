@@ -24,7 +24,7 @@ def identity(row):
     if (not isinstance(native, dict)
             or native.get("pane_id", row["pane_id"]) != row["pane_id"]
             or not isinstance(native.get("agent"), str)
-            or native.get("source") != "herdr:" + native["agent"]
+            or native.get("source") != report_delivery.NATIVE_SOURCES.get(native["agent"], "herdr:" + native["agent"])
             or native.get("kind") not in ("id", "path")
             or not isinstance(native.get("value"), str) or not native["value"]):
         return None
@@ -101,6 +101,8 @@ def current(snapshot):
         raise ValueError("current pane must have one named native agent with a verified session")
     row = matches[0]
     session = row["agent_session"]
+    if session["agent"] == "agy":
+        raise ValueError("Antigravity supplies factory workers; launch the observer with a supported Claude, Codex or Grok native session")
     if (not isinstance(row["name"], str) or not isinstance(row.get("cwd"), str) or not Path(row["cwd"]).is_absolute()
             or session["agent"] not in report_delivery.DISPLAY_PREFIXES
             or session.get("pane_id", pane) != pane

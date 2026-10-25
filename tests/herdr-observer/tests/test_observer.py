@@ -20,7 +20,8 @@ sys.path.insert(0, str(ROOT / "skills/herdr-foreman"))
 
 from factory_observer import cli, collect, native, sources
 from factory_observer.store import MAX_REPORT_SWEEP, Store, private_directory, private_file
-from foreman import observer_role, role_context, supervision
+from foreman import observer_role, role_context, state, supervision
+from foreman.observer_projection import view as owner_projection
 
 
 def stamp(at):
@@ -112,6 +113,57 @@ class ObserverTest(unittest.TestCase):
     def save_owner(self):
         self.owner.write_text(json.dumps(self.data))
         Path(str(self.owner) + ".supervision.json").write_text(json.dumps(self.supervised))
+
+    def test_large_valid_owners_keep_current_attribution_without_exporting_history(self):
+        full = state.empty_state()
+        for _ in range(30_000):
+            state.add_assignment(full, stamp(self.now), "developer", "developer", task="work")
+        full["snapshots"] = self.data["snapshots"]
+        self.data = full
+        refinement = {"schema_version": 1, "at": stamp(self.now), "pane_id": self.worker["pane_id"],
+                      "native_session": self.worker["agent_session"]}
+        self.supervised["members"][0]["refinements"] = [refinement] * 40_000
+        self.save_owner()
+        self.assertGreater(self.owner.stat().st_size, sources.MAX_JSON_BYTES)
+        self.assertGreater(Path(str(self.owner) + ".supervision.json").stat().st_size, sources.MAX_JSON_BYTES)
+        _data, usable = state.load_state_checked(self.owner, persist_migration=False)
+        self.assertTrue(usable)
+        self.assertEqual(len(supervision.load(self.owner)["members"][0]["refinements"]), 40_000)
+        before = (self.owner.read_bytes(), Path(str(self.owner) + ".supervision.json").read_bytes())
+        result = owner_projection(self.owner)
+        self.assertLessEqual(len((json.dumps(result, indent=2) + "\n").encode()), sources.OWNER_PAGE_BYTES)
+        self.assertNotIn("refinements", json.dumps(result))
+        roles, quota, _closures, contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
+        self.assertEqual(roles[native.fingerprint(native.identity(self.foreman))]["role"], "foreman")
+        self.assertEqual(roles[native.fingerprint(native.identity(self.worker))]["role"], "developer")
+        self.assertEqual(quota[0]["headroom_pct"], 90)
+        self.assertEqual(contexts[0]["active_assignments"], 1)
+        self.assertNotIn("owner_evidence_unavailable", gaps)
+        self.assertEqual(before, (self.owner.read_bytes(), Path(str(self.owner) + ".supervision.json").read_bytes()))
+
+    def test_projection_pages_expose_omissions_and_oversized_rows(self):
+        result = owner_projection(self.owner, limit=1)
+        self.assertFalse(result["context_complete"])
+        self.assertEqual(result["pagination"]["next_offset"], 1)
+        continuation = owner_projection(self.owner, limit=1, offset=1)
+        self.assertEqual(continuation["rows"][0]["kind"], "context")
+        self.supervised["binding"]["identity"]["cwd"] = "/" + "large" * sources.OWNER_PAGE_BYTES
+        self.save_owner()
+        _roles, _quota, _closures, _contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
+        self.assertIn("owner_projection_row_exceeds_budget", gaps)
+
+    def test_projection_cli_reports_bad_pagination_as_usage_without_reading_owners(self):
+        for options in (("--limit", "0"), ("--limit", "101"), ("--offset", "-1")):
+            with self.subTest(options=options):
+                result = subprocess.run([sys.executable, str(ROOT / "skills/herdr-foreman/observer-view.py"),
+                                         "--state", str(self.root / "absent.json"), *options],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                error = json.loads(result.stderr)
+                self.assertEqual(error["error"], "owner_projection_invalid_page")
+                self.assertIn("nonnegative --offset", error["recovery"])
+                self.assertNotIn("metadata", error["recovery"])
 
     def tick(self, at=None):
         with self.store.db:
@@ -413,7 +465,7 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
 
     def test_reporter_admission_rejects_unreadable_role_formats_before_writes(self):
-        for change in ({"cwd": None}, {"cwd": "relative"}, {"provider": "unsupported"}, {"pane": "other-pane"}):
+        for change in ({"cwd": None}, {"cwd": "relative"}, {"provider": "unsupported"}, {"provider": "agy"}, {"pane": "other-pane"}):
             with self.subTest(change=change):
                 row = deepcopy(self.observer)
                 if "cwd" in change:
@@ -421,7 +473,7 @@ class ObserverTest(unittest.TestCase):
                 if "provider" in change:
                     assert isinstance(change["provider"], str)
                     row["agent_session"]["agent"] = change["provider"]
-                    row["agent_session"]["source"] = "herdr:" + change["provider"]
+                    row["agent_session"]["source"] = "herdr:antigravity_cli" if change["provider"] == "agy" else "herdr:" + change["provider"]
                 if "pane" in change:
                     row["agent_session"]["pane_id"] = change["pane"]
                 before = self.record("binding")

@@ -37,8 +37,8 @@
 - Each co-shipped capsule is at most 4096 UTF-8 bytes; structured stdout is at most 16 KiB. Missing, unreadable or oversized contracts fail visibly without partial instructions.
 - This reader creates no binding, task authority, admission, report, acknowledgement or dispatch.
 - The shared SessionStart hook accepts at most 16 KiB of native JSON, verifies session identity and preserves the consumer cwd.
-- Claude Code, Codex and Grok-compatible hooks use `hookSpecificOutput.additionalContext`; Cursor uses `additional_context`; portable Tessl uses `additionalContext`.
-- Portable startup defers to registered Claude Code and Codex native hooks. Ordinary-session wrappers exit before runtime prerequisites.
+- Claude Code, Codex and Grok-compatible hooks use `hookSpecificOutput.additionalContext`; Cursor uses `additional_context`; Antigravity uses `injectSteps` with a system message; portable Tessl uses `additionalContext`.
+- Portable startup defers to registered Claude Code, Codex and Antigravity native hooks. Ordinary-session wrappers exit before runtime prerequisites.
 - Context injection never removes instructions already loaded. Existing work retains its actual handoff, hold and Stop requirements.
 
 ## Selected Owner Paths

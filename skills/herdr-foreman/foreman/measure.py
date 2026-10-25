@@ -37,6 +37,7 @@ from .parsers import headroom_pct, parse_usage
 from .probe import resolve_status, stderr_warn
 from .state import SNAPSHOT_SCHEMA_VERSION
 from .billing import tier_billing
+from . import antigravity_native
 
 #: Snapshot document version. 2 adds `window_group` to every agent record.
 #: `state.py` owns the file a snapshot is stored in, so it owns both the
@@ -298,6 +299,15 @@ def measure_agent(client, agent, marker_timeout_ms=DEFAULT_MARKER_TIMEOUT_MS, re
             "`herdr agent list`.".format(agent.name),
             {"agent": agent.name},
         )
+
+    if agent.kind == "agy":
+        if getattr(getattr(client, "context", None), "mode", "native") != "native":
+            raise HerdrError("Measure Antigravity on its native controller host; local Google sign-in cannot prove a remote worker account.", {"kind": "agy"})
+        parsed = antigravity_native.subscription_usage()
+        return {"kind": agent.kind, "state": status, "herdr_state": herdr_status,
+                "state_source": state_source, "pane_id": pane_id, "windows": parsed["windows"],
+                "credits": None, "plan": None, "headroom_pct": headroom_pct(parsed["windows"]),
+                "window_group": agent.window_group, "skipped": False}
 
     try:
         send_command(

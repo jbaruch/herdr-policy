@@ -757,7 +757,7 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
         workflow_upgrade.require_compatible_services(state, path)
     if migrated and not persist_migration:
         raise StateError("This read-only preview needs an owner migration. Run `{}` with the same --state path, then retry the preview; the original file is unchanged.".format(
-            runnable.command("state")), {"path": str(path)})
+            runnable.command("state --migrate-only")), {"path": str(path)})
     if migrated:
         # Gate-bearing owner migrations must land before their result is usable.
         save_state(path, state)

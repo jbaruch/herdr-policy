@@ -22,7 +22,7 @@ import unicodedata
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from . import claude_native
+from . import antigravity_native, claude_native
 from . import recovery as ledger
 from . import report_contract
 from . import supervision
@@ -30,7 +30,9 @@ from .composition import parse_requirements
 from .errors import HerdrError, UsageError
 
 
-DISPLAY_PREFIXES = {"codex": ("• ",), "grok": ("     ",), "claude": ("\u23fa ",)}
+DISPLAY_PREFIXES = {"codex": ("• ",), "grok": ("     ",), "claude": ("\u23fa ",), "agy": ("",)}
+NATIVE_SOURCES = {kind: "herdr:" + kind for kind in DISPLAY_PREFIXES}
+NATIVE_SOURCES["agy"] = antigravity_native.SOURCE
 # Columns each TUI keeps right of its transcript text. Grok holds a scrollbar
 # margin plus room for its right-aligned `12:00 PM` clock on the same row;
 # measured on Grok 1.0.13 (Grok 4.6/4.7), Claude Code 2.1.263 and Codex
@@ -190,10 +192,12 @@ def grok_final(rows, session):
     return final if complete else None
 
 
-def source_final(body, kind, session):
+def source_final(body, kind, session, *, path=None):
     rows = _rows(body)
     if rows is None:
         return None
+    if kind == "agy":
+        return antigravity_native.final_message(rows, session, path)
     parser = {"codex": codex_final, "grok": grok_final, "claude": claude_native.final_message}.get(kind)
     return parser(rows, session) if parser else None
 
@@ -249,7 +253,7 @@ def prompt_matches(read, expected, agent):
     return agent == "grok" and strip_attachment_markers(read) == expected
 
 
-def source_prompt(body, kind, session=None):
+def source_prompt(body, kind, session=None, *, path=None):
     """Read the actual latest user message; quoted assistant instructions fail.
 
     `session` binds the read to one session and only Claude needs it; Codex and
@@ -259,6 +263,8 @@ def source_prompt(body, kind, session=None):
     rows = _rows(body)
     if rows is None:
         return None
+    if kind == "agy":
+        return antigravity_native.prompt_text(rows, session, path)
     if kind == "claude":
         return claude_native.prompt_text(rows, session)
     prompt, in_chunks = None, False
@@ -346,13 +352,17 @@ def source_prompt(body, kind, session=None):
 def native_identity(info):
     ref = info.get("agent_session")
     if (not isinstance(ref, dict) or not isinstance(ref.get("agent"), str) or ref["agent"] not in DISPLAY_PREFIXES
-            or ref.get("source") != "herdr:" + ref["agent"] or ref.get("kind") != "id"
+            or ref.get("source") != NATIVE_SOURCES[ref["agent"]] or ref.get("kind") != "id"
             or not isinstance(ref.get("value"), str) or not SESSION_ID.fullmatch(ref["value"])):
+        return None
+    if ref["agent"] == "agy" and antigravity_native.transcript_path(ref["value"]) is None:
         return None
     return {key: ref[key] for key in ("source", "agent", "kind", "value")}
 
 
 def source_root(kind):
+    if kind == "agy":
+        return antigravity_native.sessions_root()
     if kind == "codex":
         return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "sessions"
     if kind == "claude":
@@ -363,6 +373,9 @@ def source_root(kind):
 def source_path(identity):
     """Resolve the official ID without glob's suppression of directory errors."""
     session, kind = identity["value"], identity["agent"]
+    if kind == "agy":
+        path = antigravity_native.transcript_path(session)
+        return path if path is not None and path.resolve() == path else None
     root, matches = source_root(kind), []
     depth_limit = {"codex": 3, "claude": claude_native.SESSION_DEPTH}.get(kind, 2)
 
@@ -413,7 +426,7 @@ def probe(client, agent, pane_id, report, visible, lines):
     identity = native_identity(info)
     if (identity is None or info.get("pane_id") != pane_id
             or info.get("agent_status") not in ("idle", "done")
-            or not decorated_row(visible, identity["agent"], report)):
+            or identity["agent"] != "agy" and not decorated_row(visible, identity["agent"], report)):
         return result
     before = client.pane_get(pane_id)
     if not pane_identity(before, pane_id, identity):
@@ -430,7 +443,7 @@ def probe(client, agent, pane_id, report, visible, lines):
     if source is None:
         return {**result, "reason": "native_source_unavailable"}
     source_bytes, body = source
-    final = source_final(body, identity["agent"], identity["value"])
+    final = source_final(body, identity["agent"], identity["value"], path=path)
     if not bare_final(final, report) or not Path(report).is_file():
         return result
     after_visible = client.pane_read(pane_id, lines=lines).rstrip("\n")
@@ -656,11 +669,16 @@ def recover(store, assignments, data, at):
             raise UsageError("Archived pane JSON has no supported native session identity; restore the original pane get evidence.", {})
         raise UsageError("Stale-ID recovery requires an original Grok automatic clear; preserve the original evidence.", {})
     final_session = source_session["value"] if source_session else identity["value"] if identity else None
+    canonical = None
+    if identity is not None and identity["agent"] == "agy":
+        canonical = source_path(identity)
+        if canonical is None or Path(data["source"]) != canonical:
+            raise UsageError("Antigravity recovery requires this conversation's canonical native transcript path, with the original dispatch, pane and negative wait receipts. Preserve arbitrary archives; they cannot establish its session.", {})
     if (identity is None or original_identity is not None and identity != original_identity
             or not isinstance(pane, dict) or not pane_identity(pane, dispatch["result"].get("pane_id"), identity)
-            or not decorated_row(bodies["visible"], identity["agent"], data["report"])
-            or not prompt_matches(source_prompt(bodies["source"], identity["agent"], final_session), prompt, identity["agent"])
-            or not bare_final(source_final(bodies["source"], identity["agent"], final_session), data["report"])):
+            or identity["agent"] != "agy" and not decorated_row(bodies["visible"], identity["agent"], data["report"])
+            or not prompt_matches(source_prompt(bodies["source"], identity["agent"], final_session, path=canonical), prompt, identity["agent"])
+            or not bare_final(source_final(bodies["source"], identity["agent"], final_session, path=canonical), data["report"])):
         raise UsageError("Archived pane and completed native source do not prove this report's bare final marker; preserve the negative receipt.", {})
     prior = next((row for row in store["delivery_recoveries"] if row["id"] == data["id"]), None)
     if prior:

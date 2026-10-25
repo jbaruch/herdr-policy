@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.16.0 — 2026-10-25
+
+- Assign full verification gates once to the tester, reuse independently executed exact-head CI artifacts, and reserve reviewer/security execution for distinct concerns (#53). Stagger expensive gates on shared constrained hosts while preserving full acceptance coverage, independence and actual failure evidence.
+- Add native Antigravity subscription workers through `agy`, using existing Herdr launch, enrollment, verification and cleanup owners (#58, #63). Ship an optional additive profile; existing operator configurations and providers are preserved.
+- Read signed-in subscription quota with the native non-model `/usage` command and retain its distinct groups. Use conservative profile headroom and existing account-bound billing evidence rather than infer extra capacity from model names. Keep missing access, unsupported remote account measurements and provider failures explicit and local.
+- Verify native `--model`, `--effort`, permission and explicit-conversation resume arguments; bind reports to the current `herdr:antigravity_cli` session and its canonical native transcript. Reject incomplete/non-model finals and arbitrary transcript archives. Support Antigravity's native SessionStart payload and injection envelope in Tessl; both packages carry the same worker adapter and scoped protocol.
+- Add the subscription's observed `claude-opus-4-6-thinking` judgment pin from native `agy models` and verify the launch/effort grammar against installed CLI 1.4.7 and Google's current CLI reference. Keep the existing foreman and judge setup; this enables workers without adding Antigravity foreman reset ownership.
+
+- Keep observer factory attribution when valid state and supervision owners exceed the raw observer reader's size cap (#64). Use read-only paginated owner projections for current identity, active assignments, quota and closure metadata; preserve byte/privacy bounds, explicit omissions and schema/oversized-row diagnostics without exporting historical briefs or reports.
+- Add `state --migrate-only` with a compact readiness receipt and prescribe it from read-only previews (#65). Commit required owner migrations without a whole-history display failure; preserve original history and refuse unsupported state unchanged.
+- Replace obsolete schema-6 downgrade advice with a compact additive foreman setup reference (#55). Preserve an existing supported schema and keep the missing optional block warning nonblocking.
+
+- Establish a real empty initial base for an explicitly authorized new repository before normal task provisioning (#66). Construct the empty commit in a private scratch repository, preserve local files and existing remote refs, and confirm the actual remote base after an uncertain push or concurrent initialization.
+- Link the narrow setup exception from foreman scope and provisioning recovery. Implementation, review and release continue through existing task owners; no guessed SHA, forced push, new ledger or additional approval is required.
+
 ## 0.15.0 — 2026-10-25
 
 - Add a crew optimizer that finds and implements useful simplifications, removes redundant code and reduces evidenced waste (#63). Keep a standing improvement objective moving through existing scoped developer assignments alongside independent feature delivery, with ordinary review, tests and release.

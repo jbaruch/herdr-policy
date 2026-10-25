@@ -29,10 +29,11 @@ live measurement.
 Accepted round names, role mappings, model pins, effort enums, mechanical
 eligibility, risk escalation, and supported launch options are the constants
 and functions in `skills/herdr-foreman/foreman/tiers.py`. The parser rejects
-unknown rounds and unsupported adapters. Claude Code, Codex CLI, and Grok
-Build have launch adapters verified against their installed CLI help.
-Antigravity's research column remains a future adapter; the example does not
-declare an inactive agent or accept unused tier rows for it.
+unknown rounds and unsupported adapters. Claude Code, Codex CLI, Grok Build
+and native Antigravity CLI (`agy`) have launch adapters verified against their
+installed CLI help. Antigravity setup and subscription boundaries are in
+`skills/herdr-foreman/references/antigravity.md`; it supplies workers while the
+existing supported foreman retains coordination/reset ownership.
 
 ## Minimum Adequate Routing
 

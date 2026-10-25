@@ -519,12 +519,14 @@ def build_parser():
     load_parser.add_argument("--question", help="Specific question requiring the selected evidence excerpt.")
     load_parser.add_argument("--offset", type=int, default=0, help="Byte offset for an explicit evidence continuation.")
 
-    sub.add_parser(
+    state_parser = sub.add_parser(
         "state",
         parents=[common],
         help="Print the state file.",
         description="Print the state file, or a fresh empty document if none exists.",
     )
+    state_parser.add_argument("--migrate-only", action="store_true",
+                              help="Commit required owner migrations and return a compact readiness receipt without history.")
     return parser
 
 
@@ -2217,6 +2219,9 @@ def cmd_state(args, client=None, warn=None, trace=None):
     if not usable:
         raise StateError("Current state is unreadable or unsupported. Preserve the original owner, holds and unknown deliveries; restore a supported owner backup or update its owning plugin before inspecting it.",
                          {"context_complete": False})
+    if getattr(args, "migrate_only", False):
+        return {"schema_version": 1, "status": "ready", "owner_present": _state_path(args).is_file(),
+                "state_schema_version": state["schema_version"], "authorizes_progression": False}, None
     return context_output.enforce_budget(
         state,
         "State exceeds its printed output budget. Preserve the owner file and use `{}` or `{}` for the specific pending question; do not dump or copy its history into context.".format(
@@ -2998,15 +3003,11 @@ def cmd_relaunch_worker(args, client=None, warn=None, trace=None):
             "assignment_index": len(state["assignments"]) - 1}, None
 
 
-#: The minimal `foreman` block the unconfigured warning tells the operator to add.
-FOREMAN_BLOCK_SNIPPET = ('"foreman": {"agent": "foreman", "kind": "claude", "window_group": "<window-group>", '
-                         '"tiers": {"coordination": {"model": "<model>", "effort": "<effort>"}}}')
-
-
 def _foreman_unconfigured(path):
-    return ("Config at {} has no `foreman` block, so the foreman's tier is neither selected nor proven. Edit that "
-            "file: set `schema_version` to {}, and add {}. Then launch the foreman with `{}`.".format(
-                path, FOREMAN_CONFIG_VERSION, FOREMAN_BLOCK_SNIPPET, runnable.command("start-foreman --pane <pane-id>")))
+    return ("Config at {} has no `foreman` block (nonblocking). Add the foreman example from "
+            "skills/herdr-foreman/config.example.json; preserve the current supported schema_version. "
+            "Older schemas need an additive upgrade to at least {}. Then use `{}`.".format(
+                path, FOREMAN_CONFIG_VERSION, runnable.command("start-foreman --pane <pane-id>")))
 
 
 def _foreman_headroom(seat, snapshot):

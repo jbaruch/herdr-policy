@@ -100,8 +100,8 @@ def _payload_identities(payload, environment, cwd):
     # Native hooks may carry an opaque ID and transcript path together. The
     # live controller chooses the binding kind; input field order cannot do so.
     identities = []
-    session = payload.get("session_id") or payload.get("conversation_id")
-    for kind, value in (("id", session), ("path", payload.get("transcript_path"))):
+    session = payload.get("session_id") or payload.get("conversation_id") or payload.get("conversationId")
+    for kind, value in (("id", session), ("path", payload.get("transcript_path") or payload.get("transcriptPath"))):
         if (not isinstance(value, str) or not value
                 or kind == "path" and not Path(value).is_absolute()):
             continue
@@ -150,7 +150,7 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
         if (pane.get("pane_id") != pane_id or not isinstance(native, dict)
                 or not isinstance(native.get("agent"), str)
                 or native.get("agent") not in report_delivery.DISPLAY_PREFIXES
-                or native.get("source") != "herdr:" + native["agent"]
+                or native.get("source") != report_delivery.NATIVE_SOURCES[native["agent"]]
                 or native.get("kind") not in ("id", "path")
                 or not isinstance(native.get("value"), str) or not native["value"]
                 or native.get("pane_id", pane_id) != pane_id
@@ -215,8 +215,8 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
             for member in data["members"]:
                 assignment = supervision.expected_assignment(member)
                 native = assignment["native_session"]
-                if (isinstance(native, dict) and native.get("agent") in ("claude", "codex", "grok")
-                        and native.get("source") == "herdr:" + native["agent"]
+                if (isinstance(native, dict) and native.get("agent") in report_delivery.NATIVE_SOURCES
+                        and native.get("source") == report_delivery.NATIVE_SOURCES[native["agent"]]
                         and native.get("kind") in ("id", "path")
                         and _worker_matches(member, environment["HERDR_PANE_ID"], native)
                         and supervision.identity(native["value"], cwd, environment["HERDR_ENV"],

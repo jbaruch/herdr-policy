@@ -125,6 +125,8 @@ pushed head under `skills/herdr-foreman/references/role-planning.md`. Other role
 
 ## Step 7 — Prepare the Task Checkout
 
+For an authorized new repository with no remote base yet, use
+`skills/herdr-foreman/references/repository-bootstrap.md` once before provisioning.
 Use `skills/herdr-foreman/references/round-setup.md` for the selected task's isolated checkout,
 authority and integrity checks. Reuse an unchanged owned checkout. Clean only
 the task's owned work; unrelated hygiene does not delay its dispatch.
