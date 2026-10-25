@@ -25,7 +25,7 @@ from foreman.assign import assignment_text
 from foreman.errors import UsageError
 from foreman.herdr import HerdrClient
 from tests.fakes import FakeRunner, pane_layout
-from tests import test_recovery_cli as owner_fixture
+from tests import agy_capture, test_recovery_cli as owner_fixture
 
 AT = "2026-09-01T12:00:00+00:00"
 SESSION = "native-session-361"
@@ -61,6 +61,15 @@ def grok_rows(final):
 
 def encode(rows):
     return "\n".join(json.dumps(row) for row in rows) + "\n"
+
+
+def agy_rows(prompt, final):
+    """The captured Antigravity turn carrying this dispatch; every other byte is native."""
+    rows = copy.deepcopy(agy_capture.SONNET_ROWS)
+    request = rows[0]["content"][len("<USER_REQUEST>\n"):rows[0]["content"].index("\n</USER_REQUEST>")]
+    rows[0]["content"] = rows[0]["content"].replace(request, prompt, 1)
+    rows[1]["content"] = final
+    return rows
 
 
 class MarkerColumnsTests(unittest.TestCase):
@@ -506,12 +515,19 @@ class NativeDeliveryTests(unittest.TestCase):
         Path(data["pane"]).write_text(json.dumps({"result": {"pane": pane}}))
         Path(data["visible"]).write_text("Native TUI: " + self.marker)
         prompt = assignment_text("judge", dispatch["common"], dispatch["brief"])
-        rows = [{"step_index": 0, "type": "USER_INPUT", "source": "USER_EXPLICIT", "status": "DONE", "content": prompt},
-                {"step_index": 1, "type": "PLANNER_RESPONSE", "source": "MODEL", "status": "DONE", "content": self.marker}]
+        rows = agy_rows(prompt, self.marker)
         with patch.object(antigravity_native, "sessions_root", return_value=self.tmp.resolve() / "native"):
             source = antigravity_native.transcript_path(session)
             assert source is not None
             source.parent.mkdir(parents=True)
+            # A bare prompt is the synthetic shape the native CLI never writes.
+            bare = copy.deepcopy(rows)
+            bare[0]["content"] = prompt
+            for altered in (bare, agy_rows(prompt + " ", self.marker), agy_rows("Quoted: " + prompt, self.marker)):
+                source.write_text(encode(altered))
+                with self.assertRaisesRegex(UsageError, "do not prove this report"):
+                    delivery.recover(document["recovery"], document["assignments"], dict(data, source=str(source)), AT)
+            self.assertEqual(document["recovery"]["delivery_recoveries"], [])
             source.write_text(encode(rows))
             data["source"] = str(source)
             prior = copy.deepcopy(document["assignments"])
