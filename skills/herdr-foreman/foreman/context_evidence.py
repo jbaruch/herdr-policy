@@ -17,6 +17,7 @@ import tempfile
 
 from . import progression_owner, recovery, supervision
 from .errors import StateError, UsageError
+from .diagnostics import stderr_warn
 from .state import STATE_SCHEMA_VERSION, _NoUsableState, _validate, save_state
 
 SCHEMA_VERSION = 1
@@ -59,8 +60,9 @@ def _private_directory(root):
 
 def _immutable(path, body):
     """Exclusive private evidence publication; a retained file must match exactly."""
-    descriptor, temporary = tempfile.mkstemp(prefix=".context-", dir=path.parent)
+    temporary = None
     try:
+        descriptor, temporary = tempfile.mkstemp(prefix=".context-", dir=path.parent)
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(body)
             handle.flush()
@@ -78,7 +80,13 @@ def _immutable(path, body):
     except OSError as exc:
         raise StateError("Cannot preserve context evidence at {}; restore private directory access: {}.".format(path, exc), {}) from None
     finally:
-        Path(temporary).unlink()
+        if temporary is not None:
+            try:
+                Path(temporary).unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                stderr_warn("Cannot remove private context temporary file {}; restore directory access and remove that temporary file: {}.".format(temporary, exc))
 
 
 def _validated(candidate, path):
@@ -145,7 +153,8 @@ def quarantine(state_path, data, at, client, *, dry_run=False):
         if (not isinstance(originals, list) or data["assignment_index"] >= len(originals)
                 or originals[data["assignment_index"]] != original):
             raise StateError("Original quarantine backup does not bind this assignment; restore its actual evidence.", {})
-        return {"id": data["id"], "replayed": True, "quarantined": True, "journal": str(journal_path), "authorizes_dispatch": False}
+        return {"id": data["id"], "replayed": True, "quarantined": True, "journal": str(journal_path),
+                "backup": str(backup), "authorizes_dispatch": False}
     if row != original:
         raise StateError("Assignment changed after quarantine preparation; preserve its actual outcome and the original journal.", {})
     store = state.get("recovery", {})

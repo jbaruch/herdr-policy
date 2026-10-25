@@ -92,6 +92,8 @@ class QuarantineTests(unittest.TestCase):
         before = self.path.read_bytes()
         result = self.run_repair()
         self.assertTrue(result["replayed"])
+        self.assertEqual(set(result), set(first))
+        self.assertEqual(result["backup"], first["backup"])
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(Path(first["backup"]).read_bytes(), self.original)
 
@@ -177,6 +179,34 @@ class QuarantineTests(unittest.TestCase):
             with self.assertRaisesRegex(StateError, "preservation failure"):
                 self.run_repair()
         self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_temporary_creation_failure_is_actionable_and_preserves_owner(self):
+        with patch.object(owner.tempfile, "mkstemp", side_effect=OSError("fixture disk full")):
+            with self.assertRaisesRegex(StateError, "Cannot preserve context evidence"):
+                self.run_repair()
+        self.assertEqual(self.path.read_bytes(), self.original)
+        self.assertEqual(list(Path(str(self.path) + ".context-evidence").iterdir()), [])
+
+    def test_cleanup_failure_does_not_mask_preservation_failure(self):
+        with patch.object(owner.os, "link", side_effect=OSError("fixture storage failure")), \
+                patch.object(Path, "unlink", side_effect=PermissionError("fixture cleanup failure")), \
+                patch.object(owner, "stderr_warn") as warning:
+            with self.assertRaisesRegex(StateError, "Cannot preserve context evidence"):
+                self.run_repair()
+            warning.assert_called_once()
+        self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_action_router_exposes_the_guarded_unreadable_owner_recovery(self):
+        skill = Path(__file__).resolve().parents[3] / "skills/herdr-foreman"
+        router = (skill / "SKILL.md").read_text()
+        self.assertIn("quarantine contradictory context evidence", router)
+        self.assertIn("owner_state_unreadable", router)
+        self.assertIn("## Step 10 — Quarantine Context Evidence", router)
+        reference = (skill / "references/context-quarantine.md").read_text()
+        self.assertIn("bound native foreman", reference)
+        self.assertIn("existing explicit operator authorization", reference)
+        self.assertIn("quarantine-context-evidence --state", reference)
+        self.assertIn("--dry-run", reference)
 
 
 if __name__ == "__main__":

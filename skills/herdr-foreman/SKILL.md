@@ -3,9 +3,10 @@ name: herdr-foreman
 description: >
   Coordinate concurrent Herdr delivery, supervise or recover the crew, and release
   verified work. Use when asked to assign Herdr work, run crew tasks in parallel,
-  recover a stuck worker, ship verified changes, or look up Herdr readiness, task
-  cost, saved attention, GitHub evidence, lessons, handoff notes, retrospectives or coordination
-  metrics. Live coordination requires a verified foreman; workers retain their assignment.
+  recover a stuck worker, quarantine contradictory context evidence, ship verified
+  changes, or look up Herdr readiness, task cost, saved attention, GitHub evidence,
+  lessons, handoff notes, retrospectives or coordination metrics. Live coordination
+  requires a verified foreman; workers retain their assignment.
 ---
 
 # Herdr Foreman Skill
@@ -57,6 +58,7 @@ and finish here. Use no replacement store to obtain a role.
   - Perform ordinary authorized work under general policy.
   - Finish here.
 - `recovery` or `unverified`:
+  - For an authorized context-quarantine request with `reason: owner_state_unreadable`, continue immediately to Step 10.
   - Follow recovery instructions without clearing obligations.
   - Restore a verified role before coordination.
   - Finish here.
@@ -123,4 +125,13 @@ Read one named source through GitHub Lookup; finish here:
 
 ```text
 skills/herdr-foreman/references/decision-context.md
+```
+
+## Step 10 — Quarantine Context Evidence
+
+Use the existing bound native foreman's protected recovery action and its
+result-specific continuation:
+
+```text
+skills/herdr-foreman/references/context-quarantine.md
 ```
