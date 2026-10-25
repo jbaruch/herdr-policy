@@ -18,8 +18,33 @@ from .errors import HerdrError, ParseError
 
 SESSION = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\Z")
 SOURCE = "herdr:antigravity_cli"
+#: Claude models launch without `--effort` (#73). CLI 1.4.7 answered
+#: `--model claude-sonnet-4-6 --effort high` with a warning and ran Gemini 3.8
+#: Flash; without the flag both models below ran as requested. Their effort is
+#: never displayed, so it stays unknown rather than measured.
+NO_EFFORT_MODELS = frozenset({"claude-opus-4-6-thinking", "claude-sonnet-4-6"})
+#: The label each captured model shows once selected: in the live footer and
+#: in its first turn's model selection. A model or effort without a captured
+#: label has no native proof of what runs and is refused before input (#73).
+MODEL_LABELS = {
+    "claude-opus-4-6-thinking": "Claude Opus 4.6 (Thinking)",
+    "claude-sonnet-4-6": "Claude Sonnet 4.6 (Thinking)",
+}
+#: The idle footer's last visible row: shortcut hint, then the running model.
+FOOTER = re.compile(r"\? for shortcuts {2,}(\S(?:.*\S)?)")
 USAGE_TIMEOUT = 20
 USAGE_BYTES = 65_536
+#: CLI 1.4.7 stores a submitted prompt as `<USER_REQUEST>\n{prompt}\n</USER_REQUEST>`
+#: followed by these native blocks, in this order, each at most once (#74).
+REQUEST_OPEN = "<USER_REQUEST>\n"
+REQUEST_CLOSE = "\n</USER_REQUEST>"
+TRAILING_BLOCKS = ("ADDITIONAL_METADATA", "USER_SETTINGS_CHANGE")
+ENVELOPE_TAG = re.compile(r"</?(?:USER_REQUEST|ADDITIONAL_METADATA|USER_SETTINGS_CHANGE)>")
+TRAILING_BLOCK = re.compile(r"\n<([A-Z_]+)>\n(.*?)\n</\1>", re.DOTALL)
+MODEL_SELECTION = re.compile(
+    r"The user changed setting `Model Selection` from ([^\n`]+?) to ([^\n`]+?)\. "
+    r"No need to comment on this change if the user doesn't ask about it\. "
+    r"If reporting what model you are, please use a human readable name instead of the exact string\.")
 
 
 def parse_usage(text):
@@ -67,6 +92,42 @@ def subscription_usage(*, run=subprocess.run):
     return parse_usage(result.stdout)
 
 
+def expected_label(tier):
+    """The captured native label for a requested tier, or None when unproven."""
+    model = tier.get("model") if isinstance(tier, dict) else None
+    if not isinstance(model, str) or tier.get("effort") is not None:
+        return None
+    return MODEL_LABELS.get(model)
+
+
+def displayed_model(text):
+    """The model the live footer names, or None when the read shows no footer."""
+    rows = [row.rstrip() for row in text.splitlines() if row.strip()] if isinstance(text, str) else []
+    match = FOOTER.fullmatch(rows[-1]) if rows else None
+    return match.group(1) if match else None
+
+
+def admit_model(tier, text):
+    """Prove from the native display that the requested model runs; argv only asks.
+
+    Returns the display proof. Its effort is `unknown`: no native surface shows
+    the effort a no-effort Claude model runs at.
+    """
+    expected, shown = expected_label(tier), displayed_model(text)
+    details = {"kind": "agy", "model": tier.get("model"), "effort": tier.get("effort"), "displayed": shown}
+    if expected is None:
+        raise HerdrError("Antigravity has no captured native label for model {!r} at effort {}, so nothing proves it "
+                         "would run as requested. Configure a captured no-effort model; nothing was sent.".format(
+                             tier.get("model"), tier.get("effort") or "none"), details)
+    if shown is None:
+        raise HerdrError("Antigravity's native model footer is not visible, so the running model is unproven; inspect "
+                         "the pane before retrying. Nothing was sent.", details)
+    if shown != expected:
+        raise HerdrError("Antigravity runs {!r}, not the requested {!r}; nothing was sent. Start a fresh worker with "
+                         "a launch the native CLI honors.".format(shown, expected), details)
+    return {"source": "native_display", "label": shown, "effort": "unknown"}
+
+
 def sessions_root():
     return (Path.home() / ".gemini/antigravity-cli/brain").resolve()
 
@@ -109,6 +170,52 @@ def final_message(rows, session, path):
     return final["content"]
 
 
+def user_request(content):
+    """Split one native USER_INPUT envelope, or None when it is not exactly one.
+
+    The request keeps every byte between its framing newlines, multiline
+    whitespace included. Any other prefix, a wrapper tag inside the request or
+    a block, an unknown, repeated or reordered block, a settings block other
+    than the model selection, and trailing bytes all refuse.
+    """
+    if not isinstance(content, str) or not content.startswith(REQUEST_OPEN):
+        return None
+    end = content.find(REQUEST_CLOSE)
+    if end < 0:
+        return None
+    request, rest = content[len(REQUEST_OPEN):end], content[end + len(REQUEST_CLOSE):]
+    if ENVELOPE_TAG.search(request):
+        return None
+    order = {tag: index for index, tag in enumerate(TRAILING_BLOCKS)}
+    position, blocks = 0, {}
+    while rest:
+        match = TRAILING_BLOCK.match(rest)
+        if match is None or order.get(match.group(1), -1) < position:
+            return None
+        tag, body = match.groups()
+        if not body or ENVELOPE_TAG.search(body):
+            return None
+        position = order[tag] + 1
+        blocks[tag] = body
+        rest = rest[match.end():]
+    selection = None
+    if "USER_SETTINGS_CHANGE" in blocks:
+        match = MODEL_SELECTION.fullmatch(blocks["USER_SETTINGS_CHANGE"])
+        if match is None:
+            return None
+        selection = match.group(2)
+    return {"request": request, "model_selection": selection}
+
+
 def prompt_text(rows, session, path):
+    """The exact dispatched text of the latest explicit turn, never its envelope."""
     turn = main_turn(rows, session, path)
-    return turn[0]["content"] if turn else None
+    envelope = user_request(turn[0]["content"]) if turn else None
+    return envelope["request"] if envelope else None
+
+
+def model_selection(rows, session, path):
+    """The model the latest explicit turn's native settings change selected, or None."""
+    turn = main_turn(rows, session, path)
+    envelope = user_request(turn[0]["content"]) if turn else None
+    return envelope["model_selection"] if envelope else None
