@@ -42,10 +42,11 @@ cannot use it. It issues no terminal input, dispatch, clear or task-authority gr
 
 The input is a schema-1 object with `id`, `assignment_index`,
 `assignment_sha256`, `dispatch`, and explicit operator `authorization` (`source`
-and `quote`). `assignment_sha256` uses `context_evidence.digest` on the original
-row; it is not a digest of a guessed replacement. The id is a safe filename
-component. See `context_evidence.py` for the exact accepted input and evidence
-predicates. The original applied dispatch must bind the selected assignment and
+and `quote`). `assignment_sha256` is the canonical JSON digest of the original
+row, not a guessed replacement. The id is a safe filename component. See
+`skills/herdr-foreman/foreman/context_evidence.py` — `FIELDS`, `digest()` and
+`quarantine()` — for the accepted input and evidence predicates.
+The original applied dispatch must bind the selected assignment and
 the same contradictory writer result. Every other part of the owner must validate
 without migration. Other corruption remains refused and unchanged.
 

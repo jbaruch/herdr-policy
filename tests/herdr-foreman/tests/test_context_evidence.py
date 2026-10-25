@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from foreman import context_evidence as owner, recovery
 from foreman.errors import StateError, UsageError
-from foreman.state import add_assignment, empty_state, load_state_checked
+from foreman.state import add_assignment, empty_state, load_state_checked, state_lock
 
 AT = "2026-02-03T10:00:00+00:00"
 AUTH = {"source": "fixture operator instruction", "quote": "Preserve and quarantine the exact contradictory context evidence."}
@@ -86,6 +86,21 @@ class QuarantineTests(unittest.TestCase):
         self.assertEqual(result, 0, errors.getvalue())
         self.assertTrue(json.loads(output.getvalue())["quarantined"])
         self.assertTrue(load_state_checked(self.path)[1])
+
+    def test_cli_dry_run_refuses_a_concurrent_owner_transaction_without_writes(self):
+        from foreman.cli import main
+        record = self.path.with_name("request.json")
+        record.write_text(json.dumps(self.data))
+        output, errors = io.StringIO(), io.StringIO()
+        with state_lock(self.path):
+            result = main(["quarantine-context-evidence", "--state", str(self.path),
+                           "--record", str(record), "--now", AT, "--dry-run"],
+                          stdout=output, stderr=errors, client=self.client)
+        self.assertNotEqual(result, 0)
+        self.assertIn("Another foreman command owns", errors.getvalue())
+        self.verify.assert_not_called()
+        self.assertEqual(self.path.read_bytes(), self.original)
+        self.assertFalse(Path(str(self.path) + ".context-evidence").exists())
 
     def test_exact_retry_after_owner_write_is_idempotent(self):
         first = self.run_repair()

@@ -14,7 +14,9 @@ description: >
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
 Choose one router entry. Step 1 runs independent workers concurrently and chains
-its delivery loop; offline requests are optional.
+its delivery loop; offline requests are optional. An authorized context-quarantine
+request may chain from Step 1 to Step 10. Step 10 returns to Step 1's role lookup
+and verified continuation. Other entries execute only their selected action.
 
 Resolve prose paths from the verified plugin root; commands use `HS`.
 Preserve owner, holds, unknown deliveries and supervision obligations.
