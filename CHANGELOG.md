@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.0 — 2026-10-25
+
+- Reconcile an interrupted task-workflow measurement only from its exact durable pre-effect intent, completed canonical snapshot, or closed retained-probe receipt (#70). Bind new measurements to a saved owner timestamp and captured configuration; refuse missing, ambiguous, changed-context, partial or live-probe outcomes without generalizing recovery to native business sends.
+- Permit the existing explicit return and re-admission handoff after measurement settlement. Preserve the original task/store/base/history/counters and monotonic authority generation while the new admission binds the actual loaded policy and a fresh artifact directory.
+
 ## 0.15.0 — 2026-10-25
 
 - Add a crew optimizer that finds and implements useful simplifications, removes redundant code and reduces evidenced waste (#63). Keep a standing improvement objective moving through existing scoped developer assignments alongside independent feature delivery, with ordinary review, tests and release.

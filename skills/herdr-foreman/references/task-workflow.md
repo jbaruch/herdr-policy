@@ -160,9 +160,11 @@ No worker, consumer, stopped team or operator hold is migrated by installing
 this package. Existing teams need their verified handoff before resumption.
 
 Recovery uses the current owner commands in `skills/herdr-foreman/references/progression.md`.
-`progression-reconcile` retires only an owner-proved unsent launch, with no
-active enrollment or report. It preserves the task and cumulative counter;
-later planning chooses a fresh identity. `progression-resume` takes the exact
+`progression-reconcile` retires only an owner-proved unsent launch or one exact
+measurement read back from its durable intent, canonical snapshot or retained
+probe owner. It preserves the task and cumulative counter; later planning
+chooses a fresh identity. Missing or ambiguous measurement evidence and live or
+pending probes remain held. `progression-resume` takes the exact
 current exception digest and explicit authorization to restore a retryable
 saved phase under the same policy, contract and foreman binding. Neither a
 free lease nor an expired heartbeat permits an unknown send to be repeated.

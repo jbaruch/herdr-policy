@@ -858,6 +858,10 @@ removes it. Operations are `measure`, `apply`, `record`, `close`, `merge` and
 are `JOB_FIELDS` and `CLAIM_FIELDS` in the same owner module, with their human
 contract in `skills/herdr-foreman/references/task-workflow.md`. Claims never replace actual native
 delivery, independent identities, Git scope or existing gate evidence.
+New `measure` intents save their exact owner `--now` pair in `argv` before any
+effect. Its completed snapshot readback must carry that timestamp and the current
+native/config context digest. A pre-existing started intent with empty `argv`
+cannot adopt a later snapshot.
 
 `exception` is null or `{id, code, phase, sources, actions}`. `id` binds this
 occurrence to its task generation, phase, capture time and existing canonical
@@ -925,6 +929,18 @@ For schema 2 the same command retires only a proved unsent pending launch and
 its current plan, preserving generation, task, base, jobs and correction count.
 It requires settled enrollments and no report; a later execution plans a fresh
 native identity rather than reusing an uncertain attempt.
+
+The same command records `progression_measurement_reconciled` for one exact
+schema-2 measure intent. Event details retain the task, generation, intent,
+authorization and schema-1 readback `{schema_version,kind,sha256}`. The digest
+must identify exactly one canonical durable intent, state snapshot or retained
+probe row. Completed snapshots bind the saved measurement timestamp, captured
+config, full configured worker set and native context. Closed-probe incomplete
+outcomes bind the original config/timestamp and require no pending or live
+disposable probe. They never claim `not_sent`; uncertain input remains an
+incomplete measurement owned by that receipt. Unknown launch/close/business-send
+effects retain their existing owners. Replay matches the whole event input and
+writes nothing.
 
 The kernel lease is a dedicated empty file, not a schema-bearing authority
 record. Its separate empty `.owner` sibling holds a process-associated lock;

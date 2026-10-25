@@ -512,10 +512,11 @@ def service_session(state_path, task, generation, service_id, plugin_root):
 
 
 def reconcile_intent(state_path, data, at, client):
-    """Clear only a complete owner-proved no-send set, never infer an effect."""
+    """Clear only exact operation-owner readback, never infer an effect."""
     from .progression_service import capture_contract, intent_id, prepare_contract
-    if not isinstance(data, dict) or set(data) != {"task", "expected_generation", "intent", "authorization"}:
-        raise UsageError("Supply task, current generation, pending intent and explicit reconciliation authorization.", {})
+    base_fields = {"task", "expected_generation", "intent", "authorization"}
+    if not isinstance(data, dict) or set(data) not in (base_fields, base_fields | {"readback"}):
+        raise UsageError("Supply task, current generation, pending intent, explicit authorization and only an operation-specific readback when required.", {})
     recovery.text(data["task"], "task")
     recovery.text(data["intent"], "pending intent")
     if len(json.dumps(data).encode("utf-8")) > GRANT_BYTES:
@@ -530,19 +531,35 @@ def reconcile_intent(state_path, data, at, client):
         raise UsageError("Read the current service grant and reconcile its actual generation; do not replace task authority.", {})
     supervised = verify_foreman(state_path, client)
     progress = row.get("progression")
-    replay = any(event["kind"] == "progression_intent_reconciled" and event["task"] == data["task"]
-                 and event["details"] == data for event in state["recovery"]["events"])
-    if replay:
-        return {"task": data["task"], "intent": data["intent"], "outcome": "not_sent", "replayed": True,
-                "authorizes_dispatch": False}
-    if not progress or progress["pending"] is None:
+    if not progress:
         raise UsageError("No matching pending intent exists; preserve the current cursor and inspect the current authority record.", {})
     captured, document = capture_contract(grant["contract"]["path"])
     if captured != grant["contract"]:
         raise UsageError("Restore the admitted contract before reconciling its expected dispatch set.", {})
     if grant.get("contract_schema") == 2:
-        from .workflow_recovery import reconcile_not_sent
+        from .workflow_recovery import reconcile_measurement, reconcile_not_sent
+        pending = progress["pending"]
+        measurement_replay = any(event["kind"] == "progression_measurement_reconciled" and event["task"] == data["task"]
+                                 and event["details"] == data for event in state["recovery"]["events"])
+        if "readback" in data and (measurement_replay or pending is not None and pending["operation"] == "measure"):
+            return reconcile_measurement(state_path, state, grant, supervised, document, data, at, client)
+        replay = any(event["kind"] == "progression_intent_reconciled" and event["task"] == data["task"]
+                     and event["details"] == data for event in state["recovery"]["events"])
+        if replay:
+            return {"task": data["task"], "intent": data["intent"], "outcome": "not_sent", "replayed": True,
+                    "authorizes_dispatch": False}
+        if pending is None:
+            raise UsageError("No matching pending intent exists; preserve the current cursor and inspect the current authority record.", {})
         return reconcile_not_sent(state_path, state, grant, supervised, document, data, at)
+    if "readback" in data:
+        raise UsageError("Measurement readback applies only to an admitted schema-2 task workflow.", {})
+    replay = any(event["kind"] == "progression_intent_reconciled" and event["task"] == data["task"]
+                 and event["details"] == data for event in state["recovery"]["events"])
+    if replay:
+        return {"task": data["task"], "intent": data["intent"], "outcome": "not_sent", "replayed": True,
+                "authorizes_dispatch": False}
+    if progress["pending"] is None:
+        raise UsageError("No matching pending intent exists; preserve the current cursor and inspect the current authority record.", {})
     steps = prepare_contract(document, data["task"])
     if progress["cursor"] >= len(steps):
         raise UsageError("Restore the pending cursor's admitted step before intent reconciliation.", {})
