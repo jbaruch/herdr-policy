@@ -2,6 +2,7 @@
 
 ## 0.16.0 — 2026-10-25
 
+- Assign full verification gates once to the tester, reuse independently executed exact-head CI artifacts, and reserve reviewer/security execution for distinct concerns (#53). Stagger expensive gates on shared constrained hosts while preserving full acceptance coverage, independence and actual failure evidence.
 - Add native Antigravity subscription workers through `agy`, using existing Herdr launch, enrollment, verification and cleanup owners (#58, #63). Ship an optional additive profile; existing operator configurations and providers are preserved.
 - Read signed-in subscription quota with the native non-model `/usage` command and retain its distinct groups. Use conservative profile headroom and existing account-bound billing evidence rather than infer extra capacity from model names. Keep missing access, unsupported remote account measurements and provider failures explicit and local.
 - Verify native `--model`, `--effort`, permission and explicit-conversation resume arguments; bind reports to the current `herdr:antigravity_cli` session and its canonical native transcript. Reject incomplete/non-model finals and arbitrary transcript archives. Support Antigravity's native SessionStart payload and injection envelope in Tessl; both packages carry the same worker adapter and scoped protocol.

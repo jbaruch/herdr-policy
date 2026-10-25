@@ -31,5 +31,9 @@ evidence; never place secrets or sensitive payloads in a report. State tools,
 coverage and uncertainty. A clean focused report establishes only the checked
 scope, not whole-system security.
 
+Use the tester's exact-head gate evidence for shared whole-suite coverage.
+Execute distinct security checks for the assigned threat; repeat a shared
+gate only when a concrete security question requires it.
+
 Record any security design or implementation you contributed. Recommend durable
 trust-boundary lessons through the foreman's existing memory workflow.

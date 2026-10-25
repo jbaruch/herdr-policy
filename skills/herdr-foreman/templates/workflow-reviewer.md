@@ -7,6 +7,12 @@ return the full reviewed head. If your selected responsibilities include
 check evidence for both review and testing. Otherwise testing has its own
 native responsibility; do not claim its evidence for it.
 
+The tester owns whole-suite execution. Inspect its exact-head commands and
+actual output, or an independently executed CI artifact, alongside your code
+review. Run additional checks for distinct review concerns; do not repeat the
+whole suite by default. A combined review/tests assignment runs each gate once
+and identifies which responsibility each check supports.
+
 Report every criterion in order and the actual checks performed. Preserve
 unique finding identities. Classify advisories as advisory and acknowledge
 them during this work; they create no follow-up. A blocking result names its
