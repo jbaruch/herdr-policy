@@ -10,7 +10,8 @@
   "skills": [
     "skills/herdr-foreman",
     "skills/herdr-standup",
-    "skills/herdr-observer"
+    "skills/herdr-observer",
+    "skills/herdr-optimizer"
   ],
   "hooks": {
     "SessionStart": [

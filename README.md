@@ -19,6 +19,13 @@ General coding and release policy belongs to [jbaruch/coding-policy](https://git
 | [herdr-foreman](skills/herdr-foreman/SKILL.md) | Dispatch, supervise and accept team work |
 | [herdr-standup](skills/herdr-standup/SKILL.md) | Collect bounded status from idle workers |
 | [herdr-observer](skills/herdr-observer/SKILL.md) | Observe factory efficiency and produce private reports |
+| [herdr-optimizer](skills/herdr-optimizer/SKILL.md) | Deliver simpler logic, remove redundancy and reduce evidenced waste |
+
+The optimizer is a standing delivery specialty using ordinary developer
+assignments. It finds and implements worthwhile simplifications in an authorized
+area, alongside independent feature work, with normal review and tests. The
+foreman continues useful slices without reserving a permanent model or pane.
+An unchanged area with no worthwhile candidate needs no repeated scanning.
 
 The observer uses a lightweight detached collector while its native agent sleeps
 between analyses. It watches current factory topology, incremental native logs
