@@ -69,6 +69,17 @@ def existing(repo, branch, found):
     raise BootstrapError("different_remote_history", "Origin already has refs but lacks the selected default branch. Preserve that history and use its actual branch with ordinary provisioning.")
 
 
+def stable_origin(remote):
+    """Accept standard Git targets whose meaning survives a scratch cwd."""
+    if Path(remote).is_absolute():
+        return True
+    if remote.startswith("file:"):
+        return remote.startswith(("file:///", "file://localhost/"))
+    if remote.startswith(("https://", "http://", "ssh://", "git://", "ftp://", "ftps://")):
+        return True
+    return re.fullmatch(r"(?:[^/@:]+@)?(?:\[[^]]+\]|[^/:]+):(?!:|//).+", remote) is not None
+
+
 def bootstrap(repo, branch, *, initialize=False, run=subprocess.run):
     repo = Path(repo).resolve()
     root = git(repo, "rev-parse", "--show-toplevel", run=run)
@@ -84,6 +95,8 @@ def bootstrap(repo, branch, *, initialize=False, run=subprocess.run):
     pushes = checked(repo, "remote", "get-url", "--push", "--all", "origin", run=run).splitlines()
     if pushes != [remote]:
         raise BootstrapError("origin_targets_differ", "Bootstrap needs one matching origin fetch/push target. Restore the authorized new repository's origin; no alternate remote was initialized.")
+    if not stable_origin(remote):
+        raise BootstrapError("origin_target_not_stable", "Set origin to the authorized repository's absolute local path or standard Git network URL, preserving matching fetch/push targets. Relative paths and custom helpers are not supported by the scratch bootstrap; no remote was initialized.")
     found = refs(repo, run=run)
     if found:
         return existing(repo, branch, found)

@@ -9,6 +9,9 @@ before ordinary worktree provisioning. It creates no implementation content.
    repository. Use that authority; do not add another confirmation when it exists.
 2. Select its existing shared clone and actual intended default branch. Preserve
    local files and every existing remote ref. No guessed or synthetic base SHA.
+   Origin must use a standard Git network URL or an absolute local path with
+   matching fetch/push targets. Relative paths and custom helpers are refused
+   before scratch construction; their target can change with the working directory.
 3. Use only the co-shipped bootstrap below. Its `--initialize-empty` flag encodes
    that existing setup authority; the script still rechecks the real remote.
 4. Any implementation, verification and release use normal task owners afterward.

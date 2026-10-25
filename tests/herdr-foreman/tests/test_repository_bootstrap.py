@@ -9,6 +9,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -73,6 +74,34 @@ class RepositoryBootstrapTest(unittest.TestCase):
         with self.assertRaisesRegex(BOOT.BootstrapError, "--initialize-empty"):
             BOOT.bootstrap(self.shared, "main", run=self.git_run)
         self.assertEqual(self.call("git", "-C", str(self.shared), "ls-remote", "--refs", "origin"), "")
+
+    def test_relative_origin_cannot_initialize_a_different_scratch_relative_remote(self):
+        scratch_parent = self.root / "scratch"
+        scratch_parent.mkdir()
+        other = scratch_parent / "remote.git"
+        self.call("git", "init", "--quiet", "--bare", "--initial-branch", "main", str(other))
+        self.call("git", "-C", str(self.shared), "remote", "set-url", "origin", "../remote.git")
+        temporary = tempfile.TemporaryDirectory
+        with patch.object(BOOT.tempfile, "TemporaryDirectory", side_effect=lambda **kw: temporary(dir=scratch_parent, **kw)):
+            with self.assertRaises(BOOT.BootstrapError) as caught:
+                self.initialize()
+        self.assertEqual(caught.exception.code, 1)
+        self.assertEqual(caught.exception.reason, "origin_target_not_stable")
+        self.assertEqual(self.call("git", "ls-remote", str(self.remote)), "")
+        self.assertEqual(self.call("git", "ls-remote", str(other)), "")
+        self.assertEqual((self.shared / "operator-file.txt").read_text(), "preserve local work\n")
+
+    def test_origin_forms_keep_the_same_target_outside_the_clone(self):
+        for origin in (str(self.remote), self.remote.as_uri(), "file://localhost/absolute/repo.git",
+                       "https://github.com/example/repo.git", "ssh://git@example.test/repo.git",
+                       "git://example.test/repo.git", "git@example.test:repo.git", "git@example.test:/absolute/repo.git",
+                       "git@[::1]:repo.git"):
+            with self.subTest(origin=origin):
+                self.assertTrue(BOOT.stable_origin(origin))
+        for origin in ("../remote.git", "./remote:name", "local/remote:name", "file:../remote.git",
+                       "file://relative", "ext::./helper", "helper://relative", "~/remote.git", ""):
+            with self.subTest(origin=origin):
+                self.assertFalse(BOOT.stable_origin(origin))
 
     def test_cli_distinguishes_invalid_preconditions_before_native_effects(self):
         for repo, branch, reason, recovery in (
