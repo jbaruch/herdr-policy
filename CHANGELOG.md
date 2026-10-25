@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.1 — 2026-10-25
+
+- Keep observer factory attribution when valid state and supervision owners exceed the raw observer reader's size cap (#64). Use read-only paginated owner projections for current identity, active assignments, quota and closure metadata; preserve byte/privacy bounds, explicit omissions and schema/oversized-row diagnostics without exporting historical briefs or reports.
+- Add `state --migrate-only` with a compact readiness receipt and prescribe it from read-only previews (#65). Commit required owner migrations without a whole-history display failure; preserve original history and refuse unsupported state unchanged.
+- Replace obsolete schema-6 downgrade advice with a compact additive foreman setup reference (#55). Preserve an existing supported schema and keep the missing optional block warning nonblocking.
+
 ## 0.14.0 — 2026-10-21
 
 - Add an independent factory observer with bounded incremental collection, periodic analysis, private weekly reports and earlier alerts when warranted (#61). Assess coordination ROI, parallel delivery, subscription balance, model/effort suitability and open-ended improvement opportunities without adding delivery gates or worker report requests.

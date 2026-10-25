@@ -13,6 +13,8 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
+import sys
 import time
 
 from .native import fingerprint, identity
@@ -26,6 +28,8 @@ MAX_DISCOVERY_FILES = 4096
 MAX_FACTORIES = 32
 MAX_AGENTS = 128
 MAX_OWNER_ROWS = 10000
+MAX_OWNER_PAGES = 8
+OWNER_PAGE_BYTES = 16_384
 SUPPORTED_LOGS = frozenset({"codex", "claude"})
 
 
@@ -48,6 +52,83 @@ def read_json(path):
         return json.load(stream)
 
 
+class OwnerViewError(ValueError):
+    """A safe owner-projection diagnostic for private collector coverage."""
+
+
+def owner_view(path, section):
+    """Read co-shipped owner projections, never a historical owner document."""
+    skill = Path(__file__).resolve().parents[1]
+    foreman = skill.with_name(skill.name.removesuffix("herdr-observer") + "herdr-foreman")
+    script = foreman / "observer-view.py"
+    if not script.is_file() or not script.resolve().is_relative_to(foreman.resolve()):
+        raise ValueError("owner_projection_installation_unavailable")
+    rows, gaps, offset = [], [], 0
+    for _ in range(MAX_OWNER_PAGES):
+        try:
+            result = subprocess.run([sys.executable, "-P", "-s", str(script), "--state", str(path),
+                                     "--section", section, "--offset", str(offset)],
+                                    capture_output=True, text=True, timeout=10, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            raise ValueError("owner_projection_unavailable") from None
+        if result.returncode:
+            try:
+                reason = json.loads(result.stderr).get("error")
+            except ValueError:
+                reason = None
+            if reason not in {"owner_schema_unsupported", "owner_projection_row_exceeds_budget",
+                              "owner_projection_source_unreadable", "owner_projection_source_invalid"}:
+                reason = "owner_projection_unavailable"
+            raise OwnerViewError(reason)
+        if len(result.stdout.encode("utf-8")) > OWNER_PAGE_BYTES:
+            raise OwnerViewError("owner_projection_contract_unavailable")
+        data = json.loads(result.stdout)
+        if (data.get("schema_version") != 2 or data.get("kind") != "observer_projection"
+                or data.get("section") != section or not isinstance(data.get("rows"), list)
+                or data.get("pagination", {}).get("offset") != offset):
+            raise ValueError("owner_projection_contract_unavailable")
+        rows.extend(data["rows"])
+        gaps.extend(data.get("gaps", []))
+        following = data["pagination"].get("next_offset")
+        if following is None:
+            break
+        if type(following) is not int or following <= offset:
+            raise ValueError("owner_projection_cursor_invalid")
+        offset = following
+    else:
+        gaps.append("owner_projection_pages_omitted")
+    return rows, gaps
+
+
+def projected_owner(path):
+    current, gaps = owner_view(path, "current")
+    closed, omissions = owner_view(path, "closures")
+    gaps.extend(omissions)
+    data = {"schema_version": 11, "assignments": [], "snapshots": [],
+            "recovery": {"schema_version": 19, "events": []}}
+    supervised = {"schema_version": 1, "binding": None, "members": [], "holds": []}
+    snapshot = {"schema_version": 6, "agents": {}}
+    for row in current:
+        value = row["value"]
+        if row["kind"] == "binding":
+            supervised["binding"] = value
+        elif row["kind"] == "context":
+            supervised["hold_count"] = value["holds"]
+            supervised["active_assignment_count"] = value["active_assignments"]
+        elif row["kind"] == "assignment":
+            data["assignments"].append(value)
+            supervised["members"].append({"active": True, "assignment": value})
+        elif row["kind"] == "quota":
+            snapshot["agents"][value["profile"]] = value
+            snapshot["measured_at"] = value["measured_at"]
+    if snapshot["agents"]:
+        data["snapshots"] = [snapshot]
+    for row in closed:
+        value = row["value"]
+        data["recovery"]["events"].append({"kind": "task_closed", **value, "details": {"outcome": value["outcome"]}})
+    return data, supervised, gaps
+
+
 def owner_paths(root, explicit):
     paths, gaps = {str(Path(p).absolute()) for p in explicit}, []
     receipts = root / "supervision-bindings"
@@ -61,9 +142,9 @@ def owner_paths(root, explicit):
                 if (receipt.get("schema_version") != 1 or not isinstance(receipt.get("state_path"), str)
                         or not Path(receipt["state_path"]).is_absolute()):
                     continue
-                supervision = read_json(Path(receipt["state_path"] + ".supervision.json"))
-                binding = supervision.get("binding") or {}
-                if (supervision.get("schema_version") == 1 and binding.get("identity") == receipt.get("identity")
+                rows, _coverage = owner_view(receipt["state_path"], "binding")
+                binding = rows[0]["value"] or {}
+                if (binding.get("identity") == receipt.get("identity")
                         and binding.get("generation") == receipt.get("generation")):
                     paths.add(receipt["state_path"])
             except (OSError, ValueError, TypeError, AttributeError):
@@ -81,8 +162,8 @@ def owners(paths, live):
     live_ids = {fingerprint(identity(row)): row for row in live if identity(row)}
     for path in paths:
         try:
-            data = read_json(path)
-            supervised = read_json(path + ".supervision.json")
+            data, supervised, omissions = projected_owner(path)
+            gaps.extend(omissions)
             if (data.get("schema_version") != 11 or supervised.get("schema_version") != 1
                     or data.get("recovery", {}).get("schema_version") != 19):
                 gaps.append("owner_schema_unsupported")
@@ -97,7 +178,7 @@ def owners(paths, live):
                 continue
             key = fingerprint(identity(foremen[0]))
             roles[key] = {"role": "foreman", "task": None, "owner": path}
-            held = sum(1 for row in supervised.get("holds", []) if row.get("resumed_at") is None)
+            held = supervised.get("hold_count", 0)
             assignments = data.get("assignments", [])
             if len(assignments) > MAX_OWNER_ROWS:
                 gaps.append("assignment_history_truncated")
@@ -140,9 +221,11 @@ def owners(paths, live):
                                      "outcome": (event.get("details") or {}).get("outcome"),
                                      "id": fingerprint([path, event.get("sequence"), event.get("at")])})
             contexts.append({"owner": path, "holds": held,
-                             "active_assignments": sum(1 for m in supervised.get("members", []) if m.get("active")),
+                             "active_assignments": supervised.get("active_assignment_count", 0),
                              "eligible_backlog": None,
                              "closure_semantics": "merged, abandoned and unknown task_closed outcomes are separate; user value and deployment unverified"})
+        except OwnerViewError as exc:
+            gaps.extend(["owner_evidence_unavailable", str(exc)])
         except (OSError, ValueError, TypeError, AttributeError, KeyError):
             gaps.append("owner_evidence_unavailable")
     return roles, quota, closures, contexts, sorted(set(gaps))
