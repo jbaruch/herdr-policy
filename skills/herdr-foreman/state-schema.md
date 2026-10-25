@@ -8,6 +8,20 @@ the utility alone records the saved notes and their separate index.
 
 ## Artifacts
 
+`foreman.sh state --migrate-only` uses the state owner under its existing lock.
+It commits required supported migrations, then returns a schema-1 receipt with
+`status: ready`, `owner_present`, `state_schema_version` and
+`authorizes_progression: false`. It prints no history. A missing owner remains
+missing; corrupt or unsupported originals remain unchanged and return nonzero.
+Read-only previews prescribe this mode before retrying their original action.
+
+`skills/herdr-foreman/observer-view.py` reads selected owner metadata without
+migration. `skills/herdr-foreman/foreman/observer_projection.py` owns its schema-2 ephemeral page
+contract: section, typed rows, pagination, coverage gaps and false authority
+fields. Sections are binding, current and closures. The private observer reads
+these projections instead of complete historical state/supervision documents.
+This interface writes no owner, gate or replacement store.
+
 | Path | Owner | Purpose |
 | ---- | ----- | ------- |
 | `$XDG_STATE_HOME/foreman/state.json` (default `~/.local/state/foreman/state.json`, override `--state FILE`) | `skills/herdr-foreman/foreman/state.py` and its `skills/herdr-foreman/foreman/recovery.py` helper, within the same owner skill | Snapshots, append-only assignments, and audited task recovery |
@@ -16,7 +30,63 @@ the utility alone records the saved notes and their separate index.
 | `<canonical-state-path>.retrospectives/` | `herdr-foreman`, through its retrospective utility | Immutable retrospective notes, versioned index, and transition coverage |
 | `<canonical-state-path>.foreman-reset.json` | `skills/herdr-foreman/foreman/foreman_reset.py` | One record per explicitly requested foreman maintenance reset; see Foreman Reset Record below |
 | `<canonical-state-path>.bootstrap.json` | `skills/herdr-foreman/foreman/bootstrap_recovery.py` | Original Codex launch provenance and durable bootstrap transport/cleanup receipts |
+| `<state-path>.context-evidence/` | `skills/herdr-foreman/foreman/context_evidence.py` | Immutable original ledgers and schema-1 quarantine intent journals for the known fresh/no-clear contradiction |
 | Controller-configured private remote owner JSON | `skills/herdr-foreman/foreman/remote_owner.py` | Attested command context, current single-controller lease, indeterminate intent and task ingress; schema and writer/reader contract in `skills/herdr-foreman/references/remote-context.md` |
+
+## Contradictory Context Evidence
+
+The state owner supports `quarantine-context-evidence --record FILE [--dry-run]`
+under its canonical state transaction lock. This maintenance command requires the
+existing bound native foreman; standalone callers, workers and remote callers
+cannot use it. It issues no terminal input, dispatch, clear or task-authority grant.
+
+The owner command `prepare-context-quarantine` accepts the selected existing
+state, original assignment index, dispatch id, repair id, explicit authorization
+source/quote and output path. Under the canonical state transaction lock it
+validates the same native authority and whole-owner conditions, derives the row
+digest and publishes the schema-1 input immutably as a private file in an existing
+parent directory. Success returns its path, id, row index/digest and false dispatch
+authority. It prints no ledger history and changes no owner or quarantine evidence.
+A conflicting output is preserved and refused; retry uses the original request.
+
+The input is a schema-1 object with `id`, `assignment_index`,
+`assignment_sha256`, `dispatch`, and explicit operator `authorization` (`source`
+and `quote`). `assignment_sha256` is the canonical JSON digest of the original
+row, not a guessed replacement. The id is a safe filename component. See
+`skills/herdr-foreman/foreman/context_evidence.py` — `FIELDS`, `digest()` and
+`quarantine()` and `prepare()` — for the accepted input and evidence predicates.
+The original applied dispatch must bind the selected assignment and
+the same contradictory writer result. Every other part of the owner must validate
+without migration. Other corruption remains refused and unchanged.
+
+Only the known true/hand/null-session contradiction is quarantined. The current
+row's `cleared` and `clear_reason` become null/unknown. This narrow owner repair
+is an exception to ordinary append-only history: the exact original row and
+complete original ledger bytes remain preserved, rather than being replaced by
+an invented hand or automatic clear. The dispatch result, worker enrollment,
+task/base, budgets, service grants, pending intents and holds do not change.
+Any later continuity recovery still uses its existing native-evidence contract.
+
+The owner alone writes the private evidence directory. Each `<id>.json` journal
+has `schema_version: 1`, `at`, exact `input`, `state_path`,
+`original_state_sha256` and `original_assignment`. The corresponding
+`<sha256>.original.json` holds the original ledger bytes. The journal is an
+intent, not proof that the owner write completed. Both are published immutably
+before the owner write; replay checks the actual current row and original backup.
+A prepared-but-unapplied repair retries only against its original whole-owner
+digest. Changed input, conflicting evidence, foreign paths, unsupported journals
+or other changed state refuse. The quarantine journal uses the
+`rules/stateful-artifacts.md` gate-store exception: a retained intent withholds
+another repair until its original evidence is verified. Unsupported versions
+refuse with an actionable update-owner diagnostic; they never imply no gate.
+Version 1 is the first schema, so no older version is accepted today. This owner
+must migrate and rewrite every older version it accepts on read, preserving the
+original intent and evidence.
+
+Dry run validates the same authority, row and whole-owner conditions but creates
+no evidence and writes no owner. Success returns the repair id, quarantine/replay
+result, evidence paths and `authorizes_dispatch: false`. A refusal is nonzero
+with an actionable diagnostic; preserve the original row and evidence.
 
 ## Bootstrap Transport Evidence
 

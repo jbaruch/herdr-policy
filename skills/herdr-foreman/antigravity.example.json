@@ -1,0 +1,88 @@
+{
+  "name": "antigravity",
+  "kind": "agy",
+  "usage_prompt": "/usage",
+  "usage_marker": "Weekly Limit Remaining",
+  "usage_read_source": "visible",
+  "clear_prompt": "/clear",
+  "close_keys": [],
+  "window_group": "antigravity-google-subscription",
+  "tiers": {
+    "coordination": {
+      "model": "gemini-3.8-flash-low",
+      "effort": "low",
+      "multiplier": 1.0
+    },
+    "consultation": {
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "multiplier": 1.0
+    },
+    "test_plan": {
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "multiplier": 1.0
+    },
+    "build": {
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "multiplier": 1.0
+    },
+    "fix": {
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "multiplier": 1.0
+    },
+    "mechanical": {
+      "model": "gemini-3.8-flash-low",
+      "effort": "low",
+      "multiplier": 1.0
+    },
+    "release_mechanics": {
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "multiplier": 1.0
+    },
+    "architect": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    },
+    "reconciliation": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    },
+    "critic": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    },
+    "review": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    },
+    "hostile_verify": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    },
+    "recheck": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    },
+    "release_adjudication": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    },
+    "lead": {
+      "model": "claude-opus-4-6-thinking",
+      "effort": "high",
+      "multiplier": 1.0
+    }
+  },
+  "capabilities": []
+}

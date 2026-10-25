@@ -127,6 +127,11 @@ skills/herdr-foreman/references/dispatch-recovery.md
 ```
 
 Save the plan and rationale.
+Assign whole-suite execution to the tester, with exact-head artifacts available
+to the reviewer and specialists. Stagger expensive gates sharing a constrained
+CPU, memory, container service or host; keep code review and independent work
+moving. Use existing assignments and check evidence, without another scheduler
+or utilization ledger.
 Proceed immediately to Step 6.
 
 ## Step 6 — Build the Review Package

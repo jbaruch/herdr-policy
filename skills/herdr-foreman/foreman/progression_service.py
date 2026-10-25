@@ -244,7 +244,7 @@ class ProgressionService:
             path = report_delivery.source_path(identity)
             source = report_delivery.read_native_source(path) if path is not None else None
             if source is None or not report_delivery.bare_final(
-                    report_delivery.source_final(source[1], identity["agent"], identity["value"]), expected["report"]):
+                    report_delivery.source_final(source[1], identity["agent"], identity["value"], path=path), expected["report"]):
                 return refuse(stage, "Restore this enrollment's exact native final-source/report proof; missing or contradictory delivery evidence keeps progression held.")
             return None
         except ForemanError as exc:

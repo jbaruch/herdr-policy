@@ -28,7 +28,7 @@ from . import runnable
 from . import __version__
 from .assign import apply as apply_assignments
 from .assign import APPLY_SCHEMA_VERSION, dry_run, freeze_decision, freeze_paths, read_frozen, native_context_session, normalize_assignments, resolve_paths, validate_context_mode, validate_fix_history
-from . import no_work_recovery, bootstrap_recovery, model_unavailability, probe_recovery, renderable
+from . import no_work_recovery, bootstrap_recovery, context_evidence, model_unavailability, probe_recovery, renderable
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
 from . import progression_owner
 from . import progression_service
@@ -468,6 +468,18 @@ def build_parser():
         else:
             record_parser.add_argument("--record", required=True, metavar="FILE", help="Structured evidence JSON; see dispatch-recovery.md.")
         record_parser.add_argument("--now", metavar="ISO8601")
+    prepare_context = sub.add_parser("prepare-context-quarantine", parents=[common], help="Derive and validate an immutable private quarantine request through the existing bound foreman; see state-schema.md.")
+    prepare_context.add_argument("--assignment-index", type=int, required=True)
+    prepare_context.add_argument("--dispatch", required=True)
+    prepare_context.add_argument("--id", required=True)
+    prepare_context.add_argument("--authorization-source", required=True)
+    prepare_context.add_argument("--authorization-quote", required=True)
+    prepare_context.add_argument("--output", required=True)
+    prepare_context.add_argument("--now", metavar="ISO8601")
+    quarantine_parser = sub.add_parser("quarantine-context-evidence", parents=[common], help="Preserve and quarantine the exact fresh/no-clear writer contradiction through the bound native foreman; see state-schema.md.")
+    quarantine_parser.add_argument("--record", required=True, metavar="FILE")
+    quarantine_parser.add_argument("--now", metavar="ISO8601")
+    quarantine_parser.add_argument("--dry-run", action="store_true")
     status_parser = sub.add_parser("status", parents=[common], help="Show implementation budgets and paused work within the stdout budget; select one task for a large owner file.")
     status_parser.add_argument("--task", help="One known canonical task; leaves every other task unresolved.")
     reset_parser = sub.add_parser("foreman-reset", parents=[common], help="Schedule an explicitly requested maintenance reset, never an automatic round-boundary reset.")
@@ -519,12 +531,14 @@ def build_parser():
     load_parser.add_argument("--question", help="Specific question requiring the selected evidence excerpt.")
     load_parser.add_argument("--offset", type=int, default=0, help="Byte offset for an explicit evidence continuation.")
 
-    sub.add_parser(
+    state_parser = sub.add_parser(
         "state",
         parents=[common],
         help="Print the state file.",
         description="Print the state file, or a fresh empty document if none exists.",
     )
+    state_parser.add_argument("--migrate-only", action="store_true",
+                              help="Commit required owner migrations and return a compact readiness receipt without history.")
     return parser
 
 
@@ -2212,11 +2226,27 @@ def _apply(args, client, warn, trace, hold_gates):
     }
 
 
+def cmd_prepare_context_quarantine(args, client=None, warn=None, trace=None):
+    client = client if client is not None else _client(args, trace=trace)
+    return context_evidence.prepare(_state_path(args), args.assignment_index, args.dispatch, args.id,
+                                    {"source": args.authorization_source, "quote": args.authorization_quote},
+                                    args.output, args.now or now_iso(), client), None
+
+
+def cmd_quarantine_context(args, client=None, warn=None, trace=None):
+    client = client if client is not None else _client(args, trace=trace)
+    return context_evidence.quarantine(_state_path(args), _read_record(args.record), args.now or now_iso(),
+                                       client, dry_run=args.dry_run), None
+
+
 def cmd_state(args, client=None, warn=None, trace=None):
     state, usable = load_state_checked(_state_path(args), warn=warn)
     if not usable:
         raise StateError("Current state is unreadable or unsupported. Preserve the original owner, holds and unknown deliveries; restore a supported owner backup or update its owning plugin before inspecting it.",
                          {"context_complete": False})
+    if getattr(args, "migrate_only", False):
+        return {"schema_version": 1, "status": "ready", "owner_present": _state_path(args).is_file(),
+                "state_schema_version": state["schema_version"], "authorizes_progression": False}, None
     return context_output.enforce_budget(
         state,
         "State exceeds its printed output budget. Preserve the owner file and use `{}` or `{}` for the specific pending question; do not dump or copy its history into context.".format(
@@ -2998,15 +3028,11 @@ def cmd_relaunch_worker(args, client=None, warn=None, trace=None):
             "assignment_index": len(state["assignments"]) - 1}, None
 
 
-#: The minimal `foreman` block the unconfigured warning tells the operator to add.
-FOREMAN_BLOCK_SNIPPET = ('"foreman": {"agent": "foreman", "kind": "claude", "window_group": "<window-group>", '
-                         '"tiers": {"coordination": {"model": "<model>", "effort": "<effort>"}}}')
-
-
 def _foreman_unconfigured(path):
-    return ("Config at {} has no `foreman` block, so the foreman's tier is neither selected nor proven. Edit that "
-            "file: set `schema_version` to {}, and add {}. Then launch the foreman with `{}`.".format(
-                path, FOREMAN_CONFIG_VERSION, FOREMAN_BLOCK_SNIPPET, runnable.command("start-foreman --pane <pane-id>")))
+    return ("Config at {} has no `foreman` block (nonblocking). Add the foreman example from "
+            "skills/herdr-foreman/config.example.json; preserve the current supported schema_version. "
+            "Older schemas need an additive upgrade to at least {}. Then use `{}`.".format(
+                path, FOREMAN_CONFIG_VERSION, runnable.command("start-foreman --pane <pane-id>")))
 
 
 def _foreman_headroom(seat, snapshot):
@@ -3460,6 +3486,8 @@ COMMANDS = {
     "plan": cmd_plan,
     "apply": cmd_apply,
     "state": cmd_state,
+    "prepare-context-quarantine": cmd_prepare_context_quarantine,
+    "quarantine-context-evidence": cmd_quarantine_context,
     "status": cmd_status,
     "foreman-queue": cmd_foreman_queue,
     "workflow-readiness": cmd_workflow_readiness,
@@ -3585,7 +3613,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             home.require_current(defaults)
             # Commands that may migrate or write state share its canonical lock.
             # Dry runs, probes, and retrospective reads remain read-only.
-            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "github-context", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
+            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "github-context", "check-member", "verify-foreman", "report-gate-status"} or (getattr(args, "dry_run", False) and args.command != "quarantine-context-evidence")
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.

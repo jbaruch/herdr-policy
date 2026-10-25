@@ -28,6 +28,7 @@ is reasoning, not parsing.
 import re
 
 from .errors import ParseError
+from .antigravity_native import parse_usage as parse_antigravity_usage
 
 # --- claude -----------------------------------------------------------------
 
@@ -351,6 +352,7 @@ PARSERS = {
     "claude": parse_claude_usage,
     "codex": parse_codex_usage,
     "grok": parse_grok_usage,
+    "agy": parse_antigravity_usage,
 }
 
 

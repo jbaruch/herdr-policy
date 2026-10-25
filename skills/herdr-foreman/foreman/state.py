@@ -92,6 +92,14 @@ STATE_SCHEMA_VERSION = 11
 
 CLEAR_REASONS = frozenset({"automatic", "hand", "retained", "reconciled_not_sent", "unknown"})
 
+
+def valid_context_evidence(cleared, reason):
+    """The writer and reader share one context-evidence invariant."""
+    return (isinstance(reason, str) and reason in CLEAR_REASONS
+            and (cleared is True if reason in {"automatic", "reconciled_not_sent"}
+                 else cleared is False if reason in {"hand", "retained"}
+                 else cleared is None))
+
 #: What a judge row may record. `unknown` is history alone: a row migrated from
 #: before the field, or a dispatch reconciled from a receipt written before it.
 #: A live dispatch declares its mode or is refused (#478).
@@ -589,11 +597,7 @@ def _validate(payload, path):
                 raise _NoUsableState(str(exc)) from None
         cleared = record.get("cleared")
         reason = record.get("clear_reason")
-        if not isinstance(reason, str) or reason not in CLEAR_REASONS or (
-            (reason in {"automatic", "reconciled_not_sent"} and cleared is not True)
-            or (reason in {"hand", "retained"} and cleared is not False)
-            or (reason == "unknown" and cleared is not None)
-        ):
+        if not valid_context_evidence(cleared, reason):
             raise _NoUsableState("an assignment row has invalid context evidence")
         if record.get("task") is not None and (
             not isinstance(record["task"], str) or not record["task"].strip()
@@ -757,7 +761,7 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
         workflow_upgrade.require_compatible_services(state, path)
     if migrated and not persist_migration:
         raise StateError("This read-only preview needs an owner migration. Run `{}` with the same --state path, then retry the preview; the original file is unchanged.".format(
-            runnable.command("state")), {"path": str(path)})
+            runnable.command("state --migrate-only")), {"path": str(path)})
     if migrated:
         # Gate-bearing owner migrations must land before their result is usable.
         save_state(path, state)
@@ -857,6 +861,8 @@ def add_assignment(state, at, role, agent, status=STATUS_APPLIED, *,
     which is what a slice's verdict is read back through (#434).
     """
     role = canonical_role(role)
+    if not valid_context_evidence(cleared, clear_reason):
+        raise UsageError("Assignment context evidence contradicts its clear reason; preserve the actual transition and record a canonical pair before appending history.", {})
     if not isinstance(status, str) or status not in ASSIGNMENT_STATUSES:
         raise UsageError(
             "An assignment status must be one of {}.".format(

@@ -94,6 +94,18 @@
           ]
         }
       ]
+    },
+    "antigravity": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash \"${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh\" session-start antigravity"
+            }
+          ]
+        }
+      ]
     }
   }
 }

@@ -90,6 +90,15 @@ class RoundTripTest(unittest.TestCase):
         self.assertTrue(self.path.exists())
         self.assertEqual(load_state(self.path), state)
 
+    def test_writer_refuses_inconsistent_context_before_appending(self):
+        state = empty_state()
+        for cleared, reason in ((True, "hand"), (False, "automatic"), (True, "unknown"), (None, "retained")):
+            with self.subTest(cleared=cleared, reason=reason):
+                with self.assertRaisesRegex(UsageError, "contradicts"):
+                    add_assignment(state, "2026-01-02T03:04:05+00:00", "developer", "worker",
+                                   cleared=cleared, clear_reason=reason)
+                self.assertEqual(state, empty_state())
+
     def test_maintenance_relaunch_preserves_an_authorized_later_fix_without_a_dispatch(self):
         state = empty_state()
         add_assignment(

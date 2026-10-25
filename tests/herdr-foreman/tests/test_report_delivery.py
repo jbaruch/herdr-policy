@@ -494,6 +494,35 @@ class NativeDeliveryTests(unittest.TestCase):
         self.assertEqual(cli.main(args, stdout=io.StringIO(), stderr=io.StringIO()), 1)
         self.assertEqual(ledger_path.read_bytes(), before_replay)
 
+    def test_antigravity_recovery_uses_only_the_original_canonical_native_source(self):
+        from foreman import antigravity_native
+        document, data = self.recovery_fixture()
+        session = "00000000-0000-4000-8000-000000000001"
+        native = {"source": antigravity_native.SOURCE, "agent": "agy", "kind": "id", "value": session}
+        document["assignments"][0]["context_session"] = {"pane_id": PANE, **native}
+        dispatch = document["recovery"]["dispatches"][0]
+        dispatch["result"]["context_session"] = {"pane_id": PANE, **native}
+        pane = {**self.pane, "agent_session": native}
+        Path(data["pane"]).write_text(json.dumps({"result": {"pane": pane}}))
+        Path(data["visible"]).write_text("Native TUI: " + self.marker)
+        prompt = assignment_text("judge", dispatch["common"], dispatch["brief"])
+        rows = [{"step_index": 0, "type": "USER_INPUT", "source": "USER_EXPLICIT", "status": "DONE", "content": prompt},
+                {"step_index": 1, "type": "PLANNER_RESPONSE", "source": "MODEL", "status": "DONE", "content": self.marker}]
+        with patch.object(antigravity_native, "sessions_root", return_value=self.tmp.resolve() / "native"):
+            source = antigravity_native.transcript_path(session)
+            assert source is not None
+            source.parent.mkdir(parents=True)
+            source.write_text(encode(rows))
+            data["source"] = str(source)
+            prior = copy.deepcopy(document["assignments"])
+            result = delivery.recover(document["recovery"], document["assignments"], data, AT)
+            self.assertFalse(result["grants_review_approval"])
+            self.assertEqual(document["assignments"], prior)
+            archive = self.tmp / "arbitrary.jsonl"
+            archive.write_text(encode(rows))
+            data["source"] = str(archive)
+            with self.assertRaisesRegex(UsageError, "canonical native transcript"):
+                delivery.recover(document["recovery"], document["assignments"], data, AT)
     def test_the_prompt_hash_is_checked_against_the_receipted_brief(self):
         # coding-policy#565: the brief's receipt and the prompt-hash check read
         # one set of bytes. A brief swapped back to the dispatched bytes

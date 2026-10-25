@@ -61,6 +61,11 @@ tessl install jbaruch/coding-policy@latest
 tessl install jbaruch/herdr-policy@latest
 ```
 
+Native Antigravity subscription workers are available through the optional
+[worker profile](skills/herdr-foreman/antigravity.example.json). Sign in with
+`agy`, check that account's models/quota, and add the profile to the existing
+config without replacing other providers. See [Antigravity setup and boundaries](skills/herdr-foreman/references/antigravity.md).
+
 ```sh
 acr install github:jbaruch/coding-policy@latest
 acr install github:jbaruch/herdr-policy@latest

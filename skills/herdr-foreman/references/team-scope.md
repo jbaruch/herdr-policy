@@ -42,6 +42,10 @@
 - It accepts or rejects what the crew delivers
 - In a team round the foreman dispatches the task work and never executes it itself
 - The foreman's own execution covers reading the shared checkout, this plugin's owner scripts, and the foreman-owned records those scripts write
+- Narrow exception for establishing the empty base of an explicitly authorized new repository.
+- Applies only to the owned bootstrap operation, without implementation content.
+- Preconditions are binding: read `skills/herdr-foreman/references/repository-bootstrap.md` Preconditions before relying on it.
+- Every other repository edit routes to the developer responsibility.
 - Foreman-owned records are the task ledger, retrospective notes, attention items, and working memory
 - A request whose answer is a task deliverable is dispatched, whatever its size, and whether or not the foreman already knows the answer
 - A task deliverable is a written artifact, a recommendation, an assessment, or a repository edit, other than a foreman-owned record

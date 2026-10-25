@@ -660,6 +660,8 @@ def parse_foreman(payload, source="<memory>"):
                     source, field, value, FOREMAN_EXAMPLE),
                 {"source": source, "field": field, "value": value})
     agent, kind = raw["agent"], raw["kind"]
+    if kind == "agy":
+        raise ConfigError("Antigravity currently supplies workers. Keep the existing Claude/Codex/Grok foreman; native foreman reset and Stop ownership need their own adapter.", {"source": source, "kind": kind})
     if kind not in TOP_MODELS:
         raise ConfigError(
             "Config at {}: `foreman.kind` is {!r}; the seat launches through the {} adapter.".format(

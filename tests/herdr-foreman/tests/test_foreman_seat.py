@@ -384,9 +384,9 @@ class CommandTest(unittest.TestCase):
 
     def assert_names_the_block_to_add(self, warning):
         self.assertIn(str(self.config), warning)
-        self.assertIn("`schema_version` to 6", warning)
-        for field in ('"foreman": {', '"agent"', '"kind"', '"window_group"', '"tiers": {"coordination"'):
-            self.assertIn(field, warning)
+        self.assertIn("preserve the current supported schema_version", warning)
+        self.assertIn("skills/herdr-foreman/config.example.json", warning)
+        self.assertIn("nonblocking", warning)
         self.assertIn("start-foreman --pane", warning)
         self.assertNotIn("configure command", warning)
 
@@ -397,6 +397,19 @@ class CommandTest(unittest.TestCase):
         result = json.loads(out)
         self.assertFalse(result["configured"])
         self.assert_names_the_block_to_add(result["warning"])
+
+    def test_schema_7_missing_block_is_additive_and_does_not_downgrade_config(self):
+        payload = json.loads(EXAMPLE.read_text())
+        payload.pop("foreman")
+        self.write(payload)
+        original = self.config.read_bytes()
+        code, out, err = self.run_cli(["verify-foreman", "--config-only"], Client())
+        self.assertEqual(code, 0, err)
+        result = json.loads(out)
+        self.assertFalse(result["configured"])
+        self.assert_names_the_block_to_add(result["warning"])
+        self.assertNotIn("set `schema_version` to 6", result["warning"])
+        self.assertEqual(self.config.read_bytes(), original)
 
     def test_verify_config_only_reports_presence_without_selection_or_probe(self):
         code, out, err = self.run_cli(["verify-foreman", "--config-only"], Client())

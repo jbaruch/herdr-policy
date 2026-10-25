@@ -126,6 +126,25 @@ class RoleContextTest(unittest.TestCase):
         self.assertNotIn("Herdr Worker Context", held["context"])
         self.assertEqual(self.files(), before)
 
+    def test_antigravity_worker_uses_actual_source_and_native_hook_fields(self):
+        session = "00000000-0000-4000-8000-000000000001"
+        worker = {"source": "herdr:antigravity_cli", "agent": "agy", "kind": "id", "value": session}
+        supervision.enroll(self.owner.path, {"id": "agy-worker", "agent": "worker", "task": "one",
+            "report": str(self.owner.root / "agy-report.md"), "pane_id": "agy-pane", "native_session": worker}, fixture.AT)
+        native = SimpleNamespace(context=HerdrCommandContext("fixture-herdr"),
+            pane_get=lambda pane: {"pane_id": pane, "agent_session": worker})
+        environment = {**os.environ, "HERDR_PANE_ID": "agy-pane", "HERDR_HOOK_ADAPTER": "antigravity",
+                       "FOREMAN_CONTEXT_STATE": str(self.owner.path)}
+        payload = {"conversationId": session}
+        reader = partial(role_context.select, client=native, state_path=self.owner.path, binding_root=self.bindings)
+        result = reader(self.skill, environment=environment, payload=payload)
+        self.assertEqual((result["role"], result["verified"]), ("worker", True))
+        envelope = session_start_hook.collect(self.skill, environment, payload, context_reader=reader)
+        assert envelope is not None
+        self.assertIn("Herdr Worker Context", envelope["injectSteps"][0]["systemMessage"]["systemMessage"])
+        wrong = reader(self.skill, environment=environment, payload={"conversationId": "another-session"})
+        self.assertEqual(wrong["reason"], "hook_session_mismatch")
+
     def test_operator_hold_selects_recovery_and_is_not_cleared(self):
         pause = self.owner.root / "pause.md"
         pause.write_text("Private fixture operator hold.")
