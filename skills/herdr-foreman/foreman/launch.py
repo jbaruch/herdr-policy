@@ -20,8 +20,8 @@ retried a bounded number of times, each time re-proving the pane and the name.
 import time
 from pathlib import PurePath
 
-from . import runnable
-from .composer import ensure_ready
+from . import antigravity_native, runnable
+from .composer import ensure_ready, strip_ansi
 from .errors import AgentBusyError, HerdrError
 from .herdr import READY_STATES, error_code
 from .restoration import NAME_RELEASED, NAME_TAKEN, name_state
@@ -41,6 +41,8 @@ NAME_POLL_INTERVAL = 0.25
 #: Herdr may already have started the process, and a second start duplicates it.
 NAME_TAKEN_RETRIES = 2
 NATIVE_EXECUTABLES = frozenset({"claude", "codex", "grok", "agy"})
+#: Visible rows read for a native model footer, the bottom row of the screen.
+NATIVE_MODEL_LINES = 40
 
 
 def has_native_agent(info):
@@ -146,6 +148,18 @@ def verify_running(client, agent, pane, tier):
     process = foreground_agent(client, pane, agent.kind)
     proof = verify_argv(agent.kind, tier, process["argv"], launch_args)
     return {**proof, "source": "process_argv", "pid": process["pid"], "pane_id": pane}
+
+
+def verify_native_model(client, agent, pane, tier):
+    """Prove the effective model natively before input, or None for other kinds.
+
+    Antigravity CLI 1.4.7 can run another model than its verified argv names
+    (#73), so its display must show the requested model. Call it once the
+    composer is ready: a startup paint has no footer yet.
+    """
+    if agent.kind != "agy":
+        return None
+    return antigravity_native.admit_model(tier, strip_ansi(client.pane_read(pane, lines=NATIVE_MODEL_LINES)))
 
 
 def configured_running_tier(client, agent, pane):

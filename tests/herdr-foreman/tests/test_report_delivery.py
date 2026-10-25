@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from foreman import cli, recovery, report_delivery as delivery, state
-from foreman.assign import assignment_text
+from foreman.assign import assignment_text, tiered_prompt
 from foreman.errors import UsageError
 from foreman.herdr import HerdrClient
 from tests.fakes import FakeRunner, pane_layout
@@ -70,6 +70,12 @@ def agy_rows(prompt, final):
     rows[0]["content"] = rows[0]["content"].replace(request, prompt, 1)
     rows[1]["content"] = final
     return rows
+
+
+def agy_fallback_selection():
+    """The model the captured `--effort` fallback turn actually selected."""
+    first = json.loads(agy_capture.FALLBACK_TRANSCRIPT.splitlines()[0])["content"]
+    return first[first.index(" to ", first.index("`Model Selection`")) + 4:first.index(". No need to comment")]
 
 
 class MarkerColumnsTests(unittest.TestCase):
@@ -514,7 +520,10 @@ class NativeDeliveryTests(unittest.TestCase):
         pane = {**self.pane, "agent_session": native}
         Path(data["pane"]).write_text(json.dumps({"result": {"pane": pane}}))
         Path(data["visible"]).write_text("Native TUI: " + self.marker)
-        prompt = assignment_text("judge", dispatch["common"], dispatch["brief"])
+        tier = {"model": "claude-sonnet-4-6", "effort": None}
+        prompt, prompt_hash = tiered_prompt(assignment_text("judge", dispatch["common"], dispatch["brief"]),
+                                            tier, dispatch["common"], dispatch["brief"])
+        dispatch["result"]["tier"] = {**tier, "prompt_hash": prompt_hash}
         rows = agy_rows(prompt, self.marker)
         with patch.object(antigravity_native, "sessions_root", return_value=self.tmp.resolve() / "native"):
             source = antigravity_native.transcript_path(session)
@@ -527,6 +536,23 @@ class NativeDeliveryTests(unittest.TestCase):
                 source.write_text(encode(altered))
                 with self.assertRaisesRegex(UsageError, "do not prove this report"):
                     delivery.recover(document["recovery"], document["assignments"], dict(data, source=str(source)), AT)
+            # The captured fallback selected Gemini for a Sonnet request. An
+            # untiered dispatch, or one requesting another model, proves nothing.
+            substituted = agy_rows(prompt, self.marker)
+            substituted[0]["content"] = substituted[0]["content"].replace(
+                "Claude Sonnet 4.6 (Thinking)", agy_fallback_selection(), 1)
+            opus = {**tier, "model": "claude-opus-4-6-thinking"}
+            opus_prompt = tiered_prompt(assignment_text("judge", dispatch["common"], dispatch["brief"]),
+                                        opus, dispatch["common"], dispatch["brief"])[0]
+            for name, altered, saved in (
+                    ("substituted model", substituted, dispatch["result"]["tier"]),
+                    ("untiered dispatch", agy_rows(assignment_text("judge", dispatch["common"], dispatch["brief"]), self.marker), None),
+                    ("other requested model", agy_rows(opus_prompt, self.marker), {**opus, "prompt_hash": prompt_hash})):
+                source.write_text(encode(altered))
+                changed = copy.deepcopy(document)
+                changed["recovery"]["dispatches"][0]["result"]["tier"] = saved
+                with self.subTest(name=name), self.assertRaisesRegex(UsageError, "native model selection"):
+                    delivery.recover(changed["recovery"], changed["assignments"], dict(data, source=str(source)), AT)
             self.assertEqual(document["recovery"]["delivery_recoveries"], [])
             source.write_text(encode(rows))
             data["source"] = str(source)

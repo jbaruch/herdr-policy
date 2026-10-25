@@ -349,6 +349,14 @@ def source_prompt(body, kind, session=None, *, path=None):
     return None if kind == "codex" and invalid_turn else prompt
 
 
+def native_model_matches(body, session, path, tier):
+    """Whether the canonical Antigravity turn selected the dispatched tier's model (#73)."""
+    rows = _rows(body)
+    expected = antigravity_native.expected_label(tier)
+    return (rows is not None and expected is not None
+            and antigravity_native.model_selection(rows, session, path) == expected)
+
+
 def native_identity(info):
     ref = info.get("agent_session")
     if (not isinstance(ref, dict) or not isinstance(ref.get("agent"), str) or ref["agent"] not in DISPLAY_PREFIXES
@@ -680,6 +688,9 @@ def recover(store, assignments, data, at):
             or not prompt_matches(source_prompt(bodies["source"], identity["agent"], final_session, path=canonical), prompt, identity["agent"])
             or not bare_final(source_final(bodies["source"], identity["agent"], final_session, path=canonical), data["report"])):
         raise UsageError("Archived pane and completed native source do not prove this report's bare final marker; preserve the negative receipt.", {})
+    if identity["agent"] == "agy" and not native_model_matches(bodies["source"], final_session, canonical, tier):
+        raise UsageError("The dispatched Antigravity turn's native model selection does not show its requested tier "
+                         "running; a substituted or unproven model cannot deliver this report. Preserve the negative receipt.", {})
     prior = next((row for row in store["delivery_recoveries"] if row["id"] == data["id"]), None)
     if prior:
         if (prior["input"] != data or prior["receipts"] != receipts or prior["native_session"] != identity

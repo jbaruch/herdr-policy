@@ -23,6 +23,15 @@ SOURCE = "herdr:antigravity_cli"
 #: Flash; without the flag both models below ran as requested. Their effort is
 #: never displayed, so it stays unknown rather than measured.
 NO_EFFORT_MODELS = frozenset({"claude-opus-4-6-thinking", "claude-sonnet-4-6"})
+#: The label each captured model shows once selected: in the live footer and
+#: in its first turn's model selection. A model or effort without a captured
+#: label has no native proof of what runs and is refused before input (#73).
+MODEL_LABELS = {
+    "claude-opus-4-6-thinking": "Claude Opus 4.6 (Thinking)",
+    "claude-sonnet-4-6": "Claude Sonnet 4.6 (Thinking)",
+}
+#: The idle footer's last visible row: shortcut hint, then the running model.
+FOOTER = re.compile(r"\? for shortcuts {2,}(\S(?:.*\S)?)")
 USAGE_TIMEOUT = 20
 USAGE_BYTES = 65_536
 #: CLI 1.4.7 stores a submitted prompt as `<USER_REQUEST>\n{prompt}\n</USER_REQUEST>`
@@ -81,6 +90,42 @@ def subscription_usage(*, run=subprocess.run):
     if result.returncode or len(result.stdout.encode("utf-8")) > USAGE_BYTES:
         raise HerdrError("Antigravity quota lookup did not return a bounded successful result. Run `agy -p /usage --output-format json` with the worker's subscription sign-in before retrying this provider.", {"kind": "agy"})
     return parse_usage(result.stdout)
+
+
+def expected_label(tier):
+    """The captured native label for a requested tier, or None when unproven."""
+    model = tier.get("model") if isinstance(tier, dict) else None
+    if not isinstance(model, str) or tier.get("effort") is not None:
+        return None
+    return MODEL_LABELS.get(model)
+
+
+def displayed_model(text):
+    """The model the live footer names, or None when the read shows no footer."""
+    rows = [row.rstrip() for row in text.splitlines() if row.strip()] if isinstance(text, str) else []
+    match = FOOTER.fullmatch(rows[-1]) if rows else None
+    return match.group(1) if match else None
+
+
+def admit_model(tier, text):
+    """Prove from the native display that the requested model runs; argv only asks.
+
+    Returns the display proof. Its effort is `unknown`: no native surface shows
+    the effort a no-effort Claude model runs at.
+    """
+    expected, shown = expected_label(tier), displayed_model(text)
+    details = {"kind": "agy", "model": tier.get("model"), "effort": tier.get("effort"), "displayed": shown}
+    if expected is None:
+        raise HerdrError("Antigravity has no captured native label for model {!r} at effort {}, so nothing proves it "
+                         "would run as requested. Configure a captured no-effort model; nothing was sent.".format(
+                             tier.get("model"), tier.get("effort") or "none"), details)
+    if shown is None:
+        raise HerdrError("Antigravity's native model footer is not visible, so the running model is unproven; inspect "
+                         "the pane before retrying. Nothing was sent.", details)
+    if shown != expected:
+        raise HerdrError("Antigravity runs {!r}, not the requested {!r}; nothing was sent. Start a fresh worker with "
+                         "a launch the native CLI honors.".format(shown, expected), details)
+    return {"source": "native_display", "label": shown, "effort": "unknown"}
 
 
 def sessions_root():
@@ -167,3 +212,10 @@ def prompt_text(rows, session, path):
     turn = main_turn(rows, session, path)
     envelope = user_request(turn[0]["content"]) if turn else None
     return envelope["request"] if envelope else None
+
+
+def model_selection(rows, session, path):
+    """The model the latest explicit turn's native settings change selected, or None."""
+    turn = main_turn(rows, session, path)
+    envelope = user_request(turn[0]["content"]) if turn else None
+    return envelope["model_selection"] if envelope else None

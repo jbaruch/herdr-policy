@@ -22,6 +22,7 @@ sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-fore
 from foreman.herdr import HerdrClient
 from foreman.planner import plan
 from foreman.state import STATE_SCHEMA_VERSION, add_assignment, empty_state, load_state_checked, role_counts
+from tests import agy_capture
 from tests.fakes import FakeRunner, ScriptedReads, agent_json, composer_reads, composer_screen, ok_json
 from tests.test_cli import CliCase, CONFIG
 from tests.tier_fixture import AT, tier_row
@@ -549,6 +550,50 @@ class TierIntegrationTest(CliCase):
         self.assertEqual(result["schema_version"], 6)
         self.assertEqual(result["agents"]["claude"]["tier_billing"]["build"]["window"], "unknown")
         self.assertTrue(result["agents"]["claude"]["skipped"])
+
+    def antigravity_dispatch(self, display):
+        """Apply to a standing agy worker whose live argv requests the configured Opus row."""
+        self.settings["agents"] = [{"name": "antigravity", "kind": "agy", "usage_prompt": "/usage",
+                                    "usage_marker": "Weekly Limit Remaining", "usage_read_source": "visible",
+                                    "clear_prompt": "/clear", "tiers": {"build": {"model": "claude-opus-4-6-thinking"}}}]
+        self.write_config()
+        runner = FakeRunner()
+        info = {"agent": "agy", "name": "antigravity", "agent_status": "idle", "pane_id": "w1:p2",
+                "workspace_id": "w1", "tab_id": "w1:t1", "terminal_id": "term-2"}
+        runner.set("agent get antigravity", json.dumps({"result": {"agent": info}}))
+        runner.set("pane process-info", json.dumps({"result": {"process_info": {"pane_id": "w1:p2",
+            "foreground_processes": [{"name": "agy", "pid": 300, "argv": agy_capture.OPUS_ARGV}]}}}))
+        runner.set("pane read w1:p2", display)
+        for prefix in ("agent prompt", "agent wait", "pane rename"):
+            runner.set(prefix, ok_json())
+        code, output, error = self.run_cli(self.apply_args({"developer": "antigravity"}) + ["--no-clear"],
+                                           client=HerdrClient("herdr", runner))
+        return runner, code, output, error
+
+    def test_antigravity_input_waits_for_the_native_display_to_show_the_requested_model(self):
+        runner, code, output, error = self.antigravity_dispatch(agy_capture.OPUS_DISPLAY)
+        self.assertEqual(code, 0, error)
+        tier = json.loads(output)["applied"][0]["tier"]
+        self.assertEqual((tier["model"], tier["effort"], tier["verified"]["argv"]),
+                         ("claude-opus-4-6-thinking", None, agy_capture.OPUS_ARGV))
+        self.assertEqual(tier["native_model"], {"source": "native_display", "label": "Claude Opus 4.6 (Thinking)",
+                                                "effort": "unknown"})
+        self.assertIn("effort=none", runner.pasted_prompts()[0])
+        self.assertLess(runner.commands().index("pane read w1:p2 --source visible --lines 40"),
+                        next(index for index, command in enumerate(runner.commands()) if command.startswith("agent prompt")))
+
+    def test_an_antigravity_substitute_or_unproven_display_receives_no_input(self):
+        for display, shown in ((agy_capture.FALLBACK_DISPLAY, "Gemini 3.8 Flash · high"),
+                               (agy_capture.SONNET_DISPLAY, "Claude Sonnet 4.6 (Thinking)"),
+                               (agy_capture.OPUS_DISPLAY.rsplit("? for shortcuts", 1)[0], None)):
+            with self.subTest(shown=shown):
+                self.reset_streams()
+                runner, code, output, error = self.antigravity_dispatch(display)
+                self.assertEqual((code, output), (1, ""))
+                refusal = json.loads(error)
+                self.assertEqual(refusal["details"]["displayed"], shown)
+                self.assertIn("nothing was sent" if shown else "footer is not visible", refusal["message"])
+                self.assertEqual(runner.writes(), [])
 
     def test_a_saved_antigravity_effort_stays_readable_history(self):
         # 0.16 launched Claude agy rows with `--effort`; that argv is history,

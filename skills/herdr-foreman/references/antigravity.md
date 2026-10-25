@@ -30,6 +30,14 @@ supported grammar and judgment pins live in `skills/herdr-foreman/foreman/tiers.
 A model appearing in a catalog does not prove access, qualification or
 successful delivery.
 
+Argv only requests a model. Before any task input, the worker's live footer
+must show the requested model's captured native label, and the assignment
+records that display proof with effort `unknown`. A substituted, missing or
+uncaptured label refuses with nothing sent. Captured labels live in
+`skills/herdr-foreman/foreman/antigravity_native.py`; a model or effort
+without one, including every Gemini row today, stays unadmitted until a
+native launch of that exact pair is captured.
+
 No permanent pane is reserved. Assignment-scoped workers use the existing
 launch, enrollment, report, verification and cleanup owners. Keep the existing
 Claude/Codex/Grok foreman; Antigravity foreman reset and Stop ownership are not
@@ -59,6 +67,10 @@ Herdr's installed `antigravity-cli` integration reports `agent: agy` with source
 completed model response and the exact bare report marker. Stable current pane,
 session and source readback remain required. Arbitrary archived JSONL cannot
 prove an Antigravity session; unsupported source formats remain unconfirmed.
+Recovery compares the exact request inside the native `USER_REQUEST` envelope
+with the preserved dispatch, accepts only the known trailing metadata and model
+selection blocks, and requires that selection to name the dispatched tier's
+captured label. Any other envelope, request text or selection refuses.
 
 Tessl packages include the native Antigravity SessionStart hook using Google's
 `conversationId`/`transcriptPath` input and `injectSteps` output. Both Tessl and
