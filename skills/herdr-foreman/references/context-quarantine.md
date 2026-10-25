@@ -36,7 +36,8 @@ bash "$HS/foreman.sh" quarantine-context-evidence --state <existing-owner.json> 
 ```
 
 Success returns the same evidence locators on initial completion and replay.
-Read the journal and backup receipts; no task dispatch or clear is authorized.
+Retain those locators without opening the full-ledger backup. The owner verifies
+its preserved evidence; no task dispatch or clear is authorized.
 On nonzero, preserve the original files and report the diagnostic; finish here.
 After success, rerun Step 1's role lookup on the same selected owner and follow
 its verified continuation. A failed role lookup retains recovery obligations.
