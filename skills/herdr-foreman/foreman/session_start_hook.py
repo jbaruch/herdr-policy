@@ -16,7 +16,7 @@ from .errors import ForemanError
 
 
 INPUT_BYTES = 16_384
-ADAPTERS = {"auto", "portable", "claude-code", "codex", "cursor", "grok"}
+ADAPTERS = {"auto", "portable", "claude-code", "codex", "cursor", "grok", "antigravity"}
 FAILURE = ("Session-start status — Herdr role context could not be verified. "
            "Preserve existing task ownership, unknown sends and operator holds; "
            "restore the current hook/controller before continuing team work.")
@@ -32,7 +32,10 @@ def _adapter(environment):
 
 
 def _envelope(adapter, context):
-    if adapter == "portable":
+    result: dict
+    if adapter == "antigravity":
+        result = {"injectSteps": [{"systemMessage": {"systemMessage": context}}]}
+    elif adapter == "portable":
         result = {"additionalContext": context}
     elif adapter == "cursor":
         result = {"additional_context": context}
@@ -46,7 +49,7 @@ def collect(skill, environment, payload=None, *, context_reader=role_context.sel
     if "HERDR_ENV" not in environment:
         return None
     adapter = _adapter(environment)
-    if adapter == "portable" and environment.get("TESSL_AGENT") in ("claude-code", "codex"):
+    if adapter == "portable" and environment.get("TESSL_AGENT") in ("claude-code", "codex", "antigravity"):
         return None
     try:
         result = context_reader(skill, environment=environment, payload=payload,
@@ -82,7 +85,7 @@ def main():
         return 0
     try:
         adapter = _adapter(os.environ)
-        if adapter == "portable" and os.environ.get("TESSL_AGENT") in ("claude-code", "codex"):
+        if adapter == "portable" and os.environ.get("TESSL_AGENT") in ("claude-code", "codex", "antigravity"):
             return 0
         payload = _input(getattr(sys.stdin, "buffer", sys.stdin))
         result = collect(Path(__file__).resolve().parents[1], os.environ, payload)

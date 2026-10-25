@@ -40,7 +40,7 @@ import hashlib
 from pathlib import Path
 from functools import partial
 
-from . import report_contract
+from . import report_contract, report_delivery
 from . import runnable
 from .composer import (
     COMPOSER_SETTLE_SEC,
@@ -756,7 +756,7 @@ def native_context_session(info, kind):
     pane = info.get("pane_id")
     if not isinstance(ref, dict) or not isinstance(pane, str) or not pane:
         return None
-    if (ref.get("source") != "herdr:" + kind or ref.get("agent") != kind
+    if (ref.get("source") != report_delivery.NATIVE_SOURCES.get(kind) or ref.get("agent") != kind
             or ref.get("kind") not in ("id", "path")
             or not isinstance(ref.get("value"), str) or not ref["value"].strip()):
         return None

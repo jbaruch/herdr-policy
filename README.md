@@ -41,7 +41,7 @@ These limits are not measured throughput or token savings.
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.14.0** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.16.0** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
@@ -53,6 +53,11 @@ optional standup path.
 tessl install jbaruch/coding-policy@latest
 tessl install jbaruch/herdr-policy@latest
 ```
+
+Native Antigravity subscription workers are available through the optional
+[worker profile](skills/herdr-foreman/antigravity.example.json). Sign in with
+`agy`, check that account's models/quota, and add the profile to the existing
+config without replacing other providers. See [Antigravity setup and boundaries](skills/herdr-foreman/references/antigravity.md).
 
 ```sh
 acr install github:jbaruch/coding-policy@latest

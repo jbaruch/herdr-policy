@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0 — 2026-10-25
+
+- Add native Antigravity subscription workers through `agy`, using existing Herdr launch, enrollment, verification and cleanup owners (#58, #63). Ship an optional additive profile; existing operator configurations and providers are preserved.
+- Read signed-in subscription quota with the native non-model `/usage` command and retain its distinct groups. Use conservative profile headroom and existing account-bound billing evidence rather than infer extra capacity from model names. Keep missing access, unsupported remote account measurements and provider failures explicit and local.
+- Verify native `--model`, `--effort`, permission and explicit-conversation resume arguments; bind reports to the current `herdr:antigravity_cli` session and its canonical native transcript. Reject incomplete/non-model finals and arbitrary transcript archives. Support Antigravity's native SessionStart payload and injection envelope in Tessl; both packages carry the same worker adapter and scoped protocol.
+- Add the subscription's observed `claude-opus-4-6-thinking` judgment pin from native `agy models` and verify the launch/effort grammar against installed CLI 1.4.7 and Google's current CLI reference. Keep the existing foreman and judge setup; this enables workers without adding Antigravity foreman reset ownership.
+
 ## 0.14.0 — 2026-10-21
 
 - Add an independent factory observer with bounded incremental collection, periodic analysis, private weekly reports and earlier alerts when warranted (#61). Assess coordination ROI, parallel delivery, subscription balance, model/effort suitability and open-ended improvement opportunities without adding delivery gates or worker report requests.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dispatch a native Herdr hook from a Tessl package or an ACR native hook copy.
-# argv: reset-input|supervision-stop|session-start [auto|portable|claude-code|codex|cursor|grok].
+# argv: reset-input|supervision-stop|session-start [auto|portable|claude-code|codex|cursor|grok|antigravity].
 # stdin/stdout belong to the selected owner. All adapters use this same owner.
 # Standalone sessions return silently before checking team prerequisites.
 # Native owner failures retain the existing reset-block / Stop-diagnostic forms.
@@ -25,7 +25,7 @@ main() {
     *) echo 'usage: native-hook.sh reset-input|supervision-stop|session-start' >&2; return 2 ;;
   esac
   case "$adapter" in
-    auto|portable|claude-code|codex|cursor|grok) ;;
+    auto|portable|claude-code|codex|cursor|grok|antigravity) ;;
     *) echo 'native-hook: unknown hook adapter' >&2; return 2 ;;
   esac
   if [[ -z "${HERDR_ENV+x}" ]]; then
