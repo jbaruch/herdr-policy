@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.0 — 2026-10-25
+
+- Reconcile an interrupted task-workflow measurement only from its exact durable pre-effect intent, completed canonical snapshot, or closed retained-probe receipt (#70). Bind new measurements to a saved owner timestamp and captured configuration; refuse missing, ambiguous, changed-context, partial or live-probe outcomes without generalizing recovery to native business sends.
+- Permit the existing explicit return and re-admission handoff after measurement settlement. Preserve the original task/store/base/history/counters and monotonic authority generation while the new admission binds the actual loaded policy and a fresh artifact directory.
+
 ## 0.16.1 — 2026-10-25
 
 - Keep fresh/no-clear dispatch context evidence canonical, and reject inconsistent pairs before appending assignment history (#75).
