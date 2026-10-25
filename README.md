@@ -19,6 +19,13 @@ General coding and release policy belongs to [jbaruch/coding-policy](https://git
 | [herdr-foreman](skills/herdr-foreman/SKILL.md) | Dispatch, supervise and accept team work |
 | [herdr-standup](skills/herdr-standup/SKILL.md) | Collect bounded status from idle workers |
 | [herdr-observer](skills/herdr-observer/SKILL.md) | Observe factory efficiency and produce private reports |
+| [herdr-optimizer](skills/herdr-optimizer/SKILL.md) | Deliver simpler logic, remove redundancy and reduce evidenced waste |
+
+The optimizer is a standing delivery specialty using ordinary developer
+assignments. It finds and implements worthwhile simplifications in an authorized
+area, alongside independent feature work, with normal review and tests. The
+foreman continues useful slices without reserving a permanent model or pane.
+An unchanged area with no worthwhile candidate needs no repeated scanning.
 
 The observer uses a lightweight detached collector while its native agent sleeps
 between analyses. It watches current factory topology, incremental native logs
@@ -41,7 +48,7 @@ These limits are not measured throughput or token savings.
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.14.0** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.15.0** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr

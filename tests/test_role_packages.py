@@ -61,6 +61,9 @@ class RolePackagesTest(unittest.TestCase):
         self.assertLessEqual((package / manifest["rules"][0]).stat().st_size, 2304)
         for kind in ("herdr-foreman", "herdr-standup", "herdr-observer"):
             self.assertTrue((package / "skills" / kind / "references").is_dir())
+        optimizer = "skills/herdr-optimizer"
+        self.assertIn(optimizer, manifest["skills"])
+        self.assertTrue((package / optimizer / "SKILL.md").is_file())
         for adapter in ("claude-code", "codex"):
             command = manifest["nativeHooks"][adapter]["SessionStart"][0]["hooks"][0]["command"]
             self.assertEqual(command, 'bash "${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh" session-start '+adapter)
