@@ -1,6 +1,6 @@
 {
   "name": "jbaruch/herdr-policy",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Herdr team coordination policy for AI coding agents",
   "private": false,
   "repository": "https://github.com/jbaruch/herdr-policy",
@@ -10,7 +10,8 @@
   "skills": [
     "skills/herdr-foreman",
     "skills/herdr-standup",
-    "skills/herdr-observer"
+    "skills/herdr-observer",
+    "skills/herdr-optimizer"
   ],
   "hooks": {
     "SessionStart": [

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.0 — 2026-10-25
+
+- Add a crew optimizer that finds and implements useful simplifications, removes redundant code and reduces evidenced waste (#63). Keep a standing improvement objective moving through existing scoped developer assignments alongside independent feature delivery, with ordinary review, tests and release.
+- Ship the optimizer skill and foreman dispatch guidance through Tessl and ACR. Reuse current task ownership without another scheduler, report queue or optimization gate; stop scanning when unchanged code offers no worthwhile candidate.
+
 ## 0.14.0 — 2026-10-21
 
 - Add an independent factory observer with bounded incremental collection, periodic analysis, private weekly reports and earlier alerts when warranted (#61). Assess coordination ROI, parallel delivery, subscription balance, model/effort suitability and open-ended improvement opportunities without adding delivery gates or worker report requests.
