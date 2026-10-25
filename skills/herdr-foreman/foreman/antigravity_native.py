@@ -82,17 +82,20 @@ def main_turn(rows, session, path):
     expected = transcript_path(session)
     if expected is None or path is None or Path(path) != expected or expected.resolve() != expected:
         return None
-    previous = -1
-    start = None
-    for offset, row in enumerate(rows):
+    indexed = {}
+    for row in rows:
         index = row.get("step_index")
-        if (type(index) is not int or index <= previous or row.get("status") != "DONE"
-                or not isinstance(row.get("content"), str)):
+        if type(index) is not int or index < 0 or index in indexed:
             return None
-        previous = index
+        indexed[index] = row
+    ordered = [indexed[index] for index in sorted(indexed)]
+    start = None
+    for offset, row in enumerate(ordered):
         if row.get("type") == "USER_INPUT" and row.get("source") == "USER_EXPLICIT":
+            if row.get("status") != "DONE" or not isinstance(row.get("content"), str):
+                return None
             start = offset
-    return rows[start:] if start is not None else None
+    return ordered[start:] if start is not None else None
 
 
 def final_message(rows, session, path):
@@ -100,7 +103,8 @@ def final_message(rows, session, path):
     if not turn or len(turn) < 2:
         return None
     final = turn[-1]
-    if final.get("type") != "PLANNER_RESPONSE" or final.get("source") != "MODEL":
+    if (final.get("type") != "PLANNER_RESPONSE" or final.get("source") != "MODEL"
+            or final.get("status") != "DONE" or not isinstance(final.get("content"), str)):
         return None
     return final["content"]
 

@@ -669,11 +669,16 @@ def recover(store, assignments, data, at):
             raise UsageError("Archived pane JSON has no supported native session identity; restore the original pane get evidence.", {})
         raise UsageError("Stale-ID recovery requires an original Grok automatic clear; preserve the original evidence.", {})
     final_session = source_session["value"] if source_session else identity["value"] if identity else None
+    canonical = None
+    if identity is not None and identity["agent"] == "agy":
+        canonical = source_path(identity)
+        if canonical is None or Path(data["source"]) != canonical:
+            raise UsageError("Antigravity recovery requires this conversation's canonical native transcript path, with the original dispatch, pane and negative wait receipts. Preserve arbitrary archives; they cannot establish its session.", {})
     if (identity is None or original_identity is not None and identity != original_identity
             or not isinstance(pane, dict) or not pane_identity(pane, dispatch["result"].get("pane_id"), identity)
-            or not decorated_row(bodies["visible"], identity["agent"], data["report"])
-            or not prompt_matches(source_prompt(bodies["source"], identity["agent"], final_session), prompt, identity["agent"])
-            or not bare_final(source_final(bodies["source"], identity["agent"], final_session), data["report"])):
+            or identity["agent"] != "agy" and not decorated_row(bodies["visible"], identity["agent"], data["report"])
+            or not prompt_matches(source_prompt(bodies["source"], identity["agent"], final_session, path=canonical), prompt, identity["agent"])
+            or not bare_final(source_final(bodies["source"], identity["agent"], final_session, path=canonical), data["report"])):
         raise UsageError("Archived pane and completed native source do not prove this report's bare final marker; preserve the negative receipt.", {})
     prior = next((row for row in store["delivery_recoveries"] if row["id"] == data["id"]), None)
     if prior:

@@ -114,6 +114,15 @@ class AntigravityTest(unittest.TestCase):
             with self.subTest(change=change):
                 self.assertIsNone(native.final_message(data, SESSION, path))
 
+    def test_tool_records_use_native_step_order_and_do_not_mask_a_completed_final(self):
+        data = rows()
+        data[1]["step_index"] = 3
+        data.insert(1, {"step_index": 2, "type": "GENERIC", "source": "MODEL", "status": "RUNNING", "content": "Background tool"})
+        data.append({"step_index": 1, "type": "PLANNER_RESPONSE", "source": "MODEL", "status": "DONE", "content": "Working"})
+        self.assertEqual(native.final_message(data, SESSION, native.transcript_path(SESSION)), rows()[-1]["content"])
+        data.append({"step_index": 4, "type": "GENERIC", "source": "MODEL", "status": "RUNNING", "content": "Later work"})
+        self.assertIsNone(native.final_message(data, SESSION, native.transcript_path(SESSION)))
+
     def test_live_report_is_verified_from_the_registered_native_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
