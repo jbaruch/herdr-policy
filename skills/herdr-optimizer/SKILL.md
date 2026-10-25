@@ -1,9 +1,10 @@
 ---
 name: herdr-optimizer
 description: >
-  Simplify code and logic, remove redundancy and dead code, and reduce evidenced
-  runtime or maintenance costs as a Herdr crew optimizer. Use for an assigned
-  optimization task or a standing simplification objective within a named area.
+  Simplify code and logic, refactor duplication, remove dead code and redundant
+  dependencies, and eliminate avoidable work as a Herdr crew optimizer. Use when
+  asked to add an optimizer to the crew, simplify or clean up a named code area,
+  or continue an assigned standing optimization objective.
 ---
 
 # Herdr Optimizer
@@ -52,6 +53,8 @@ immediately to Step 2.
 - Prefer deletion or an existing mechanism over a new framework or abstraction.
 - Use existing checks for behavior and targeted measurements for performance
   claims. Distinguish observed gains from expected maintenance benefits.
+- Fix failed checks within scope and rerun them before delivery. Return an
+  unresolved failure through the assignment's blocked-report contract.
 - Keep changes reviewable. Do not combine unrelated cleanups or overlap another
   writer's work. Report a dependency or ownership conflict through the assignment.
 - Choose effort appropriate to the actual task. Discovery and semantic refactoring
