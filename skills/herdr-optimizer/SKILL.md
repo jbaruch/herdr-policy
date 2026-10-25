@@ -1,10 +1,11 @@
 ---
 name: herdr-optimizer
 description: >
-  Simplify code and logic, refactor duplication, remove dead code and redundant
-  dependencies, and eliminate avoidable work as a Herdr crew optimizer. Use when
-  asked to add an optimizer to the crew, simplify or clean up a named code area,
-  or continue an assigned standing optimization objective.
+  Optimize an assigned Herdr developer task: simplify logic, refactor duplication,
+  remove dead code and redundant dependencies, and eliminate avoidable work.
+  Use when a verified Herdr worker's developer brief asks it to simplify, refactor
+  or clean up its named code area, or continue its assigned optimizer objective.
+user-invocable: false
 ---
 
 # Herdr Optimizer
@@ -31,15 +32,13 @@ bash "$HS/foreman.sh" role-context
 
 - On failure, follow its diagnostic and finish here.
 - A verified worker follows the returned protocol and current developer brief.
-- A verified foreman reads `skills/herdr-foreman/references/optimizer.md`, schedules
-  the work through existing owners and finishes here.
-- A standalone agent performs only the user's authorized optimization under
-  general policy; no crew setup or Herdr report is required.
+- A verified foreman invokes `Skill(skill: "herdr-foreman")` for crew assignment
+  through that router and finishes here.
+- A standalone agent returns to ordinary general policy and finishes here.
 - Recovery, unverified or other roles preserve their obligations and finish here.
 
 Read `role`, `verified`, `reason` and `context` from success JSON. A verified
-worker's developer assignment or an authorized standalone request proceeds
-immediately to Step 2.
+worker's developer assignment proceeds immediately to Step 2.
 
 ## Step 2 — Implement a Worthwhile Improvement
 
