@@ -175,6 +175,11 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             parse_foreman(payload(launch_args=["--model", "opus-5"]))
 
+    def test_agy_is_worker_only_and_cannot_own_the_foreman_seat(self):
+        with self.assertRaisesRegex(ConfigError, "worker-only"):
+            parse_foreman(payload(kind="agy", tiers={
+                "coordination": {"model": "claude-sonnet-4-6", "effort": "low"}}))
+
 
 class LaunchTest(unittest.TestCase):
     def setUp(self):

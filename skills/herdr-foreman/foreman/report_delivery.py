@@ -22,7 +22,7 @@ import unicodedata
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from . import claude_native
+from . import agy_native, claude_native
 from . import recovery as ledger
 from . import report_contract
 from . import supervision
@@ -31,12 +31,17 @@ from .errors import HerdrError, UsageError
 
 
 DISPLAY_PREFIXES = {"codex": ("• ",), "grok": ("     ",), "claude": ("\u23fa ",)}
+# Identity support and display-decoration support are separate. Agy's native
+# UUID/transcript contract is deterministic, while its final-row TUI prefix is
+# intentionally absent until an authorized live probe observes it.
+NATIVE_ID_AGENTS = frozenset((*DISPLAY_PREFIXES, "agy"))
 # Columns each TUI keeps right of its transcript text. Grok holds a scrollbar
 # margin plus room for its right-aligned `12:00 PM` clock on the same row;
 # measured on Grok 1.0.13 (Grok 4.6/4.7), Claude Code 2.1.263 and Codex
 # 0.153.2 under Herdr 0.8.2. An unknown kind takes the widest prefix and reserve.
 MARKER_RIGHT_RESERVE = {"codex": 2, "grok": 15, "claude": 2}
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
+MAX_NATIVE_SOURCE_BYTES = 8 * 1024 * 1024
 FENCE = report_contract.FENCE
 CONTAINER = re.compile(r"^ {0,3}(?:>|[-+*•][ \t]|[0-9]{1,9}[.)][ \t])")
 RECOVERY_INPUTS = {"id", "dispatch", "report", "wait_receipt", "pane", "visible", "source"}
@@ -194,7 +199,8 @@ def source_final(body, kind, session):
     rows = _rows(body)
     if rows is None:
         return None
-    parser = {"codex": codex_final, "grok": grok_final, "claude": claude_native.final_message}.get(kind)
+    parser = {"codex": codex_final, "grok": grok_final, "claude": claude_native.final_message,
+              "agy": agy_native.final_message}.get(kind)
     return parser(rows, session) if parser else None
 
 
@@ -261,6 +267,8 @@ def source_prompt(body, kind, session=None):
         return None
     if kind == "claude":
         return claude_native.prompt_text(rows, session)
+    if kind == "agy":
+        return agy_native.prompt_text(rows, session)
     prompt, in_chunks = None, False
     turn, prompt_turn, invalid_turn = None, None, False
     modern_turn = False
@@ -345,9 +353,10 @@ def source_prompt(body, kind, session=None):
 
 def native_identity(info):
     ref = info.get("agent_session")
-    if (not isinstance(ref, dict) or not isinstance(ref.get("agent"), str) or ref["agent"] not in DISPLAY_PREFIXES
+    if (not isinstance(ref, dict) or not isinstance(ref.get("agent"), str) or ref["agent"] not in NATIVE_ID_AGENTS
             or ref.get("source") != "herdr:" + ref["agent"] or ref.get("kind") != "id"
-            or not isinstance(ref.get("value"), str) or not SESSION_ID.fullmatch(ref["value"])):
+            or not isinstance(ref.get("value"), str) or not SESSION_ID.fullmatch(ref["value"])
+            or ref["agent"] == "agy" and not agy_native.SESSION_ID.fullmatch(ref["value"])):
         return None
     return {key: ref[key] for key in ("source", "agent", "kind", "value")}
 
@@ -357,12 +366,16 @@ def source_root(kind):
         return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "sessions"
     if kind == "claude":
         return claude_native.sessions_root()
+    if kind == "agy":
+        return agy_native.sessions_root()
     return Path(os.environ.get("GROK_HOME", str(Path.home() / ".grok"))) / "sessions"
 
 
 def source_path(identity):
     """Resolve the official ID without glob's suppression of directory errors."""
     session, kind = identity["value"], identity["agent"]
+    if kind == "agy":
+        return agy_native.locate(session)
     root, matches = source_root(kind), []
     depth_limit = {"codex": 3, "claude": claude_native.SESSION_DEPTH}.get(kind, 2)
 
@@ -391,6 +404,9 @@ def read_native_source(path):
     """Missing files are expected; unreadable or invalid source is a failure."""
     try:
         content = path.read_bytes()
+        if len(content) > MAX_NATIVE_SOURCE_BYTES:
+            raise UsageError("Native transcript {} exceeds the {} byte source bound; retain it for manual evidence and do not accept delivery.".format(
+                path, MAX_NATIVE_SOURCE_BYTES), {})
         return content, content.decode("utf-8")
     except FileNotFoundError:
         return None

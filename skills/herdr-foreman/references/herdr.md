@@ -35,7 +35,7 @@ herdr agent rename <pane-id> <name>
 ```
 
 `agent list` returns `{"result":{"agents":[...]}}`. Each element carries
-`agent` (the kind: `claude`, `codex`, `grok`), `agent_status`
+`agent` (the kind: `claude`, `codex`, `grok`, `agy`), `agent_status`
 (`idle|working|blocked|done|unknown`), `pane_id`, `cwd`, and an optional
 `name`. Names match `[a-z][a-z0-9_-]{0,31}`, are unique among live agents, and
 follow the pane occupant — a name is cleared when that agent exits or is

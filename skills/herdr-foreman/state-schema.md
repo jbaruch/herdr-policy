@@ -158,6 +158,16 @@ closes it, and copies the result onto every kind in that group (snapshot schema
 2 introduced the field; current schema 6). `plan` charges a seat's cost
 against every kind in that window. A kind declaring none has a window to itself.
 
+An Agy entry is valid in `worker_kinds`, but `foreman.kind: agy` is explicitly
+invalid because Antigravity has no blocking prompt-submit hook for reset
+admission. Its native identity is exactly Herdr's `herdr:agy` UUID and resolves
+only to
+`~/.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/transcript_full.jsonl`.
+Ordered completed user/planner steps bind delivery; missing, linked, reordered,
+duplicate, malformed, running or failed evidence refuses. The shipped example
+omits Agy until a native probe establishes composer, clear, usage and display
+constants without changing operator configuration.
+
 The optional top-level `judge` key pins the judge worker kind, model, and effort.
 Plan schema 6 echoes them in a `judge` object, with `mode` — the seat's
 declared `adjudication` or `diagnosis` — beside them; a plan without that seat
@@ -1071,6 +1081,13 @@ round preflight can name its maintenance relaunch command. `headroom_pct` is the
 across that agent's windows. `state_source` is `herdr` or `probe`, naming which
 signal decided `state`; `herdr_state` carries what herdr claimed. `plan` is an
 informational plan name and never feeds headroom.
+
+For Agy, catalog output is not quota evidence. Until a stable account-bound
+native usage surface is observed, measurement records a provider-local failure
+with `windows: null` and `headroom_pct: null`; planners must not translate it
+to abundant or exhausted capacity. Observer coverage may count completed turns
+and assistant bytes from the bounded native transcript, while model, effort,
+tokens, compactions, tool calls and billing attribution remain unknown.
 
 Retained disposable probe gates are a separate owner artifact. Their schema,
 migration, writer/reader contract and guarded recovery command are documented

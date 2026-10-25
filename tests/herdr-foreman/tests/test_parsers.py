@@ -25,6 +25,7 @@ import unittest
 from foreman.errors import ParseError
 from foreman.parsers import (
     headroom_pct,
+    parse_agy_usage,
     parse_claude_usage,
     parse_codex_usage,
     parse_grok_usage,
@@ -524,6 +525,12 @@ class DispatchTest(unittest.TestCase):
         with self.assertRaises(ParseError) as caught:
             parse_usage("gemini", "whatever")
         self.assertIn("claude", str(caught.exception))
+
+    def test_agy_headroom_stays_unknown_without_a_verified_native_surface(self):
+        for text in ("100% remaining", "Weekly limit: 0%", "model catalog available"):
+            with self.subTest(text=text), self.assertRaises(ParseError) as caught:
+                parse_agy_usage(text)
+            self.assertIsNone(caught.exception.details["headroom_pct"])
 
 
 class HeadroomTest(unittest.TestCase):

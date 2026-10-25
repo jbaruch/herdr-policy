@@ -28,6 +28,8 @@ def identity(row):
             or native.get("kind") not in ("id", "path")
             or not isinstance(native.get("value"), str) or not native["value"]):
         return None
+    if native.get("agent") == "agy" and report_delivery.native_identity({"agent_session": native}) is None:
+        return None
     return {"pane_id": row["pane_id"], **{k: native[k] for k in ("source", "agent", "kind", "value")}}
 
 
@@ -102,7 +104,7 @@ def current(snapshot):
     row = matches[0]
     session = row["agent_session"]
     if (not isinstance(row["name"], str) or not isinstance(row.get("cwd"), str) or not Path(row["cwd"]).is_absolute()
-            or session["agent"] not in report_delivery.DISPLAY_PREFIXES
+            or session["agent"] not in report_delivery.NATIVE_ID_AGENTS
             or session.get("pane_id", pane) != pane
             or session["kind"] == "path" and not Path(session["value"]).is_absolute()
             or session["kind"] == "id" and report_delivery.native_identity(row) is None):

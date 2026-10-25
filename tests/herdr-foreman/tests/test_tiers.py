@@ -26,7 +26,8 @@ def select_tier(*args, **kwargs):
 
 
 def agent(kind="claude"):
-    model = {"claude": "opus-5", "codex": "gpt-5.6-sol", "grok": "grok-4.6"}[kind]
+    model = {"claude": "opus-5", "codex": "gpt-5.6-sol", "grok": "grok-4.6",
+             "agy": "claude-opus-4-6-thinking"}[kind]
     return SimpleNamespace(name=kind, kind=kind, tiers=parse_tiers({
         "review": {"model": model, "effort": "high"},
         "hostile_verify": {"model": model, "effort": "high"},
@@ -45,7 +46,7 @@ def mechanical_context():
 SESSION = "00000000-0000-0000-0000-000000000000"
 OTHER_SESSION = "11111111-1111-4111-8111-111111111111"
 YOLO = {"claude": "--dangerously-skip-permissions", "codex": "--dangerously-bypass-approvals-and-sandbox",
-        "grok": "--always-approve"}
+        "grok": "--always-approve", "agy": "--dangerously-skip-permissions"}
 
 
 class TierConfigTest(unittest.TestCase):
@@ -97,6 +98,15 @@ class TierConfigTest(unittest.TestCase):
         self.assertEqual(TOP_MODELS["grok"], frozenset({"grok-4.6"}))
         with self.assertRaises(ConfigError):
             parse_tiers({"architect": {"model": "claude-opus-5-5", "effort": "high"}}, "codex")
+
+    def test_agy_accepts_all_efforts_and_pins_opus_for_judgment(self):
+        self.assertEqual(TOP_MODELS["agy"], frozenset({"claude-opus-4-6-thinking"}))
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            with self.subTest(effort=effort):
+                self.assertEqual(parse_tiers({"build": {"model": "claude-sonnet-4-6", "effort": effort}},
+                                             "agy")["build"]["effort"], effort)
+        with self.assertRaisesRegex(ConfigError, "pinned top model"):
+            parse_tiers({"review": {"model": "claude-sonnet-4-6", "effort": "high"}}, "agy")
 
     def test_dead_rounds_kinds_and_bad_costs_are_refused(self):
         with self.assertRaises(ConfigError):
@@ -463,9 +473,9 @@ class ArgvTest(unittest.TestCase):
         for kind, argv in (
             ("claude", ["claude", "--dangerously-skip-permissions", "--model", "opus-5"]),
             ("claude", ["claude", "--permission-mode", "bypassPermissions"]),
-            ("codex", ["codex", "--dangerously-bypass-approvals-and-sandbox", "-c", "model_reasoning_effort=high"]),
-            ("codex", ["codex", "-a", "never", "-s", "danger-full-access", "--no-alt-screen"]),
+            ("codex", ["codex", "--dangerously-bypass-approvals-and-sandbox", "--no-daemon", "-c", "model_reasoning_effort=high"]),
             ("grok", ["grok", "--always-approve", "--no-subagents", "--reasoning-effort", "high"]),
+            ("agy", ["agy", "--dangerously-skip-permissions", "--model", "claude-sonnet-4-6", "--effort", "high"]),
         ):
             with self.subTest(kind=kind, argv=argv):
                 self.assertIsNone(verify_worker_permissions(kind, argv))
@@ -479,6 +489,9 @@ class ArgvTest(unittest.TestCase):
             ("codex", ["codex", "-a", "never"]),
             ("codex", ["codex", "-s", "danger-full-access"]),
             ("codex", ["codex", "--dangerously-bypass-approvals-and-sandbox", "-c", 'approval_policy="on-request"']),
+            ("codex", ["codex", "--dangerously-bypass-approvals-and-sandbox"]),
+            ("codex", ["codex", "-a", "never", "-s", "danger-full-access", "--no-daemon"]),
+            ("agy", ["agy", "--continue", "--dangerously-skip-permissions"]),
             ("grok", ["grok", "--always-approve", "--resume", "session"]),
             ("grok", ["grok", "--always-approve", "--permission-mode", "default"]),
             ("grok", ["wrapper", "grok", "--always-approve"]),
@@ -491,9 +504,8 @@ class ArgvTest(unittest.TestCase):
     def test_resumed_live_permission_proof_accepts_one_explicit_session_with_yolo(self):
         for kind, argv in (
             # The issue's own reproduction: a resumed Codex worker with the explicit YOLO flag.
-            ("codex", ["codex", "resume", SESSION, "--dangerously-bypass-approvals-and-sandbox"]),
-            ("codex", ["/opt/homebrew/bin/codex", "resume", "--dangerously-bypass-approvals-and-sandbox", SESSION, "--no-alt-screen"]),
-            ("codex", ["codex", "resume", SESSION, "-a", "never", "-s", "danger-full-access", "-c", "model_reasoning_effort=high"]),
+            ("codex", ["codex", "resume", SESSION, "--dangerously-bypass-approvals-and-sandbox", "--no-daemon"]),
+            ("codex", ["/opt/homebrew/bin/codex", "resume", "--dangerously-bypass-approvals-and-sandbox", "--no-daemon", SESSION, "--no-alt-screen"]),
             ("claude", ["claude", "--resume", SESSION, "--dangerously-skip-permissions"]),
             ("claude", ["claude", "--dangerously-skip-permissions", "-r", SESSION.upper(), "--model", "opus-5", "--effort", "high"]),
             ("claude", ["claude", "--permission-mode", "bypassPermissions", "--resume", SESSION]),
@@ -510,6 +522,7 @@ class ArgvTest(unittest.TestCase):
             ("codex", ["codex", "resume", SESSION, "--full-auto"], "restrictive permission"),
             ("codex", ["codex", "resume", SESSION, "--dangerously-bypass-approvals-and-sandbox", "-s", "read-only"], "restrictive permission"),
             ("codex", ["codex", "resume", SESSION, "--dangerously-bypass-approvals-and-sandbox", "-c", 'approval_policy="on-request"'], "config override"),
+            ("codex", ["codex", "resume", SESSION, "--dangerously-bypass-approvals-and-sandbox"], "isolation flag"),
             ("claude", ["claude", "--resume", SESSION, "--permission-mode", "plan"], "restrictive permission"),
             ("claude", ["claude", "--resume", SESSION, "--dangerously-skip-permissions", "--permission-mode", "acceptEdits"], "restrictive permission"),
             ("claude", ["claude", "--resume", SESSION, "--model", "opus-5"], "do not prove YOLO"),
@@ -574,19 +587,23 @@ class ArgvTest(unittest.TestCase):
         for kind, options, expected in (
             ("claude", [], ["--dangerously-skip-permissions"]),
             ("codex", ["--no-alt-screen"], ["--dangerously-bypass-approvals-and-sandbox", "--no-alt-screen"]),
+            ("agy", [], ["--dangerously-skip-permissions"]),
             ("grok", ["--no-subagents", "--no-alt-screen"], ["--always-approve", "--no-subagents", "--no-alt-screen"]),
         ):
+            if kind == "codex":
+                expected.insert(1, "--no-daemon")
             with self.subTest(kind=kind):
                 self.assertEqual(worker_launch_args(kind, options), expected)
                 self.assertEqual(worker_launch_args(kind, expected), expected)
 
     def test_permission_aliases_normalize_without_duplicate_flags(self):
-        cases = (("claude", ["--permission-mode", "bypassPermissions"], "--dangerously-skip-permissions"),
-                 ("codex", ["-a", "never", "--sandbox", "danger-full-access"], "--dangerously-bypass-approvals-and-sandbox"),
-                 ("grok", ["--permission-mode", "bypassPermissions", "--always-approve"], "--always-approve"))
+        cases = (("claude", ["--permission-mode", "bypassPermissions"], ["--dangerously-skip-permissions"]),
+                 ("codex", ["-a", "never", "--sandbox", "danger-full-access"],
+                  ["--dangerously-bypass-approvals-and-sandbox", "--no-daemon"]),
+                 ("grok", ["--permission-mode", "bypassPermissions", "--always-approve"], ["--always-approve"]))
         for kind, options, expected in cases:
             with self.subTest(kind=kind):
-                self.assertEqual(worker_launch_args(kind, options), [expected])
+                self.assertEqual(worker_launch_args(kind, options), expected)
 
     def test_restrictive_options_cannot_override_yolo(self):
         cases = (("claude", ["--permission-mode", "default"]),
@@ -606,10 +623,11 @@ class ArgvTest(unittest.TestCase):
                 worker_launch_args(kind, options)
 
     def test_each_installed_cli_has_exact_flags(self):
-        for kind in ("claude", "codex", "grok"):
+        for kind in ("claude", "codex", "grok", "agy"):
             tier = select_tier(agent(kind), "reviewer")
-            argv = ["/usr/local/bin/" + kind] + launch_flags(kind, tier)
-            self.assertEqual(verify_argv(kind, tier, argv)["effort"], "high")
+            required = worker_launch_args(kind)
+            argv = ["/usr/local/bin/" + kind] + required + launch_flags(kind, tier)
+            self.assertEqual(verify_argv(kind, tier, argv, required)["effort"], "high")
 
     def test_no_effort_flag_for_haiku(self):
         tier = select_tier(agent(), "developer", "mechanical", mechanical_context())

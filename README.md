@@ -41,7 +41,7 @@ These limits are not measured throughput or token savings.
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.14.0** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.15.0** with coding-policy **0.5.0** or later in the compatible 0.5 line. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
@@ -66,7 +66,11 @@ Tessl uses `.tessl-plugin/plugin.json`; ACR uses `agent-plugin.yaml`. ACR v1 has
 
 ## Supported Execution
 
-Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR also realizes Cursor's canonical hook surface; installation and lifecycle behavior are covered by conformance checks. Grok uses the Claude-compatible settings contract; the reset and Stop subprocess regression tests preserve its shell-command form. Portable Tessl startup uses the same role reader and defers to the registered native hooks. All ordinary-session hooks return before checking Python, Herdr or owner files.
+Native Claude Code and Codex use direct reset, Stop and SessionStart hooks. ACR also realizes Cursor's canonical hook surface; installation and lifecycle behavior are covered by conformance checks. Grok uses the Claude-compatible settings contract; the reset and Stop subprocess regression tests preserve its shell-command form. Antigravity has a native SessionStart envelope for assignment-scoped workers only; it cannot be the foreman because it has no blocking prompt-submit hook. Its tier/argv, UUID transcript and observer adapters are shipped, while active configuration remains held until an authorized disposable probe establishes account access, composer/clear/usage behavior and final-row decoration. Unknown Agy quota remains unknown. Portable Tessl startup uses the same role reader and defers to the registered native hooks. All ordinary-session hooks return before checking Python, Herdr or owner files.
+
+Fresh Codex workers always add `--no-daemon` together with YOLO mode so the
+Herdr-launched process, rather than a shared background server, owns tool
+execution. Exact argv verification rejects a launch that omits either flag.
 
 Requested Codex foreman resets also verify host-goal transfer through the existing
 Codex app-server control socket. The successor retains the objective and remaining

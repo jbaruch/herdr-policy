@@ -347,10 +347,25 @@ def parse_grok_usage(text):
     return {"windows": windows, "credits": credits, "plan": plan}
 
 
+def parse_agy_usage(_text):
+    """Keep Agy capacity unknown until a stable native usage surface is observed.
+
+    Model catalog listing is access syntax, not current account headroom. This
+    explicit adapter prevents unsupported pane prose or stale external cache
+    values from being interpreted as quota.
+    """
+    raise ParseError(
+        "Antigravity has no verified stable native usage surface; current headroom remains unknown. "
+        "Keep this worker inactive until an authorized account-bound probe records the command and output contract.",
+        {"kind": "agy", "headroom_pct": None},
+    )
+
+
 PARSERS = {
     "claude": parse_claude_usage,
     "codex": parse_codex_usage,
     "grok": parse_grok_usage,
+    "agy": parse_agy_usage,
 }
 
 

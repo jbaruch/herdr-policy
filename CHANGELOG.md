@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.0 — 2026-10-25
+
+- Add the worker-only Antigravity adapter with Sonnet implementation and Opus judgment tiers, exact model/effort/YOLO argv, Herdr UUID transcript binding, native SessionStart context, progression/supervision compatibility, and bounded observer turn/output metrics (#58). Keep account access, current quota, UI constants and activation unknown until the authorized native probe supplies them; do not add an active config row or infer availability from the model catalog.
+- Require `--no-daemon` on every generated Codex worker launch and legacy permission proof so the Herdr-launched process cannot inherit tool execution from a shared background server.
+
 ## 0.14.0 — 2026-10-21
 
 - Add an independent factory observer with bounded incremental collection, periodic analysis, private weekly reports and earlier alerts when warranted (#61). Assess coordination ROI, parallel delivery, subscription balance, model/effort suitability and open-ended improvement opportunities without adding delivery gates or worker report requests.

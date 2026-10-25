@@ -1,6 +1,7 @@
 """Bounded read-only evidence adapters. Raw prompts/output never enter the cache.
 
-Native JSONL adapters: Codex rollout records and Claude project transcripts.
+Native JSONL adapters: Codex rollout records, Claude project transcripts and
+Antigravity completed-step transcripts.
 Other runtimes remain visible in Herdr samples but their log costs are unknown.
 Sources are selected by live native identities, never by recursively reading .hr.
 Owner readers accept state 11/recovery 19, snapshot 5/6, supervision 1 and binding
@@ -26,7 +27,7 @@ MAX_DISCOVERY_FILES = 4096
 MAX_FACTORIES = 32
 MAX_AGENTS = 128
 MAX_OWNER_ROWS = 10000
-SUPPORTED_LOGS = frozenset({"codex", "claude"})
+SUPPORTED_LOGS = frozenset({"codex", "claude", "agy"})
 
 
 def instant(value):
@@ -158,6 +159,8 @@ def locate(native, user_home):
     if provider not in SUPPORTED_LOGS:
         return None
     root = user_home / (".codex/sessions" if provider == "codex" else ".claude/projects")
+    if provider == "agy":
+        root = user_home / ".gemini" / "antigravity-cli" / "brain"
     if native["kind"] == "path":
         path = Path(native["value"])
         return path if path.resolve().is_relative_to(root.resolve()) else None
@@ -166,6 +169,19 @@ def locate(native, user_home):
         return None
     if not root.is_dir():
         return None
+    if provider == "agy":
+        candidate = root / value / ".system_generated" / "logs" / "transcript_full.jsonl"
+        current = root
+        if root.is_symlink():
+            return None
+        try:
+            for part in candidate.relative_to(root).parts:
+                current = current / part
+                if current.is_symlink():
+                    return None
+            return candidate if candidate.is_file() else None
+        except (FileNotFoundError, NotADirectoryError):
+            return None
     if provider == "claude":
         # Claude's filename is the native ID. Probe that exact filename once
         # per project; unrelated transcript counts consume no discovery budget.
@@ -276,6 +292,12 @@ def event_metrics(event, cursor):
                                                if isinstance(block, dict) and block.get("type") == "tool_result") if isinstance(content, list) else 0
         elif kind == "system" and event.get("subtype") == "compact_boundary":
             metrics["compactions"] = 1
+    elif provider == "agy" and event.get("status") == "COMPLETED":
+        source, step = event.get("source"), event.get("type")
+        if source == "USER_EXPLICIT" and step == "USER_INPUT" and isinstance(event.get("content"), str):
+            metrics["turns"] = 1
+        elif source == "MODEL" and step == "PLANNER_RESPONSE" and isinstance(event.get("content"), str):
+            metrics["assistant_bytes"] = size(event["content"])
     return metrics
 
 
@@ -341,7 +363,7 @@ def read_log(path, cursor, *, now, since, budget=LOG_CHUNK):
                 event = json.loads(raw)
                 if not isinstance(event, dict):
                     raise ValueError("invalid record")
-                at = instant(event.get("timestamp"))
+                at = instant(event.get("created_at") if cursor["provider"] == "agy" else event.get("timestamp"))
                 ceiling = time.time() if now is None else now
                 if at is not None and not 0 <= at <= ceiling:
                     gaps.append("native_log_timestamp_outside_collection_clock")

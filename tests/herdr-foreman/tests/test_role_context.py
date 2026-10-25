@@ -126,6 +126,30 @@ class RoleContextTest(unittest.TestCase):
         self.assertNotIn("Herdr Worker Context", held["context"])
         self.assertEqual(self.files(), before)
 
+    def test_antigravity_camel_case_hook_selects_only_the_matching_worker_workspace(self):
+        session = "11111111-1111-4111-8111-111111111111"
+        worker = {"source": "herdr:agy", "agent": "agy", "kind": "id", "value": session}
+        supervision.enroll(self.owner.path, {"id": "agy-worker", "agent": "agy-live", "task": "one",
+            "report": str(self.owner.root / "agy-report.md"), "pane_id": "agy-pane",
+            "native_session": worker}, fixture.AT)
+        cwd = str(Path.cwd().resolve())
+        client = SimpleNamespace(context=HerdrCommandContext("fixture-herdr"),
+            pane_get=lambda pane: {"pane_id": pane, "cwd": cwd, "agent_session": worker})
+        environment = {"HERDR_ENV": "fixture-only", "HERDR_PANE_ID": "agy-pane",
+                       "FOREMAN_CONTEXT_STATE": str(self.owner.path),
+                       "HERDR_HOOK_ADAPTER": "antigravity"}
+        payload = {"conversationId": session, "transcriptPath": str(self.owner.root / "transcript.jsonl"),
+                   "workspacePaths": [cwd]}
+        reader = partial(role_context.select, client=client, binding_root=self.bindings)
+        result = session_start_hook.collect(self.skill, environment, payload, context_reader=reader)
+        assert result is not None
+        self.assertIn("Herdr Worker Context", result["injectSteps"][0]["systemMessage"]["systemMessage"])
+        for changed in ({"conversationId": "22222222-2222-4222-8222-222222222222"},
+                        {"workspacePaths": ["/another/workspace"]},
+                        {"workspacePaths": [cwd, cwd]}):
+            with self.subTest(changed=changed):
+                self.assertIsNone(session_start_hook.collect(
+                    self.skill, environment, {**payload, **changed}, context_reader=reader))
     def test_operator_hold_selects_recovery_and_is_not_cleared(self):
         pause = self.owner.root / "pause.md"
         pause.write_text("Private fixture operator hold.")

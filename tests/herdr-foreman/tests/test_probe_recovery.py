@@ -276,7 +276,8 @@ class ProbeRecoveryTest(unittest.TestCase):
                 elif change in {"pane", "kind", "name"}:
                     live[{"pane": "pane_id", "kind": "agent", "name": "name"}[change]] = "replacement"
                 elif change == "tier":
-                    live["argv"] = ["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-6-astra", "-c", "model_reasoning_effort=high"]
+                    live["argv"] = ["codex", "--dangerously-bypass-approvals-and-sandbox", "--no-daemon",
+                                    "-m", "gpt-6-astra", "-c", "model_reasoning_effort=high"]
                 elif change in {"working", "blocked"}:
                     live["agent_status"] = change
                 elif change == "draft":

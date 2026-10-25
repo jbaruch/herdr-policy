@@ -87,6 +87,8 @@ print(json.dumps({"result": {"agent": {"name": args[2], "agent": kind,
                 self.assertEqual(json.loads(result.stdout)["effort"], effort)
                 expected = {"claude": "--dangerously-skip-permissions", "codex": "--dangerously-bypass-approvals-and-sandbox", "grok": "--always-approve"}[kind]
                 self.assertIn(expected, json.loads(result.stdout)["verified"]["argv"])
+                if kind == "codex":
+                    self.assertIn("--no-daemon", json.loads(result.stdout)["verified"]["argv"])
 
     def test_judge_restrictive_launch_options_refuse_before_transport(self):
         result = self.run_launcher(launch_args=["--permission-mode", "plan"])

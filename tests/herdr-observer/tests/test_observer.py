@@ -673,6 +673,29 @@ class ObserverTest(unittest.TestCase):
         self.assertNotIn("tool_calls", second)
         self.assertEqual(second["input_tokens"], 0)
 
+    def test_agy_log_locator_and_metrics_keep_unavailable_telemetry_unknown(self):
+        session = "11111111-1111-4111-8111-111111111111"
+        home = self.root / "agy-home"
+        path = home / ".gemini/antigravity-cli/brain" / session / ".system_generated/logs/transcript_full.jsonl"
+        path.parent.mkdir(parents=True)
+        events = [
+            {"step_index": 1, "source": "USER_EXPLICIT", "type": "USER_INPUT",
+             "status": "COMPLETED", "created_at": stamp(self.now), "content": "prompt"},
+            {"step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE",
+             "status": "COMPLETED", "created_at": stamp(self.now + 1), "content": "answer"},
+        ]
+        path.write_text("".join(json.dumps(event) + "\n" for event in events))
+        who = {"source": "herdr:agy", "agent": "agy", "kind": "id", "value": session}
+        self.assertEqual(sources.locate(who, home), path)
+        cursor = {"provider": "agy"}
+        batches, gaps, _ = sources.read_log(path, cursor, now=self.now + 10, since=self.now)
+        self.assertEqual(gaps, [])
+        self.assertEqual(batches[0]["metrics"], {"turns": 1})
+        self.assertEqual(batches[1]["metrics"], {"assistant_bytes": len(b"answer")})
+        self.assertNotIn("model", cursor)
+        self.assertNotIn("effort", cursor)
+        self.assertIsNone(cursor["usage"])
+
     def test_quota_observations_keep_reuse_time_and_reset_cycle_instead_of_inventing_usage(self):
         self.tick()
         self.tick(self.now + 60)

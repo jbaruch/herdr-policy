@@ -64,6 +64,10 @@ class RolePackagesTest(unittest.TestCase):
         for adapter in ("claude-code", "codex"):
             command = manifest["nativeHooks"][adapter]["SessionStart"][0]["hooks"][0]["command"]
             self.assertEqual(command, 'bash "${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh" session-start '+adapter)
+        antigravity = manifest["nativeHooks"]["antigravity"]
+        self.assertEqual(set(antigravity), {"SessionStart"})
+        self.assertEqual(antigravity["SessionStart"][0]["hooks"][0]["command"],
+                         'bash "${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh" session-start antigravity')
         self.assertEqual(manifest["hooks"]["SessionStart"][0]["hooks"][0]["args"],
                          ["${TESSL_PLUGIN_DIR}/skills/herdr-foreman/native-hook.sh", "session-start", "portable"])
         for adapter in ("codex", "claude-code", "cursor", "grok", "portable"):
@@ -75,6 +79,11 @@ class RolePackagesTest(unittest.TestCase):
                 CHECK.command("/bin/bash", str(skill / "native-hook.sh"), "session-start", adapter,
                               env={**self.environment, "PATH": str(consumer)}, cwd=consumer,
                               input_text="not even JSON", check_behavior=True, quiet=True)
+        consumer = self.root / "antigravity"
+        consumer.mkdir()
+        CHECK.command("/bin/bash", str(skill / "native-hook.sh"), "session-start", "antigravity",
+                      env={**self.environment, "PATH": str(consumer)}, cwd=consumer,
+                      input_text="not even JSON", check_behavior=True, quiet=True)
         self.assertFalse(any(path.name == "__pycache__" for path in package.rglob("*")))
         self.assertFalse((package / "tests").exists())
 

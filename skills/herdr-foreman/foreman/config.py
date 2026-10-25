@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .errors import ConfigError, ForemanError
 from .herdr import SLASH_DELIVERIES, SLASH_DELIVERY_PASTE
-from .tiers import TOP_MODELS, parse_launch_args, parse_tiers
+from .tiers import parse_launch_args, parse_tiers
 from .tier_routing import parse as parse_tier_routing
 from .workflow_capacity import parse_policy as parse_backpressure
 
@@ -50,6 +50,10 @@ DEFAULT_COMPOSER_IGNORE_DIM = True
 #: on `/` where the first Enter only accepts the completion, so it needs 2.
 DEFAULT_SLASH_ENTER_COUNT = 1
 MAX_SLASH_ENTER_COUNT = 5
+
+# Agy has no blocking prompt-submit hook, so it may launch assignment-scoped
+# workers but cannot own reset/handoff admission as the foreman seat.
+FOREMAN_KINDS = frozenset({"claude", "codex", "grok"})
 
 
 class Agent:
@@ -660,10 +664,11 @@ def parse_foreman(payload, source="<memory>"):
                     source, field, value, FOREMAN_EXAMPLE),
                 {"source": source, "field": field, "value": value})
     agent, kind = raw["agent"], raw["kind"]
-    if kind not in TOP_MODELS:
+    if kind not in FOREMAN_KINDS:
         raise ConfigError(
-            "Config at {}: `foreman.kind` is {!r}; the seat launches through the {} adapter.".format(
-                source, kind, " or ".join(sorted(TOP_MODELS))),
+            "Config at {}: `foreman.kind` is {!r}; the seat requires a blocking prompt-submit hook and "
+            "launches only through the {} adapter. Agy is worker-only.".format(
+                source, kind, " or ".join(sorted(FOREMAN_KINDS))),
             {"source": source, "kind": kind})
     judge = parse_judge(payload, source=source)
     scoped = isinstance(version, int) and version >= 7

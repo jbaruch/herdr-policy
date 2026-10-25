@@ -16,13 +16,13 @@ from .errors import ForemanError
 
 
 INPUT_BYTES = 16_384
-ADAPTERS = {"auto", "portable", "claude-code", "codex", "cursor", "grok"}
+ADAPTERS = {"auto", "portable", "claude-code", "codex", "cursor", "grok", "antigravity"}
 FAILURE = ("Session-start status — Herdr role context could not be verified. "
            "Preserve existing task ownership, unknown sends and operator holds; "
            "restore the current hook/controller before continuing team work.")
 
 
-def _adapter(environment):
+def _adapter(environment) -> str:
     adapter = environment.get("HERDR_HOOK_ADAPTER", "auto")
     if adapter not in ADAPTERS:
         raise ValueError("unknown hook adapter")
@@ -31,17 +31,19 @@ def _adapter(environment):
     return adapter
 
 
-def _envelope(adapter, context):
+def _envelope(adapter: str, context: str) -> dict:
     if adapter == "portable":
         result = {"additionalContext": context}
     elif adapter == "cursor":
         result = {"additional_context": context}
+    elif adapter == "antigravity":
+        result = {"injectSteps": [{"systemMessage": {"systemMessage": context}}]}
     else:
         result = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}
     return context_output.enforce_budget(result, "Restore a bounded role capsule before Herdr startup.")
 
 
-def collect(skill, environment, payload=None, *, context_reader=role_context.select):
+def collect(skill, environment, payload=None, *, context_reader=role_context.select) -> dict | None:
     """Adapter formatting shares one role check; environment alone proves none."""
     if "HERDR_ENV" not in environment:
         return None

@@ -29,10 +29,28 @@ live measurement.
 Accepted round names, role mappings, model pins, effort enums, mechanical
 eligibility, risk escalation, and supported launch options are the constants
 and functions in `skills/herdr-foreman/foreman/tiers.py`. The parser rejects
-unknown rounds and unsupported adapters. Claude Code, Codex CLI, and Grok
-Build have launch adapters verified against their installed CLI help.
-Antigravity's research column remains a future adapter; the example does not
-declare an inactive agent or accept unused tier rows for it.
+unknown rounds and unsupported adapters. Claude Code, Codex CLI, Grok Build,
+and Antigravity CLI have launch adapters verified against installed CLI help.
+Antigravity is assignment-scoped and worker-only: it cannot be configured as
+`foreman.kind` because its hook surface has no blocking prompt-submit gate.
+
+The initial Agy worker kind uses only the non-Gemini pool. Configure Sonnet
+`claude-sonnet-4-6` at high for `build`, `fix`, and `release_mechanics`, medium
+for `consultation` and `test_plan`, and low for `coordination`/mechanical work.
+Judgment rows use the pinned `claude-opus-4-6-thinking` at high, with ordinary
+risk escalation to xhigh. Its generated fresh argv is exactly:
+
+```text
+agy --dangerously-skip-permissions --model <model-id> --effort <low|medium|high|xhigh|max>
+```
+
+No Agy resume, conversation, project, agent, prompt, print/stream, mode,
+sandbox, add-directory, or slash-command override is accepted. The shipped
+example intentionally has no Agy entry yet: composer, clear, usage and display
+constants require one authorized disposable native probe. Until then current
+headroom and account access are unknown, and operator config must remain
+unchanged. A later Gemini worker kind needs its own `window_group`; do not pool
+Gemini and non-Gemini capacity.
 
 ## Minimum Adequate Routing
 
@@ -126,12 +144,18 @@ together. The combined snapshot retains the older observation time. Plain
 `measure` still takes new readings, and `--agent` remains an explicit subset.
 
 `launch_args` preserves supported UI options across restarts. The launcher
-supplies each runtime's YOLO flags and refuses conflicting permission options
+supplies each runtime's required flags and refuses conflicting permission options
 before stopping a worker. The permission contract is in
-`skills/herdr-foreman/foreman/tiers.py` (`YOLO_FLAGS`, `worker_launch_args`,
+`skills/herdr-foreman/foreman/tiers.py` (`REQUIRED_LAUNCH_FLAGS`, `YOLO_FLAGS`, `worker_launch_args`,
 and `verify_worker_permissions`). Tier flags, resume options, command
 strings, and prompt operands remain forbidden in `launch_args`; change the tier
 table to change the model or effort.
+
+Codex's generated required flags include both
+`--dangerously-bypass-approvals-and-sandbox` and `--no-daemon`. Exact fresh
+argv and legacy permission proof require process-local daemon isolation; a
+retained assignment is reconciled at its normal boundary rather than cleared
+only to retrofit the flag.
 
 Legacy standing workers started manually through Herdr pass the runtime's YOLO
 options after `--`. Verify the resulting launch or foreground-process argv

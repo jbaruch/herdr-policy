@@ -5,8 +5,8 @@ override. Judgment rounds cannot lower the pinned model or effort. Cheap
 mechanical work requires the research predicate in full. Model availability
 and subscription attribution are separate: see billing.py for the latter.
 
-Only installed, documented CLI kinds have launch adapters. Antigravity's
-research column is a future adapter, not an accepted dead config row.
+Only installed, documented CLI kinds have launch adapters. Antigravity is a
+worker-only adapter: config.py deliberately keeps it out of the foreman seat.
 """
 
 import math
@@ -31,11 +31,13 @@ TOP_MODELS = {
     "claude": frozenset({"opus-5", "claude-opus-5", "claude-opus-5-5"}),
     "codex": frozenset({"gpt-5.6-sol"}),
     "grok": frozenset({"grok-4.6"}),
+    "agy": frozenset({"claude-opus-4-6-thinking"}),
 }
 EFFORTS = {
     "claude": frozenset({"low", "medium", "high", "xhigh", "max"}),
     "codex": frozenset({"low", "medium", "high", "xhigh"}),
     "grok": frozenset({"low", "medium", "high"}),
+    "agy": frozenset({"low", "medium", "high", "xhigh", "max"}),
 }
 NO_EFFORT_MODELS = frozenset({"claude-haiku-4-5", "haiku-4.5"})
 JUDGMENT_ROUNDS = frozenset({
@@ -195,13 +197,24 @@ TIER_FIELDS = frozenset({"model", "effort", "multiplier", "billing_evidence"})
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
 LAUNCH_SWITCHES = {
     "claude": frozenset({"--dangerously-skip-permissions"}),
-    "codex": frozenset({"--full-auto", "--no-alt-screen", "--dangerously-bypass-approvals-and-sandbox"}),
+    "codex": frozenset({"--full-auto", "--no-alt-screen", "--dangerously-bypass-approvals-and-sandbox", "--no-daemon"}),
     "grok": frozenset({"--always-approve", "--no-subagents", "--no-alt-screen"}),
+    "agy": frozenset({"--dangerously-skip-permissions"}),
 }
 YOLO_FLAGS = {
     "claude": "--dangerously-skip-permissions",
     "codex": "--dangerously-bypass-approvals-and-sandbox",
     "grok": "--always-approve",
+    "agy": "--dangerously-skip-permissions",
+}
+# Required generated switches are process-isolation/permission invariants, not
+# operator choices. Keep YOLO_FLAGS as the singular compatibility lookup while
+# exact launches and legacy permission proof require the complete tuple.
+REQUIRED_LAUNCH_FLAGS = {
+    "claude": ("--dangerously-skip-permissions",),
+    "codex": ("--dangerously-bypass-approvals-and-sandbox", "--no-daemon"),
+    "grok": ("--always-approve",),
+    "agy": ("--dangerously-skip-permissions",),
 }
 YOLO_OPTION_VALUES = {
     "--permission-mode": "bypassPermissions",
@@ -214,6 +227,7 @@ LAUNCH_OPTIONS = {
               "-s": {"read-only", "workspace-write", "danger-full-access"},
               "--sandbox": {"read-only", "workspace-write", "danger-full-access"}},
     "grok": {"--permission-mode": {"default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"}},
+    "agy": {},
 }
 # Resumed-process proof (#382), verified against the installed CLI help:
 # Claude Code 2.1.266 `-r, --resume [value]`; Grok 1.0.24 `-r, --resume
@@ -222,12 +236,15 @@ LAUNCH_OPTIONS = {
 # the resumed conversation. Pickers, most-recent selectors, titles or names,
 # forks, new --session-id conversations and prompt operands are refused.
 # launch_args never accept a resume form; this grammar reads live argv only.
-RESUME_OPTIONS = {"claude": frozenset({"-r", "--resume"}), "codex": frozenset(), "grok": frozenset({"-r", "--resume"})}
+RESUME_OPTIONS = {"claude": frozenset({"-r", "--resume"}), "codex": frozenset(),
+                  "grok": frozenset({"-r", "--resume"}), "agy": frozenset()}
 RESUME_SUBCOMMANDS = {"codex": "resume"}
 RESUME_REFUSALS = {
     "claude": frozenset({"-c", "--continue", "--fork-session", "--session-id", "--from-pr", "--teleport"}),
     "codex": frozenset({"--last", "--all", "--include-non-interactive"}),
     "grok": frozenset({"-c", "--continue", "--fork-session", "-s", "--session-id", "--restore-code", "-w", "--worktree"}),
+    "agy": frozenset({"-c", "--continue", "--conversation", "--project", "--new-project", "--agent",
+                      "--sandbox", "--mode", "--add-dir", "--disable-slash-commands"}),
 }
 SESSION_UUID = re.compile(r"[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}\Z")
 
@@ -285,10 +302,10 @@ def worker_launch_args(kind, args=()):
         if flag in YOLO_OPTION_VALUES:
             offset += 2
         else:
-            if flag != YOLO_FLAGS[kind]:
+            if flag not in REQUIRED_LAUNCH_FLAGS[kind]:
                 options.append(flag)
             offset += 1
-    return [YOLO_FLAGS[kind]] + options
+    return list(REQUIRED_LAUNCH_FLAGS[kind]) + options
 
 
 def _resume_session(current, value, recovery):
@@ -317,7 +334,8 @@ def verify_worker_permissions(kind, argv):
             or any(not isinstance(arg, str) for arg in argv) or PurePath(argv[0]).name != kind):
         raise HerdrError("Worker has no usable YOLO process proof. " + recovery, {})
     model_options = {"claude": {"--model", "--effort"}, "codex": {"-m", "--model", "-c", "--config"},
-                     "grok": {"-m", "--model", "--reasoning-effort", "--effort"}}[kind]
+                     "grok": {"-m", "--model", "--reasoning-effort", "--effort"},
+                     "agy": {"--model", "--effort"}}[kind]
     subcommand = RESUME_SUBCOMMANDS.get(kind)
     resuming = subcommand is not None and argv[1:2] == [subcommand]
     session = None
@@ -368,6 +386,11 @@ def verify_worker_permissions(kind, argv):
                   and (pairs.get("-s") == "danger-full-access" or pairs.get("--sandbox") == "danger-full-access"))
     if YOLO_FLAGS[kind] not in permissions and not equivalent:
         raise HerdrError("Worker launch arguments do not prove YOLO mode. " + recovery, {})
+    required_proof = REQUIRED_LAUNCH_FLAGS[kind] if kind == "codex" else REQUIRED_LAUNCH_FLAGS[kind][1:]
+    missing = [flag for flag in required_proof if flag not in permissions]
+    if missing:
+        raise HerdrError("Worker launch arguments omit required isolation flag(s) {}. {}".format(
+            ", ".join(missing), recovery), {})
 
 
 def parse_tiers(raw, kind, *, no_effort_rows=frozenset()):
@@ -375,7 +398,8 @@ def parse_tiers(raw, kind, *, no_effort_rows=frozenset()):
     if raw is None:
         return {}
     if kind not in TOP_MODELS:
-        _error("Tier launches are supported for claude, codex, and grok; {!r} has no adapter.".format(kind))
+        _error("Tier launches are supported for {}; {!r} has no adapter.".format(
+            ", ".join(sorted(TOP_MODELS)), kind))
     if not isinstance(raw, dict) or not raw:
         _error("tiers must be a non-empty object keyed by round type.")
     result = {}
@@ -505,7 +529,7 @@ def _escalated(agent, tier, chosen_round):
         if "review" not in agent.tiers:
             return None
         tier, chosen_round = dict(agent.tiers["review"]), "review"
-    if agent.kind in {"claude", "codex"} and tier["effort"] not in {"xhigh", "max"}:
+    if agent.kind in {"claude", "codex", "agy"} and tier["effort"] not in {"xhigh", "max"}:
         tier = {**tier, "effort": "xhigh"}
     return tier, chosen_round
 
@@ -661,7 +685,7 @@ def escalation_conditions(role, tier, context=None, fix_round=None):
     # `_escalated`: a non-top row moves to the `review` row's top model, and
     # only the kinds with an effort above `high` raise it.
     raise_effort = {"model": "top"}
-    if tier.get("kind") in {"claude", "codex"}:
+    if tier.get("kind") in {"claude", "codex", "agy"}:
         raise_effort["effort"] = "xhigh"
     conditions.extend([
         {"field": "risk_flags", "op": "distinct>=", "value": XHIGH_MIN_RISKS, "effect": raise_effort,
@@ -686,6 +710,8 @@ def launch_flags(kind, tier):
         return ["-m", model] + (["-c", "model_reasoning_effort=" + effort] if effort else [])
     if kind == "grok":
         return ["--model", model] + (["--reasoning-effort", effort] if effort else [])
+    if kind == "agy":
+        return ["--model", model] + (["--effort", effort] if effort else [])
     raise UsageError("No tier launch adapter for {!r}; add and verify one first.".format(kind), {})
 
 

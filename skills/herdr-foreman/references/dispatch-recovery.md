@@ -428,7 +428,7 @@ visible maintenance observation and does not refuse the restoration.
 
    ```text
    claude: --resume <uuid> --dangerously-skip-permissions
-   codex:  resume <uuid> --dangerously-bypass-approvals-and-sandbox
+   codex:  resume <uuid> --dangerously-bypass-approvals-and-sandbox --no-daemon
    grok:   --resume <uuid> --always-approve
    ```
 

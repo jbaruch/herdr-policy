@@ -40,7 +40,8 @@ SESSION = "0f5c8e1a-3d4b-4c2e-9a7f-1b2c3d4e5f60"
 OTHER_SESSION = "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a"
 NAME, KIND, PANE = "codex-review", "codex", "w7:p1"
 SHELL, STOPPED, NEW_PID, FOREIGN = 20782, 22241, 81605, 9999
-TOKENS = ["resume", SESSION, "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-6-astra", "-c", "model_reasoning_effort=ultra"]
+TOKENS = ["resume", SESSION, "--dangerously-bypass-approvals-and-sandbox", "--no-daemon",
+          "-m", "gpt-6-astra", "-c", "model_reasoning_effort=ultra"]
 CLAUDE_TOKENS = ["--resume", SESSION, "--dangerously-skip-permissions", "--model", "opus-5", "--effort", "high"]
 
 

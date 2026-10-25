@@ -5,7 +5,10 @@
 # worker's pane shows the `REPORT: ` marker line its brief ends with, carrying
 # THIS report's exact absolute path on one unquoted, unfenced row. Known native
 # decoration requires completed source-message proof; the source and display
-# contracts live in foreman/report_delivery.py. Each attempt uses a fresh
+# contracts live in foreman/report_delivery.py. Agy UUID/transcript proof is
+# supported, but its display decoration remains unconfirmed until the native
+# UI probe records an exact row prefix; no guessed decoration can deliver.
+# Each attempt uses a fresh
 # report path, checked at brief composition. Herdr's
 # lifecycle state alone does not decide it — a Claude Code pane reports `done`
 # between tool calls while the turn is still running, and a Grok pane reports

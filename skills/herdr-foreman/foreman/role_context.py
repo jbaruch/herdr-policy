@@ -90,18 +90,37 @@ def _binding(who, root):
     return binding
 
 
-def _payload_identities(payload, environment, cwd):
+def _payload_identities(payload, environment, cwd, pane=None):
     if not isinstance(payload, dict):
         return []
     if "cwd" in payload and (not isinstance(payload["cwd"], str)
                              or not Path(payload["cwd"]).is_absolute()
                              or str(Path(payload["cwd"]).resolve()) != cwd):
         return []
+    workspaces = payload.get("workspacePaths")
+    if workspaces is not None:
+        if (not isinstance(workspaces, list) or len(workspaces) != 1
+                or not isinstance(workspaces[0], str) or not Path(workspaces[0]).is_absolute()
+                or str(Path(workspaces[0]).resolve()) != cwd):
+            return []
+        live_cwd = pane.get("cwd") if isinstance(pane, dict) else None
+        if live_cwd is not None and (not isinstance(live_cwd, str) or not Path(live_cwd).is_absolute()
+                                     or str(Path(live_cwd).resolve()) != cwd):
+            return []
     # Native hooks may carry an opaque ID and transcript path together. The
     # live controller chooses the binding kind; input field order cannot do so.
     identities = []
-    session = payload.get("session_id") or payload.get("conversation_id")
-    for kind, value in (("id", session), ("path", payload.get("transcript_path"))):
+    session_values = [payload.get(key) for key in ("session_id", "conversation_id", "conversationId")
+                      if payload.get(key) is not None]
+    if len(set(value for value in session_values if isinstance(value, str))) > 1:
+        return []
+    session = next((value for value in session_values if isinstance(value, str) and value), None)
+    transcript_values = [payload.get(key) for key in ("transcript_path", "transcriptPath")
+                         if payload.get(key) is not None]
+    if len(set(value for value in transcript_values if isinstance(value, str))) > 1:
+        return []
+    transcript = next((value for value in transcript_values if isinstance(value, str) and value), None)
+    for kind, value in (("id", session), ("path", transcript)):
         if (not isinstance(value, str) or not value
                 or kind == "path" and not Path(value).is_absolute()):
             continue
@@ -147,18 +166,20 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
         pane_id = environment["HERDR_PANE_ID"]
         pane = client.pane_get(pane_id)
         native = pane.get("agent_session")
+        live_incoming = _payload_identities(payload, environment, cwd, pane)
         if (pane.get("pane_id") != pane_id or not isinstance(native, dict)
                 or not isinstance(native.get("agent"), str)
-                or native.get("agent") not in report_delivery.DISPLAY_PREFIXES
+                or native.get("agent") not in report_delivery.NATIVE_ID_AGENTS
                 or native.get("source") != "herdr:" + native["agent"]
                 or native.get("kind") not in ("id", "path")
                 or not isinstance(native.get("value"), str) or not native["value"]
                 or native.get("pane_id", pane_id) != pane_id
+                or native["agent"] == "agy" and native["kind"] != "id"
                 or native["kind"] == "id" and report_delivery.native_identity(pane) is None):
             return _result("unverified", "native_identity_unverified", skill)
         who = supervision.identity(native["value"], cwd, environment["HERDR_ENV"],
                                    kind=native["kind"], pane_id=pane_id)
-        if payload is not None and who not in incoming:
+        if payload is not None and (who not in incoming or who not in live_incoming):
             return _result("unverified", "hook_session_mismatch", skill)
         binding = _binding(who, binding_root)
         if binding is not None:
@@ -215,7 +236,7 @@ def select(skill, *, client=None, state_path=None, config_path=None, payload=Non
             for member in data["members"]:
                 assignment = supervision.expected_assignment(member)
                 native = assignment["native_session"]
-                if (isinstance(native, dict) and native.get("agent") in ("claude", "codex", "grok")
+                if (isinstance(native, dict) and native.get("agent") in report_delivery.NATIVE_ID_AGENTS
                         and native.get("source") == "herdr:" + native["agent"]
                         and native.get("kind") in ("id", "path")
                         and _worker_matches(member, environment["HERDR_PANE_ID"], native)

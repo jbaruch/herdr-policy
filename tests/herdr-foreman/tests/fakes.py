@@ -73,12 +73,13 @@ class FakeRunner:
             # process-info explicitly to exercise missing or restrictive proof.
             if argv[1:4] == ["pane", "process-info", "--pane"] and argv[4] in self.observed_agents:
                 agent = self.observed_agents[argv[4]]
-                flags = {"claude": "--dangerously-skip-permissions", "codex": "--dangerously-bypass-approvals-and-sandbox",
-                         "grok": "--always-approve"}
+                flags = {"claude": ["--dangerously-skip-permissions"],
+                         "codex": ["--dangerously-bypass-approvals-and-sandbox", "--no-daemon"],
+                         "grok": ["--always-approve"]}
                 kind = agent["agent"]
                 if kind in flags:
                     return FakeCompleted(stdout=json.dumps({"result": {"process_info": {"pane_id": argv[4],
-                        "foreground_processes": [{"name": kind, "pid": 200, "argv": [kind, flags[kind]]}]}}}))
+                        "foreground_processes": [{"name": kind, "pid": 200, "argv": [kind, *flags[kind]]}]}}}))
             # Dispatch fixtures predate the marker-width gate; give them a pane
             # wide enough for any fixture path unless a test scripts the layout.
             if argv[1:4] == ["pane", "layout", "--pane"]:
