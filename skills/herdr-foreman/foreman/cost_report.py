@@ -36,6 +36,7 @@ an attributed movement is an upper bound set by recorded work, never a saving.
 
 from datetime import timezone
 
+from . import context_output
 from .chronology import timestamp
 from .errors import UsageError
 from .recovery import task_closure
@@ -216,15 +217,43 @@ def _task_report(task, store, assignments, snapshots):
     }
 
 
-def report(state, task=None):
-    """`{"schema_version", "unrecorded", "tasks": [...]}` for every task, or the one named."""
+def _known(state, task):
     store, assignments = state["recovery"], state["assignments"]
     known = sorted(set(store["tasks"]) | {row["task"] for row in assignments if row.get("task")})
     if task is not None:
         if task not in known:
             raise UsageError("Task {!r} has no registration or assignment in this state; check its identity against "
-                             "the ledger's task list.".format(task), {"task": task, "known": known})
+                             "the ledger's task list.".format(task), {"task": task, "known_count": len(known)})
         known = [task]
+    return known
+
+
+def report(state, task=None):
+    """Internal complete calculation; the CLI uses the bounded `view`."""
+    store, assignments = state["recovery"], state["assignments"]
+    known = _known(state, task)
     snapshots = [snapshot for snapshot in state.get("snapshots", []) if isinstance(snapshot, dict)]
     return {"schema_version": REPORT_SCHEMA_VERSION, "unrecorded": list(UNRECORDED),
             "tasks": [_task_report(name, store, assignments, snapshots) for name in known]}
+
+
+def view(state, task=None, *, limit=context_output.DEFAULT_LIMIT, offset=0):
+    """Page task identities before calculating, retaining coverage and unknowns."""
+    context_output.validate_page(limit, offset)
+    if task is not None and offset:
+        raise UsageError("A selected task returns its full cost record. Omit --offset, or omit --task to page through the task collection.",
+                         {"context_complete": False})
+    known = _known(state, task)
+    snapshots = [row for row in state.get("snapshots", []) if isinstance(row, dict)]
+    reports = {}
+
+    def build(effective):
+        coverage = context_output.page(known, offset, effective)
+        selected = coverage.pop("items")
+        for name in selected:
+            if name not in reports:
+                reports[name] = _task_report(name, state["recovery"], state["assignments"], snapshots)
+        return {"unrecorded": list(UNRECORDED), "coverage": coverage,
+                "tasks": [reports[name] for name in selected]}
+
+    return context_output.fit_pages(build, limit, offset)

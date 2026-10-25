@@ -2,7 +2,7 @@
 
 Read this contract when the execution plan reaches one of its steps. Execute
 only the current step and the continuation it names. Step numbers refer to
-`skills/herdr-foreman/SKILL.md`.
+`skills/herdr-foreman/references/foreman-workflow.md`.
 
 ## Step 13 — Run the Judge Round
 
@@ -24,10 +24,8 @@ The judge is read-only, so Step 7 is skipped for it. Never substitute a judge,
 lower its tier, or hand-write an assignment to bypass a refusal. Its last step
 names where to continue.
 
-A judge round is a round: once its ruling is recorded, run Step 16 and Step
-17 before continuing, whatever the ruling (`insufficient` and `blocked`
-included). Record the step the ruling named as the stow's continuation step.
-The current foreman takes Step 17's Continue Route without clearing context.
+Record the ruling and take its named continuation directly. Routine progression
+does not require another checkpoint, lesson pass or round-start reconstruction.
 
 ## Step 14 — Release the Pull Request
 
@@ -78,14 +76,16 @@ bash "$HS/foreman.sh" close-task --record <close.json>
 A task still in progress (a consultation or a fix round) is not closed; it
 continues to Step 17 open.
 
-Preserve the ledger for resume and standup. Preserve retrospective notes and link them from the ledger. Save
-current progress through the attention owner and curate the round's lessons.
+Preserve the ledger and retrospective notes for resume and standup. Record new
+outcomes or judgments once; canonical owner receipts need no duplicate narrative.
+Add a lesson only when new reusable knowledge would otherwise be lost. Routine
+continuation requires no lesson pass or extra progress entry.
 Report outstanding attention first, followed by the outcome and saved paths.
 Proceed immediately to Step 17.
 
 ## Step 17 — Checkpoint the Foreman Context
 
-Stow the handoff under the working-memory reference, with a structured gap
+For an actual context transition, stow the handoff under the working-memory reference, with a structured gap
 for anything the stow could not capture. The stow's `unresolved_work` names
 the continuation step, the step the round's outcome routes to:
 
@@ -96,13 +96,15 @@ the continuation step, the step the round's outcome routes to:
 
 Capture the active goal's objective, remaining work, status and any remaining
 budget in the stow; saving it does not complete, pause or recreate the goal.
-Handle pending supervision events and keep the foreground watch active for
+Keep the foreground watch active for
 every enrollment. Do not save a handoff hold, schedule `foreman-reset`, type
 `/clear` or end the turn merely for a round boundary. Preserve the current
 context and active goal.
 
-**Continue Route** — run Steps 1 and 2 in this context, retaining their existing
-round-start gates, then take the saved continuation step in place of Step 5.
+**Continue Route** — take the current task's next action directly. Do not replay
+Steps 1–4 or create a new stow at every round boundary. Save a concise handoff
+only for an actual context transition or new knowledge otherwise at risk; owner
+records already preserve routine dispatch, wait and delivery facts.
 When enrollments still need observation, continue Step 11's fleet
 loop while routing the next work. With only queued work, return to Step 5.
 Read `foreman-queue` from the owner rather than inferring an empty queue from
@@ -117,19 +119,32 @@ a saved handoff alone is not a live successor.
 
 **Resume Route** — the next context follows one route:
 
-1. The resume prompt's reads: the stow and its required files, supervision,
-   `foreman-queue`
-2. Explicitly set `/goal <saved objective>` in the incoming foreman's host runtime
-   under the working-memory reference's Successor Goal contract
-3. Step 1, then Step 2
-4. The stow's continuation step, in place of Step 5
+1. Retrieve the bounded current stow with `memory-show`. Read its capture,
+   unresolved work and gaps. Required-file receipts are source references for
+   targeted owner queries and selected evidence; they do not require replaying
+   raw owner files or prior reports.
+2. Verify/finish the existing reset owner's host-goal receipt under the working-memory
+   Successor Goal contract; never recreate a goal from rewritten prompt text.
+3. Run `supervision-bind`, then `supervision-status --compact --section holds`,
+   `catch-up --compact --section resets` and `supervision-drain --compact` through
+   the saved owner paths. Inspect every unresumed hold and the pending events and
+   resets relevant to the current action. Preserved enrollments need no replay of
+   every body. Historical progress and unrelated attention/queue pages are not a
+   prerequisite; task-specific gating attention is in the current load-set.
+4. Preserve operator holds. Only when existing authority permits resumption and
+   every hold condition is satisfied, use `supervision-resume --compact --hold
+   <observed-id>` with the complete inspected set. Skip resume when there are no
+   holds. An unmet condition or incomplete reconciliation prevents continuation;
+   the reset itself grants no authority to clear a hold.
+5. Take the stow's selected continuation directly. Reuse unchanged task inputs;
+   retrieve missing current facts and only the evidence needed for that decision.
+   Do not repeat Steps 1–4. Query `foreman-queue` only to select new work.
 
 `foreman-queue` lists seats only. Gating, release and closure return through
 the continuation step, never through the queue.
 
-On replacement, verify the incoming foreman's `/goal` is active and verify
-live supervision before retiring the outgoing foreman. A pasted goal objective
-alone is not proof that the runtime's goal is active.
+On replacement, verify live supervision and the owner-controlled goal handoff.
+A pasted objective alone proves no native goal or retired executor.
 
 For the daily standup, use
 `Skill(skill: "herdr-standup")`.

@@ -366,6 +366,31 @@ class TraceFlagTest(CliCase):
 
 
 class StateCommandTest(CliCase):
+    def test_migration_receipt_is_bounded_even_when_history_is_large(self):
+        history = [{"at": AT, "role": "developer", "agent": "historical-worker"} for _ in range(200)]
+        self.state.write_text(json.dumps({"schema_version": 1, "snapshots": [], "assignments": history}))
+        code, out, err = self.run_cli(self.base() + ["state", "--migrate-only"])
+        self.assertEqual(code, 0, err)
+        receipt = json.loads(out)
+        self.assertEqual((receipt["status"], receipt["owner_present"]), ("ready", True))
+        self.assertFalse(receipt["authorizes_progression"])
+        self.assertLess(len(out.encode()), 1024)
+        saved = json.loads(self.state.read_text())
+        self.assertEqual(saved["schema_version"], receipt["state_schema_version"])
+        self.assertEqual(len(saved["assignments"]), len(history))
+        before = self.state.read_bytes()
+        with patch("sys.stdout", new_callable=io.StringIO):
+            again = main(self.base() + ["state", "--migrate-only"], stdout=io.StringIO(), stderr=io.StringIO())
+        self.assertEqual(again, 0)
+        self.assertEqual(self.state.read_bytes(), before)
+
+    def test_migration_receipt_preserves_unsupported_original(self):
+        original = '{"schema_version": 999}'
+        self.state.write_text(original)
+        code, out, _err = self.run_cli(self.base() + ["state", "--migrate-only"])
+        self.assertEqual((code, out), (1, ""))
+        self.assertEqual(self.state.read_text(), original)
+
     def test_prints_a_fresh_document_when_no_state_exists(self):
         code, out, err = self.run_cli(self.base() + ["state"])
         self.assertEqual(code, 0)
@@ -389,13 +414,14 @@ class StateCommandTest(CliCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["assignments"][0]["agent"], "grok")
 
-    def test_routes_state_warnings_to_the_cli_stderr(self):
+    def test_corrupt_state_warns_and_refuses_instead_of_returning_empty_context(self):
         self.state.write_text('{"schema_version": 2, broken', encoding="utf-8")
+        original = self.state.read_bytes()
         code, out, err = self.run_cli(self.base() + ["state"])
-        self.assertEqual(code, 0)
-        self.assertEqual(json.loads(out)["snapshots"], [])
+        self.assertEqual((code, out), (1, ""))
         self.assertIn("foreman: state file", err)
         self.assertIn(str(self.state), err)
+        self.assertEqual(self.state.read_bytes(), original)
 
 
 class PlanCommandTest(CliCase):

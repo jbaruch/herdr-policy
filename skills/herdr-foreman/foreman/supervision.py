@@ -1,7 +1,7 @@
 """Durable foreman-owned fleet observations, acknowledgements, and stop bindings.
 
-Documents and native bindings are schema 1; attested remote bindings are a
-distinct schema-2 record type. The canonical selected state owns an adjacent
+Documents and native bindings are schema 1; attested remote bindings and current
+task-executor watcher rows have distinct schema-2 record types. The canonical selected state owns an adjacent
 `.supervision.json`; exact native foreman identities discover it through one
 hashed binding under the default state directory. Reads never migrate or write.
 Unknown/corrupt files are preserved and mutations refuse them. Transactions use
@@ -14,6 +14,7 @@ Resolving enrollment ends observation only and grants no task completion.
 
 import hashlib
 import json
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -110,7 +111,9 @@ def load(state_path):
                 or data.get("state_path") != str(canonical(state_path))):
             raise ValueError("document identity or schema differs")
         for key in ("members", "events", "acknowledgements", "holds", "watchers"):
-            if not isinstance(data.get(key), list) or any(not isinstance(row, dict) or row.get("schema_version") != 1 for row in data[key]):
+            versions = (1, 2) if key == "watchers" else (1,)
+            if not isinstance(data.get(key), list) or any(not isinstance(row, dict) or type(row.get("schema_version")) is not int
+                                                        or row["schema_version"] not in versions for row in data[key]):
                 raise ValueError("invalid {} rows".format(key))
         if data.get("binding") is not None and (not isinstance(data["binding"], dict) or data["binding"].get("schema_version") not in (1, 2)):
             raise ValueError("invalid binding")
@@ -186,6 +189,10 @@ def load(state_path):
                 text(disposition["outcome"], "disposition outcome")
                 validate_receipts(disposition["evidence"])
         for row in data["watchers"]:
+            if row["schema_version"] == 2:
+                from .progression_runtime import validate
+                validate(row)
+                continue
             if row["status"] not in ("running", "stopped") or not isinstance(row["process"], dict):
                 raise ValueError("invalid watcher")
             timestamp(row["heartbeat"])
@@ -218,6 +225,18 @@ def transaction(state_path, mutate):
         result = mutate(data)
         save_state(path, data)
         return result
+
+
+@contextmanager
+def effect_boundary(state_path):
+    """Serialize a live authority check and transport invocation with hold/bind."""
+    with state_lock(store_path(state_path)):
+        data = load(state_path)
+        if data["binding"] is None:
+            raise StateError("Restore the current bound supervision owner before invoking worker transport.", {})
+        # No owner snapshot is written: enrollment transactions happen outside
+        # this boundary, and transport cannot overwrite a concurrent observation.
+        yield data
 
 
 def validate_member(record):
@@ -319,10 +338,14 @@ def acknowledge(state_path, record, at):
     return transaction(state_path, mutate)
 
 
-def resolve(state_path, record, at):
+def resolve(state_path, record, at, *, expected_evidence=None):
+    """Retain the actual receipts; an intent may also require exact path/hash bytes."""
     if not isinstance(record, dict) or set(record) != {"id", "outcome", "evidence"}:
         raise UsageError("Resolution requires enrollment id, foreman outcome, and saved evidence paths.", {})
     result = {"schema_version": 1, "at": at, "outcome": text(record["outcome"], "outcome"), "evidence": evidence(record["evidence"])}
+    if expected_evidence is not None and [{key: row[key] for key in ("path", "sha256")}
+                                          for row in result["evidence"]] != expected_evidence:
+        raise UsageError("Resolution evidence differs from the original intent; preserve its changed bytes and original owner receipts.", {})
     timestamp(at)
     def mutate(data):
         member = next((row for row in data["members"] if row["id"] == record["id"]), None)
@@ -404,9 +427,20 @@ def hold(state_path, record, at):
     return transaction(state_path, mutate)
 
 
-def resume(state_path, at):
+def resume(state_path, at, *, expected_holds=None):
     timestamp(at)
+    if expected_holds is None:
+        raise UsageError("Resume requires the complete inspected hold set (--hold for each CLI hold). A context reset does not authorize clearing holds; skip resume when no hold needs resuming.",
+                         {"reason": "holds_required"})
+    if (not isinstance(expected_holds, list)
+            or not all(isinstance(value, str) and value for value in expected_holds)
+            or len(set(expected_holds)) != len(expected_holds)):
+        raise UsageError("Name each inspected unresumed hold exactly once before resuming.", {})
     def mutate(data):
+        current = {row["id"] for row in data["holds"] if row["resumed_at"] is None}
+        if set(expected_holds) != current:
+            raise UsageError("Unresumed holds changed since inspection. Read the bounded supervision status and verify every current hold's condition before resuming.",
+                             {"reason": "holds_changed", "expected_count": len(expected_holds), "current_count": len(current)})
         for row in data["holds"]:
             if row["resumed_at"] is None:
                 row["resumed_at"] = at

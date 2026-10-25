@@ -99,7 +99,7 @@ class ForemanQueueCommandTest(CliCase):
         add_assignment(state, DEV, "developer", "codex", task="busy")
         save_state(self.state, state)
         member = {"active": True, "assignment": {"agent": "codex", "task": "busy"}}
-        with patch("foreman.cli.supervision.load", return_value={"members": [member]}):
+        with patch("foreman.cli.supervision.load", return_value={"members": [member], "binding": None}):
             code, out, err = self.run_cli(self.base() + ["foreman-queue"])
         self.assertEqual(code, 0, err)
         self.assertEqual([entry["task"] for entry in json.loads(out)["queue"]], ["waiting"])
@@ -114,7 +114,11 @@ class ForemanQueueCommandTest(CliCase):
         self.out, self.err = io.StringIO(), io.StringIO()
         code, out, err = self.run_cli(self.base() + ["foreman-queue"])
         self.assertEqual(code, 0, err)
-        self.assertEqual(json.loads(out), {"schema_version": 1, "queue": []})
+        result = json.loads(out)
+        self.assertEqual(result["queue"], [])
+        self.assertEqual(result["pagination"]["total"], 0)
+        self.assertTrue(result["context_complete"])
+        self.assertFalse(result["authorizes_progression"])
 
 
 if __name__ == "__main__":

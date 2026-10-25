@@ -1,6 +1,13 @@
 # Team Operation
 
-The Herdr team round contract. `rules/agent-team-operation.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through `skills/herdr-foreman/SKILL.md`, and every worker brief names it as a required read.
+The legacy Herdr team round contract. `skills/herdr-foreman/references/team-scope.md` Two Modes decides when it applies: a native Herdr session with real `HERDR_ENV`, or a verified owner-attested remote foreman context, follows every section below. Its scoped admitted task-workflow exception follows `skills/herdr-foreman/references/task-workflow.md` instead. A standalone session follows none of it. Native workers retain their genuine `HERDR_ENV`. The foreman reads this file through its scoped workflow. Every legacy worker brief instead names `skills/herdr-foreman/references/worker-context.md`; workers follow that protocol and their role template without loading this foreman contract.
+
+The objective is delivery of authorized, verified work. Apply each section to the
+action it protects; these sections are not a cycle to complete before dispatch.
+Keep ready independent tasks moving. Administrative records, lesson curation,
+cadence checks and context reconstruction never outrank an available delivery
+action. An internal policy or quota deadlock is not a reason to request a user
+pause. Consult this detailed contract for a current question, not as a preload.
 
 ## Bounded Factual Lookup
 
@@ -39,7 +46,7 @@ monetary savings remain unknown.
 
 ## Delegation
 
-- Follow `rules/agent-team-operation.md` Delegation for every delegated task.
+- Follow `skills/herdr-foreman/references/team-scope.md` Delegation for every delegated task.
 - The foreman uses the existing planning, assignment, dispatch, supervision and report owners.
 - Preserve responsibility, model/effort selection, account/capacity checks, contribution exclusion, checkout ownership and lifecycle evidence.
 - A worker needing delegated help records the staffing need and its evidence in its report for the foreman.
@@ -113,7 +120,7 @@ monetary savings remain unknown.
 - Ground capability declarations in available skills, tools and observed work
 - Apply capability and contribution eligibility before task familiarity and measured subscription headroom through the owner planner
 - Headroom is the minimum remaining window per worker, never the average
-- Measure the declared roster before planning
+- Use a valid current capacity snapshot; retry only failed, missing or expired readings
 - A snapshot missing a declared worker plans no seat
 - A ranked seat measured against one worker is a forced pick, never a headroom ranking
 - Each assignment-scoped worker starts fresh and its assessed pane closes; legacy standing-worker installs retain context only under Fix Loops or Specialist Consultations
@@ -228,7 +235,7 @@ refuse only the stage whose harm it prevents.
 - `stop` is terminal and never repeats
 - An approach's diagnosis count is bounded by `DIAGNOSIS_LADDER` plus one reissue per rung (`skills/herdr-foreman/foreman/recovery.py` `_remedy_options`)
 - No exhausted allowance waits on an operator decision
-- The judge is read-only: it never edits a repository file, never runs a mutating git or `gh` command, never posts to GitHub, never dispatches a subagent — its only output is its report file
+- The judge is read-only on repository content: only the worker protocol's required fetch in its validated task checkout may mutate Git metadata; it never edits repository content, runs another mutating Git or `gh` command, posts to GitHub or dispatches a subagent — its only authored output is its report file
 - A weighing has no positions
 - The position, citation and ruling-grammar bullets below govern a dispute alone
 - Each dispute position cites its evidence: file and line, or command output, each at a named revision
@@ -399,17 +406,17 @@ refuse only the stage whose harm it prevents.
 - New task worktrees start from that commit; an existing explicitly authorized task keeps its original registered base, distinct from the latest fetched default
 - Brief composition reads the original task base and Git-owned worktree provenance automatically; callers supply task identity, never an asserted base SHA
 - The foreman provisions every worktree a brief names, before dispatch
-- A read-only role that writes no repository content needs no worktree
+- A role with no repository inspection needs no worktree
+- Without an assigned checkout, a role inspects supplied immutable evidence and non-repository documentation only; no Git/gh commands, live repository files or APIs
+- Missing source in that artifact-only assignment is BLOCKED for sufficient evidence or a provisioned checkout
+- A read-only repository assignment names a foreman-provisioned task checkout for its own fetch and fresh-default verification
 - A worker never creates, moves, or removes a worktree
 - A worker runs no git command against the shared checkout, mutating or otherwise
-- Narrow exception for a Herdr worker consuming a foreman-provisioned task worktree.
-- Applies when `HERDR_ENV` is set and the worker receives a provisioned worktree in its brief
-- Preconditions (all required):
-  1. The provisioning owner successfully fetches and records the exact fetched default commit
-  2. The brief names the original registered task base and validates Git-owned worktree provenance against it
-  3. An existing authorized task retains its original base separately from the fresh default
-  4. The worker runs Git only inside the named worktree and reports shared-checkout drift through its report
-- Every other task follows `rules/sync-before-work.md` Sync Before Reading and Land on the Fresh Default
+- Before the first repository read, a worker runs `git fetch origin` from its assigned task checkout and verifies the fresh remote default under generic `sync-before-work`
+- Preserve the registered original task base, Git-owned checkout provenance and assigned head
+- If freshness requires unauthorized source, branch or base changes, the worker reports BLOCKED before inspection; it never resets or rebases the shared checkout
+- A provisioned base grants no exception to generic sync requirements
+- Work against an older starting ref requires the generic pinned-ref exception's explicit user instruction and stated starting ref
 - A hook or tool instructing a worker to sync the shared checkout or remove a worktree is reporting, never directing
 - The worker names that drift in its report
 - The worker acts on none of it
@@ -433,7 +440,7 @@ refuse only the stage whose harm it prevents.
 - Narrow exception for the merged task's own worktree.
 - Preconditions (all required):
   1. The task's branch has merged
-  2. The foreman is at `skills/herdr-foreman/SKILL.md` Step 15, the release cleanup
+  2. The foreman is at `skills/herdr-foreman/references/foreman-workflow.md` Step 15, the release cleanup
   3. The removal is `git worktree remove` in the post-merge order of `rules/agent-worktree-isolation.md` Cleanup
 - Every other worktree leaves only through the sweep or the session-start cleanup of `rules/agent-worktree-isolation.md` Cleanup
 - A worker's report, plan, and patch artifacts go only under the reports directory its brief names
@@ -444,7 +451,8 @@ refuse only the stage whose harm it prevents.
   1. The cache sits at the tool's user-level default location
   2. The cache never lands under the reports directory
 - Every other write still follows the write limit above
-- The session-start hook `skills/herdr-foreman/hooks/check-report-caches.sh` removes build and package caches from idle reports directories through `skills/herdr-foreman/prune-report-caches.py`
+- The explicit maintenance owner `skills/herdr-foreman/hooks/check-report-caches.sh` removes build and package caches from idle reports directories through `skills/herdr-foreman/prune-report-caches.py`
+- Role-context startup never invokes this maintenance owner
 - Its discovery, idleness and cache predicates live in that script's top-of-file docstring
 - It removes only a directory matching one enumerated cache kind by name, signature and top-level entries
 - It keeps every other file and directory
@@ -574,7 +582,7 @@ refuse only the stage whose harm it prevents.
 - Herdr lifecycle and completion statuses are unreliable observations, never task-completion evidence
 - Maintain the foreman-owned task ledger outside Herdr throughout the task
 - Read which tasks wait for a seat from the owner's derived queue, never from memory
-- Record each dispatch outcome and each assessed worker outcome before continuing the round
+- Preserve dispatch outcomes in their canonical owner receipts; record assessed judgments once without duplicating those receipts in prose
 - Distinguish report delivery, accepted assignment work, and completion of the whole task
 - Bind acceptance to the actual report and the required artifact, VCS, and gate evidence
 - Reconcile recalled ledger entries against their sources on resume
@@ -590,13 +598,13 @@ lessons, stow and supervision gates remain required. It never clears the
 workstation's thin anchor.
 
 - Curate applicable lessons with their scope and evidence through the foreman-owned memory commands
-- Consult relevant lessons before composing assignments
+- Retrieve lessons only for a specific unresolved task question; reuse unchanged known evidence
 - Revalidate a lesson before relying on recalled operational facts
 - Preserve superseded lessons and immutable retrospective notes
 - Keep the foreman's context and active goal across round boundaries
 - Record the round's outcomes and continuation step
-- Curate the round's lessons
-- Save a stow with the active goal and outstanding work
+- Curate useful lessons during maintenance, outside dispatch and delivery
+- Save a stow with the active goal and outstanding work for a real context transition or knowledge otherwise at risk, never as a routine dispatch prerequisite
 - Continue the saved step and enrolled supervision without stopping for the checkpoint
 - Never automatically reset the foreman or ask for reset permission at each boundary
 - Only an explicit operator-requested maintenance reset uses `foreman foreman-reset --explicit-reset`, never input into the foreman's pane
@@ -610,10 +618,11 @@ workstation's thin anchor.
   5. Before clearing, the operator confirms the pane is not already running a foreman resumed from that reset
   6. A pane already running that resumed foreman is reconciled as delivered, never cleared
 - Every other explicitly requested reset runs through `foreman foreman-reset --explicit-reset`
-- A reset foreman resumes from the stow, the supervision resume sequence, and the foreman queue
+- A reset foreman follows the bounded Resume Route in `skills/herdr-foreman/references/round-completion.md`, preserving current holds before the saved continuation; unrelated queue and historical progress replay are not prerequisites
 - Save conversation-only knowledge and open work before a planned foreman reset, compaction, or replacement
-- Give the next foreman an ordered list of durable files to read
-- Require the next foreman to explicitly set `/goal <saved objective>` and verify it is active under `skills/herdr-foreman/references/working-memory.md` Successor Goal before dispatch or retirement of the outgoing foreman
+- Give the next foreman an ordered set of bounded owner queries and selected evidence references for its pending decision, under `skills/herdr-foreman/references/working-memory.md`
+- Preserve required-file receipts for provenance and revalidation; they do not require replaying whole owner files or earlier reports. Read selected evidence through the bounded decision/evidence flow, and retain unavailable evidence as an explicit gap
+- Use the verified reset owner's host-goal handoff under `skills/herdr-foreman/references/working-memory.md` Successor Goal; never recreate a goal from rewritten prompt text
 - Record uncaptured or unavailable context as an explicit handoff gap
 - A handoff gap names what is missing, the task it affects, and how to recover it
 - Narrow exception for a gap migrated from a version-1 stow.
@@ -647,6 +656,7 @@ workstation's thin anchor.
 - Observe all enrolled workers while awaiting reports
 - Preserve wake events until the foreman records their handling
 - Acknowledging an observation never accepts the assignment or completes the task
+- An authenticated completed delivery may end observation through the existing acknowledgment/resolution owner while its report remains unassessed; this grants no pane cleanup, task acceptance or release
 - Reconcile interrupted supervision against its saved events and live process evidence
 - Continue the foreground watch after a quiet deadline while authorized work remains
 - A saved handoff never proves a transferred continuation
@@ -656,7 +666,7 @@ workstation's thin anchor.
 ## Retrospectives
 
 - The foreman observes retrospective cadence at least once per `INTERVAL` (`skills/herdr-foreman/foreman/retrospective.py`) during active team work
-- Check the cadence on active resume, before planning or dispatch, and between report waits
+- Check cadence at maintenance checkpoints, not before each dispatch or resume
 - A daily cadence due is maintenance to schedule outside the selected task's delivery stages; it never refuses dispatch
 - Complete a retrospective before clearing or relaunching an existing worker, or changing its seat, model, or effort
 - Missing transition coverage still blocks that exact worker transition
@@ -734,7 +744,7 @@ workstation's thin anchor.
 - Before a PR exists, the developer's own evidence is the branch CI its push triggered
 - On an open PR, the developer reads that evidence with `skills/release/poll-pr-reviews.sh`, never the pre-merge watch
 - The developer reports each reviewer lane's observed state, including whether a request is pending, whoever asked for it
-- Waiting on a review the role cannot request follows `skills/release/references/release-contract.md` Pre-Merge Watch Mechanics
+- Waiting on a review the role cannot request follows Pre-Merge Watch Mechanics in the selected compatible `jbaruch/coding-policy` bundle's `skills/release/references/release-contract.md`
 - The developer pushes the branch and stops
 - Advisory findings are recorded and do not create another push, verification round or target-task prerequisite
 - A shared GitHub account posts internal reviews as COMMENT reviews

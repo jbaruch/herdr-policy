@@ -5,8 +5,7 @@ override. Judgment rounds cannot lower the pinned model or effort. Cheap
 mechanical work requires the research predicate in full. Model availability
 and subscription attribution are separate: see billing.py for the latter.
 
-Only installed, documented CLI kinds have launch adapters. Antigravity's
-research column is a future adapter, not an accepted dead config row.
+Only installed, documented CLI kinds have launch adapters.
 """
 
 import math
@@ -31,11 +30,15 @@ TOP_MODELS = {
     "claude": frozenset({"opus-5", "claude-opus-5", "claude-opus-5-5"}),
     "codex": frozenset({"gpt-5.6-sol"}),
     "grok": frozenset({"grok-4.6"}),
+    # Native agy models on the signed-in subscription, 2026-10-25. Review
+    # alongside the provider catalog during the normal capability refresh.
+    "agy": frozenset({"claude-opus-4-6-thinking"}),
 }
 EFFORTS = {
     "claude": frozenset({"low", "medium", "high", "xhigh", "max"}),
     "codex": frozenset({"low", "medium", "high", "xhigh"}),
     "grok": frozenset({"low", "medium", "high"}),
+    "agy": frozenset({"low", "medium", "high", "xhigh", "max"}),
 }
 NO_EFFORT_MODELS = frozenset({"claude-haiku-4-5", "haiku-4.5"})
 JUDGMENT_ROUNDS = frozenset({
@@ -197,11 +200,13 @@ LAUNCH_SWITCHES = {
     "claude": frozenset({"--dangerously-skip-permissions"}),
     "codex": frozenset({"--full-auto", "--no-alt-screen", "--dangerously-bypass-approvals-and-sandbox"}),
     "grok": frozenset({"--always-approve", "--no-subagents", "--no-alt-screen"}),
+    "agy": frozenset({"--dangerously-skip-permissions"}),
 }
 YOLO_FLAGS = {
     "claude": "--dangerously-skip-permissions",
     "codex": "--dangerously-bypass-approvals-and-sandbox",
     "grok": "--always-approve",
+    "agy": "--dangerously-skip-permissions",
 }
 YOLO_OPTION_VALUES = {
     "--permission-mode": "bypassPermissions",
@@ -214,6 +219,7 @@ LAUNCH_OPTIONS = {
               "-s": {"read-only", "workspace-write", "danger-full-access"},
               "--sandbox": {"read-only", "workspace-write", "danger-full-access"}},
     "grok": {"--permission-mode": {"default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"}},
+    "agy": {},
 }
 # Resumed-process proof (#382), verified against the installed CLI help:
 # Claude Code 2.1.266 `-r, --resume [value]`; Grok 1.0.24 `-r, --resume
@@ -222,12 +228,14 @@ LAUNCH_OPTIONS = {
 # the resumed conversation. Pickers, most-recent selectors, titles or names,
 # forks, new --session-id conversations and prompt operands are refused.
 # launch_args never accept a resume form; this grammar reads live argv only.
-RESUME_OPTIONS = {"claude": frozenset({"-r", "--resume"}), "codex": frozenset(), "grok": frozenset({"-r", "--resume"})}
+RESUME_OPTIONS = {"claude": frozenset({"-r", "--resume"}), "codex": frozenset(), "grok": frozenset({"-r", "--resume"}),
+                  "agy": frozenset({"--conversation"})}
 RESUME_SUBCOMMANDS = {"codex": "resume"}
 RESUME_REFUSALS = {
     "claude": frozenset({"-c", "--continue", "--fork-session", "--session-id", "--from-pr", "--teleport"}),
     "codex": frozenset({"--last", "--all", "--include-non-interactive"}),
     "grok": frozenset({"-c", "--continue", "--fork-session", "-s", "--session-id", "--restore-code", "-w", "--worktree"}),
+    "agy": frozenset({"-c", "--continue", "--new-project", "-i", "--prompt-interactive", "-p", "--print", "--prompt"}),
 }
 SESSION_UUID = re.compile(r"[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}\Z")
 
@@ -317,7 +325,8 @@ def verify_worker_permissions(kind, argv):
             or any(not isinstance(arg, str) for arg in argv) or PurePath(argv[0]).name != kind):
         raise HerdrError("Worker has no usable YOLO process proof. " + recovery, {})
     model_options = {"claude": {"--model", "--effort"}, "codex": {"-m", "--model", "-c", "--config"},
-                     "grok": {"-m", "--model", "--reasoning-effort", "--effort"}}[kind]
+                     "grok": {"-m", "--model", "--reasoning-effort", "--effort"},
+                     "agy": {"--model", "--effort"}}[kind]
     subcommand = RESUME_SUBCOMMANDS.get(kind)
     resuming = subcommand is not None and argv[1:2] == [subcommand]
     session = None
@@ -375,7 +384,7 @@ def parse_tiers(raw, kind, *, no_effort_rows=frozenset()):
     if raw is None:
         return {}
     if kind not in TOP_MODELS:
-        _error("Tier launches are supported for claude, codex, and grok; {!r} has no adapter.".format(kind))
+        _error("Tier launches are supported for {}; {!r} has no adapter.".format(", ".join(sorted(TOP_MODELS)), kind))
     if not isinstance(raw, dict) or not raw:
         _error("tiers must be a non-empty object keyed by round type.")
     result = {}
@@ -505,7 +514,7 @@ def _escalated(agent, tier, chosen_round):
         if "review" not in agent.tiers:
             return None
         tier, chosen_round = dict(agent.tiers["review"]), "review"
-    if agent.kind in {"claude", "codex"} and tier["effort"] not in {"xhigh", "max"}:
+    if agent.kind in {"claude", "codex", "agy"} and tier["effort"] not in {"xhigh", "max"}:
         tier = {**tier, "effort": "xhigh"}
     return tier, chosen_round
 
@@ -661,7 +670,7 @@ def escalation_conditions(role, tier, context=None, fix_round=None):
     # `_escalated`: a non-top row moves to the `review` row's top model, and
     # only the kinds with an effort above `high` raise it.
     raise_effort = {"model": "top"}
-    if tier.get("kind") in {"claude", "codex"}:
+    if tier.get("kind") in {"claude", "codex", "agy"}:
         raise_effort["effort"] = "xhigh"
     conditions.extend([
         {"field": "risk_flags", "op": "distinct>=", "value": XHIGH_MIN_RISKS, "effect": raise_effort,
@@ -680,7 +689,7 @@ def escalation_conditions(role, tier, context=None, fix_round=None):
 def launch_flags(kind, tier):
     """The documented flags, shared by dry-run and real execution."""
     model, effort = tier["model"], tier.get("effort")
-    if kind == "claude":
+    if kind in {"claude", "agy"}:
         return ["--model", model] + (["--effort", effort] if effort else [])
     if kind == "codex":
         return ["-m", model] + (["-c", "model_reasoning_effort=" + effort] if effort else [])

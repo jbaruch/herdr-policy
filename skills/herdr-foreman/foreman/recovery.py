@@ -55,11 +55,13 @@ RECOVERY_SCHEMA_VERSION = 1
 #: also carries `assignment_scoped: true`. Older stores carrying either field
 #: are unowned newer data and are refused.
 #: Version 16 owns dispatch v5's frozen configured launch/account scope and
-#: refusal v2's verified native model error. Historical scopes stay absent.
+#: refusal v2's verified native terminal error. Historical scopes stay absent.
 #: Version 17 adds durable seat-local transient launch failures. An older
 #: store cannot silently ignore these retry gates.
 #: Version 18 owns closed no-work recovery receipts and their retry bindings.
-RECOVERY_STORE_VERSION = 18
+#: Version 19 owns version-2 task records with current service authority.
+#: Historical version-1 tasks stay legacy; migration never delegates a task.
+RECOVERY_STORE_VERSION = 19
 #: Three confirmed pre-input service/preflight failures buy no further identical start.
 #: Scope binds task/role/brief/account/template/model/effort, not pane, fresh
 #: identity or report destination. Exhaustion routes to causal diagnosis,
@@ -229,6 +231,13 @@ def _refuse_unowned_legacy(store, version):
     used to be rejected with its version-1 checkpoints and diagnoses already
     upgraded in memory (#400). Returns the record names this version adds.
     """
+    tasks = store.get("tasks")
+    if not isinstance(tasks, dict):
+        raise UsageError("Older recovery requires a tasks object; restore the original owner-written store.", {})
+    if version < 19 and any(not isinstance(row, dict) or "authority" in row
+                           or row.get("schema_version") != RECOVERY_SCHEMA_VERSION
+                           for row in tasks.values()):
+        raise UsageError("Older recovery contains unowned task authority; preserve it for its current owner.", {})
     dispatches = store.get("dispatches")
     if not isinstance(dispatches, list):
         raise UsageError("Older recovery requires a dispatches array; restore the original owner-written store.", {})
@@ -312,7 +321,10 @@ def migrate_store(store):
     # Both run: `or` would skip the second whenever the first reported work,
     # leaving version-1 diagnoses for a validator that accepts only version 2.
     checkpoints = _migrate_checkpoints(store)
-    migrated = _migrate_diagnoses(store) or checkpoints
+    diagnoses = _migrate_diagnoses(store)
+    from .workflow_artifacts import migrate_deliveries
+    deliveries = migrate_deliveries(store)
+    migrated = diagnoses or checkpoints or deliveries
     if not legacy:
         return migrated
     assert added is not None
@@ -1635,7 +1647,7 @@ def record_refusal(store, data, at, provider, report, aliases=(), *, binding=Non
     if "unavailability" in payload:
         from .model_unavailability import verify_refusal
         if store["schema_version"] != RECOVERY_STORE_VERSION:
-            raise UsageError("Native model refusal needs the owner-migrated recovery store; load it before recording.", {})
+            raise UsageError("Native refusal needs the owner-migrated recovery store; load it before recording.", {})
         timestamp(at, "Native refusal")
         verify_refusal(payload["unavailability"], record, binding, provider, report)
         result.update(schema_version=2, unavailability=deepcopy(payload["unavailability"]),
@@ -2075,8 +2087,20 @@ def validate_store(store, assignments):
             if len(identifiers) != len(set(identifiers)):
                 raise UsageError("Recovery identities are duplicated; preserve the original ledger and recover it through its owner.", {})
         for key, row in store["tasks"].items():
-            if not isinstance(row, dict) or type(row.get("schema_version")) is not int or row["schema_version"] != RECOVERY_SCHEMA_VERSION or key != row.get("task"):
+            if not isinstance(row, dict) or type(row.get("schema_version")) is not int or row["schema_version"] not in (1, 2) or key != row.get("task"):
                 raise UsageError("Task metadata does not match its recorded identity.", {})
+            if row["schema_version"] == 2:
+                from .progression_owner import validate_grant
+                validate_grant(row.get("authority"))
+                if "progression" in row:
+                    from .progression_service import validate_progress
+                    validate_progress(row["progression"])
+                    if row["authority"]["mode"] != "service" or row["progression"]["generation"] != row["authority"]["generation"]:
+                        raise UsageError("Service cursor must match its current task authority generation.", {})
+            elif "authority" in row:
+                raise UsageError("Legacy task metadata cannot carry a service authority grant; restore its owning schema.", {})
+            elif "progression" in row:
+                raise UsageError("Legacy task metadata cannot carry a service cursor; restore its owning schema.", {})
             text(key, "task")
             text(row["at"], "task timestamp")
             revision(row["base_revision"], "task base")

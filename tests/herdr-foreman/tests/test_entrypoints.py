@@ -12,9 +12,10 @@ Two defects this file exists to catch, both of which shipped:
    puts tests/ on sys.path rather than the repo root, so `foreman` does not
    import. Every file failed that way while `discover` passed.
 
-The consuming repo's runner executes files as scripts, so both are invisible
-here and fatal there. Hence: assert the guard is the LAST top-level statement,
-and assert the two invocations run the same number of tests.
+The repository runner executes every file as a script. This guard separately
+compares script suite selection with library discovery. A child replaces only
+the test runner, retaining actual imports and unittest.main() selection without
+executing the entire regression suite a second time.
 """
 
 import sys as _test_sys
@@ -23,6 +24,8 @@ _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[1]))
 _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import ast
+import importlib.util
+import json
 import os as _os
 import sys as _sys
 
@@ -34,26 +37,16 @@ _ROOT = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "../../../ski
 if _ROOT not in _sys.path:
     _sys.path.insert(0, _ROOT)
 
-import os
-import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TESTS_DIR.parent
 
-#: Set in a child process so it does not spawn grandchildren. The child still
-#: runs its AST checks and still reports the same `Ran N`, because unittest
-#: counts a skipped test.
-RECURSION_ENV = "FOREMAN_ENTRYPOINT_CHILD"
-
-#: `Ran 42 tests in 0.1s` -> 42
-RAN_RE = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
-
-#: How long a single test file gets to run as a script. Bounded so a child
-#: that somehow re-spawns fails loudly instead of wedging the suite.
+#: Bound import and discovery even when a test module has broken startup.
 SCRIPT_TIMEOUT_SEC = 120
 
 
@@ -85,7 +78,7 @@ _SCRIPT_RESULTS = {}
 
 
 def script_test_count(path):
-    """Run `path` as a script and return `(test_count, exit_code)`, cached."""
+    """Inspect `path` as a script and return `(suite_count, exit_code)`."""
     key = str(path)
     if key not in _SCRIPT_RESULTS:
         _SCRIPT_RESULTS[key] = _run_script(path)
@@ -93,26 +86,28 @@ def script_test_count(path):
 
 
 def _run_script(path):
-    env = dict(os.environ)
-    env[RECURSION_ENV] = "1"
     completed = subprocess.run(
-        [sys.executable, str(path)],
+        [sys.executable, str(REPO_ROOT / "entrypoint_probe.py"), str(path)],
         cwd=str(REPO_ROOT),
-        env=env,  # without this the child re-spawns every file, recursively
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         timeout=SCRIPT_TIMEOUT_SEC,
         check=False,
         text=True,
     )
-    match = RAN_RE.search(completed.stdout or "")
-    if match is None:
+    try:
+        value = json.loads(completed.stdout)
+    except ValueError:
+        value = {}
+    if (not isinstance(value, dict) or value.get("schema_version") != 1
+            or type(value.get("tests")) is not int or value["tests"] < 0
+            or value.get("exit_code") != completed.returncode):
         raise AssertionError(
-            "`{} {}` reported no test count. Output:\n{}".format(
-                sys.executable, path.name, (completed.stdout or "")[-2000:]
+            "`{} {}` reported no suite count. Repair its script entrypoint. Diagnostics:\n{}".format(
+                sys.executable, path.name, (completed.stderr or "")[-2000:]
             )
         )
-    return int(match.group(1)), completed.returncode
+    return value["tests"], completed.returncode
 
 
 def loader_test_count(path):
@@ -169,16 +164,13 @@ class GuardPlacementTest(unittest.TestCase):
 
 
 class ScriptExecutionTest(unittest.TestCase):
-    """The empirical half: run each file both ways and compare the counts."""
-
-    def setUp(self):
-        if os.environ.get(RECURSION_ENV):
-            self.skipTest("running as a child; not spawning grandchildren")
+    """Execute each real entrypoint and compare its selected suite."""
 
     def test_each_file_runs_the_same_tests_as_a_script(self):
         for path in test_files():
             with self.subTest(file=path.name):
                 ran, _code = script_test_count(path)
+                self.assertGreater(ran, 0, "a test script must select actual cases")
                 self.assertEqual(
                     ran,
                     loader_test_count(path),
@@ -187,11 +179,40 @@ class ScriptExecutionTest(unittest.TestCase):
                     "entry-point guard is stranded".format(path.name, path.stem),
                 )
 
-    def test_each_file_passes_when_run_as_a_script(self):
+    def test_each_file_imports_and_builds_its_suite_as_a_script(self):
         for path in test_files():
             with self.subTest(file=path.name):
                 _ran, code = script_test_count(path)
-                self.assertEqual(code, 0, "{} failed as a script".format(path.name))
+                self.assertEqual(code, 0, "{} failed script discovery".format(path.name))
+
+    def test_probe_does_not_execute_test_bodies(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "test_probe_fixture.py"
+            marker = Path(scratch) / "body-ran"
+            path.write_text("import unittest\nfrom pathlib import Path\n"
+                "class A(unittest.TestCase):\n"
+                "    def test_body(self):\n"
+                "        Path({!r}).write_text('unexpected')\n".format(str(marker))
+                + 'if __name__ == "__main__":\n    unittest.main()\n')
+            self.assertEqual(script_test_count(path), (1, 0))
+            self.assertFalse(marker.exists())
+
+    def test_probe_detects_missing_script_imports(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "test_missing_import.py"
+            path.write_text("import entrypoint_probe_missing_dependency\n")
+            with self.assertRaisesRegex(AssertionError, "cannot import the script"):
+                script_test_count(path)
+
+    def test_probe_normalizes_python_311_boolean_exit_codes_and_rejects_other_payloads(self):
+        for payload, expected in ((False, 0), (True, 1), (None, 0), ("unsupported", 2)):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as scratch:
+                path = Path(scratch) / "test_boolean_exit.py"
+                path.write_text("import unittest\nclass A(unittest.TestCase):\n"
+                    "    def test_body(self):\n        pass\n"
+                    "if __name__ == '__main__':\n    unittest.main(exit=False)\n"
+                    "    raise SystemExit({!r})\n".format(payload))
+                self.assertEqual(script_test_count(path), (1, expected))
 
     def test_a_stranded_class_would_be_caught(self):
         # Prove the check has teeth: a file whose guard sits mid-body reports
@@ -213,6 +234,15 @@ class ScriptExecutionTest(unittest.TestCase):
             if isinstance(node, ast.ClassDef)
         ]
         self.assertEqual(after, ["B"])
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "test_stranded.py"
+            path.write_text(ast.unparse(stranded))
+            self.assertEqual(script_test_count(path), (1, 0))
+            spec = importlib.util.spec_from_file_location("entrypoint_stranded_fixture", path)
+            assert spec is not None and spec.loader is not None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            self.assertEqual(unittest.TestLoader().loadTestsFromModule(module).countTestCases(), 2)
 
 
 if __name__ == "__main__":

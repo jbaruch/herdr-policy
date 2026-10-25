@@ -92,6 +92,14 @@ STATE_SCHEMA_VERSION = 11
 
 CLEAR_REASONS = frozenset({"automatic", "hand", "retained", "reconciled_not_sent", "unknown"})
 
+
+def valid_context_evidence(cleared, reason):
+    """The writer and reader share one context-evidence invariant."""
+    return (isinstance(reason, str) and reason in CLEAR_REASONS
+            and (cleared is True if reason in {"automatic", "reconciled_not_sent"}
+                 else cleared is False if reason in {"hand", "retained"}
+                 else cleared is None))
+
 #: What a judge row may record. `unknown` is history alone: a row migrated from
 #: before the field, or a dispatch reconciled from a receipt written before it.
 #: A live dispatch declares its mode or is refused (#478).
@@ -164,6 +172,10 @@ def empty_state():
     return {"schema_version": STATE_SCHEMA_VERSION, "snapshots": [], "assignments": [], "recovery": empty_recovery(), "specialist_assessments": []}
 
 
+class TransactionBusy(StateError):
+    """Another live owner holds this nonblocking transaction; no state was read."""
+
+
 @contextmanager
 def state_lock(path):
     """Serialize owner transactions using a live OS lock, never a stale file flag."""
@@ -177,7 +189,7 @@ def state_lock(path):
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise StateError("Another foreman command owns this state transaction. Wait for that process; do not delete the lock or start a second dispatch.", {}) from None
+            raise TransactionBusy("Another foreman command owns this state transaction. Wait for that process; do not delete the lock or start a second dispatch.", {}) from None
         except OSError as exc:
             raise StateError("Cannot lock state {}: {}. Use a filesystem supporting process locks before dispatch.".format(path, exc), {}) from None
         yield
@@ -412,6 +424,12 @@ def _migrate_snapshot_4_to_5(snapshot):
     return snapshot
 
 
+def _migrate_snapshot_5_to_6(snapshot):
+    """Older readings have no config/transport proof and cannot be reused."""
+    snapshot.update(schema_version=6, measurement_context_sha256=None, reused_agents=[])
+    return snapshot
+
+
 #: Document migrations, keyed by the version being upgraded FROM. Each value is
 #: (version_produced, upgrade_callable). `_apply_migrations` walks the chain
 #: until it reaches STATE_SCHEMA_VERSION, so a future 1->2 is one entry.
@@ -442,11 +460,12 @@ SNAPSHOT_MIGRATIONS = {
     2: (3, _migrate_snapshot_2_to_3),
     3: (4, _migrate_snapshot_3_to_4),
     4: (5, _migrate_snapshot_4_to_5),
+    5: (6, _migrate_snapshot_5_to_6),
 }
 
 #: The snapshot version this build owns. Kept beside the migration table so
 #: the two move together; `measure.MEASURE_SCHEMA_VERSION` writes it.
-SNAPSHOT_SCHEMA_VERSION = 5
+SNAPSHOT_SCHEMA_VERSION = 6
 
 
 MIGRATIONS = {
@@ -483,7 +502,11 @@ def _version_of(payload):
     """The declared version, with an absent key reading as UNVERSIONED."""
     version = payload.get("schema_version", UNVERSIONED)
     if isinstance(version, bool) or not isinstance(version, int):
-        raise _NoUsableState("schema_version {!r} is not an integer".format(version))
+        # Owner data is private. A malformed version may contain arbitrary
+        # report text or credentials; diagnostics describe its type, not bytes.
+        raise _NoUsableState("schema_version is not an integer")
+    if abs(version) > 1_000_000:
+        raise _NoUsableState("schema_version is outside the supported integer range")
     return version
 
 
@@ -526,6 +549,7 @@ def _validate(payload, path):
     """
     from .composition import normalize_requirement
     from .engagement import migrate_assessments, validate_assessments
+    from .progression_owner import migrate_grants
 
     if not isinstance(payload, dict):
         raise _NoUsableState("the document is not a JSON object")
@@ -573,11 +597,7 @@ def _validate(payload, path):
                 raise _NoUsableState(str(exc)) from None
         cleared = record.get("cleared")
         reason = record.get("clear_reason")
-        if not isinstance(reason, str) or reason not in CLEAR_REASONS or (
-            (reason in {"automatic", "reconciled_not_sent"} and cleared is not True)
-            or (reason in {"hand", "retained"} and cleared is not False)
-            or (reason == "unknown" and cleared is not None)
-        ):
+        if not valid_context_evidence(cleared, reason):
             raise _NoUsableState("an assignment row has invalid context evidence")
         if record.get("task") is not None and (
             not isinstance(record["task"], str) or not record["task"].strip()
@@ -659,6 +679,7 @@ def _validate(payload, path):
         store = payload.setdefault("recovery", empty_recovery())
         migrated = migrate_store(store) or migrated
         validate_store(store, rows)
+        migrated = migrate_grants(store) or migrated
         migrated = migrate_assessments(payload) or migrated
         validate_assessments(payload)
     except UsageError as exc:
@@ -725,6 +746,8 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
         )
         return empty_state(), False
 
+    from . import workflow_upgrade
+    delivery_upgrade = workflow_upgrade.delivery_migration_pending(payload)
     try:
         state, migrated = _validate(payload, path)
     except _NoUsableState as exc:
@@ -734,20 +757,14 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
         )
         return empty_state(), False
 
+    if delivery_upgrade:
+        workflow_upgrade.require_compatible_services(state, path)
     if migrated and not persist_migration:
         raise StateError("This read-only preview needs an owner migration. Run `{}` with the same --state path, then retry the preview; the original file is unchanged.".format(
-            runnable.command("state")), {"path": str(path)})
+            runnable.command("state --migrate-only")), {"path": str(path)})
     if migrated:
-        try:
-            save_state(path, state)
-        except StateError as exc:
-            # The upgrade holds in memory even when the rewrite cannot land.
-            warn(
-                "state file {} migrated to schema_version {} in memory, but the "
-                "rewrite failed ({}) - the next run migrates it again.".format(
-                    path, STATE_SCHEMA_VERSION, exc
-                )
-            )
+        # Gate-bearing owner migrations must land before their result is usable.
+        save_state(path, state)
     return state, True
 
 
@@ -844,6 +861,8 @@ def add_assignment(state, at, role, agent, status=STATUS_APPLIED, *,
     which is what a slice's verdict is read back through (#434).
     """
     role = canonical_role(role)
+    if not valid_context_evidence(cleared, clear_reason):
+        raise UsageError("Assignment context evidence contradicts its clear reason; preserve the actual transition and record a canonical pair before appending history.", {})
     if not isinstance(status, str) or status not in ASSIGNMENT_STATUSES:
         raise UsageError(
             "An assignment status must be one of {}.".format(

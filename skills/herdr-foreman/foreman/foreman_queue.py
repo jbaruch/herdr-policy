@@ -23,6 +23,7 @@ omitted. Entries run oldest first by the event that opened the wait. Read-only.
 
 from datetime import timezone
 
+from . import context_output
 from .chronology import latest_assignment, timestamp
 from .tiers import SEAT_SEPARATOR, canonical_role
 from .recovery import task_closure
@@ -82,3 +83,17 @@ def waiting(store, assignments, busy_tasks):
                         "fix_round": latest[1].get("fix_round") or 0})
     entries.sort(key=lambda entry: (entry["since"], entry["task"]))
     return {"schema_version": QUEUE_SCHEMA_VERSION, "queue": entries}
+
+
+def view(store, assignments, busy_tasks, *, limit=context_output.DEFAULT_LIMIT, offset=0):
+    """A byte-bounded page; the internal decision join still sees the full queue."""
+    context_output.validate_page(limit, offset)
+    result = waiting(store, assignments, busy_tasks)
+    rows = result["queue"]
+
+    def build(effective):
+        selected = context_output.page(rows, offset, effective)
+        return {"schema_version": QUEUE_SCHEMA_VERSION, "queue": selected.pop("items"),
+                "pagination": selected, "context_complete": selected["omitted"] == 0}
+
+    return context_output.fit_pages(build, limit, offset)

@@ -30,6 +30,7 @@ Read-only. It decides nothing and writes nothing; the caller acts on the verdict
 import json
 from pathlib import Path
 
+from . import context_output
 from .errors import UsageError
 
 SCHEMA_VERSION = 1
@@ -148,6 +149,27 @@ def pending(data):
     suppressed = [row for row in result["suppressed"] if row["event"] in open_ids]
     return {"schema_version": SCHEMA_VERSION, "wake": wake, "suppressed": suppressed,
             "counts": {"pending": len(open_ids), "wake": len(wake), "suppressed": len(suppressed)}}
+
+
+def view(data, *, limit=context_output.DEFAULT_LIMIT, after=0):
+    """Page verdicts after replaying complete provenance; never acknowledge here."""
+    context_output.validate_page(limit, 0)
+    result = pending(data)
+    sequences = {row["id"]: row["seq"] for row in data["events"]}
+    rows = [(kind, row) for kind in ("wake", "suppressed") for row in result[kind]]
+    rows.sort(key=lambda item: sequences[item[1]["event"]])
+    through = len(data["events"])
+
+    def build(effective):
+        selected = context_output.sequence_page(rows, through, after, effective,
+                                                 lambda item: sequences[item[1]["event"]])
+        verdicts = selected.pop("items")
+        return {"schema_version": SCHEMA_VERSION, "counts": result["counts"], "through": through,
+                "wake": [row for kind, row in verdicts if kind == "wake"],
+                "suppressed": [row for kind, row in verdicts if kind == "suppressed"],
+                "event_page": selected, "context_complete": selected["omitted"] == 0}
+
+    return context_output.fit_pages(build, limit, 0)
 
 
 def load(path):

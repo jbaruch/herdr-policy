@@ -58,6 +58,16 @@ class HomeCase(unittest.TestCase):
 
 
 class MigrateTest(HomeCase):
+    def test_retired_context_files_move_as_opaque_bytes_without_blocking_migration(self):
+        old_state = self.legacy_home()
+        legacy = {".context.json": b"corrupt obsolete counter", ".context-presence.json": b"old receipt"}
+        for suffix, body in legacy.items():
+            Path(old_state + suffix).write_bytes(body)
+        new_state = self.state_root / "foreman" / "state.json"
+        home.migrate(self.env)
+        for suffix, body in legacy.items():
+            self.assertEqual(Path(str(new_state) + suffix).read_bytes(), body)
+
     def retrospective_record(self, old_state):
         old_home = self.state_root / "teamlead"
         draft = old_home / "draft.md"

@@ -1,8 +1,3 @@
----
-alwaysApply: true
-description: Standalone/team modes, delegation, foreman authority and runtime dialogs
----
-
 # Agent Team Operation
 
 ## Two Modes
@@ -47,6 +42,10 @@ description: Standalone/team modes, delegation, foreman authority and runtime di
 - It accepts or rejects what the crew delivers
 - In a team round the foreman dispatches the task work and never executes it itself
 - The foreman's own execution covers reading the shared checkout, this plugin's owner scripts, and the foreman-owned records those scripts write
+- Narrow exception for establishing the empty base of an explicitly authorized new repository.
+- Applies only to the owned bootstrap operation, without implementation content.
+- Preconditions are binding: read `skills/herdr-foreman/references/repository-bootstrap.md` Preconditions before relying on it.
+- Every other repository edit routes to the developer responsibility.
 - Foreman-owned records are the task ledger, retrospective notes, attention items, and working memory
 - A request whose answer is a task deliverable is dispatched, whatever its size, and whether or not the foreman already knows the answer
 - A task deliverable is a written artifact, a recommendation, an assessment, or a repository edit, other than a foreman-owned record
@@ -63,9 +62,21 @@ description: Standalone/team modes, delegation, foreman authority and runtime di
 
 ## Team Round Contract
 
-- A Herdr team round follows `skills/herdr-foreman/references/team-operation.md` in full
-- That file is a must-read before any team-round action outside Bounded Factual Lookup
+- The foreman of a legacy Herdr round follows `skills/herdr-foreman/references/team-operation.md` in full
+- Narrow exception for preparing, admitting or executing the supported schema-2 task workflow
+- Applies only under the real verified native foreman and the admission boundaries in `skills/herdr-foreman/references/task-workflow.md`
+- Preconditions are binding: read `skills/herdr-foreman/references/task-workflow.md` Ownership and current inputs before relying on it
+- Read that task-workflow contract instead of the legacy round steps and historical paperwork
+- Its compiled briefs must name the actual compatible general policy, scoped worker/report contract and complete selected release skill
+- One verified service generation owns the task; native provenance, independent verification, existing gates, operator holds and generic release requirements remain binding
+- Only a healthy implemented executor may cover its exact current obligations at Stop; a prepared chain or saved row never does
+- Unknown evidence, unsupported specialist/production work and material disputes follow the task-local exception route, without weakening their existing owners' requirements
+- Every other foreman-led round follows the full legacy contract above
+- That file is a foreman must-read before legacy team-round action outside Bounded Factual Lookup
+- In the scoped task-workflow exception, the named task-workflow file is that required read
 - Its sections bind a team round as rule content
 - The foreman loads `skills/herdr-foreman/SKILL.md`
-- Every worker brief names it as a required read
+- Every worker brief instead names `skills/herdr-foreman/references/worker-context.md` as its required scoped protocol
+- Task-workflow briefs also name `skills/herdr-foreman/references/workflow-worker.md` for the report schema
+- Workers follow their role template and current evidence; never load the foreman workflow or the full legacy contract
 - A section this rule names without a path (Team Composition, Review Before PR, Specialist Consultations, Writers and Checkouts) lives in that file

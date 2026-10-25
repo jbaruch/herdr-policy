@@ -14,7 +14,7 @@ from datetime import timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import runnable
+from . import context_output, runnable
 from .chronology import timestamp
 from .errors import StateError, UsageError
 from .state import save_state, state_lock
@@ -30,6 +30,7 @@ STOW_VERSIONS = frozenset({SCHEMA_VERSION, STOW_VERSION})
 GAP_RECOVERIES = ("reread", "ask", "accept")
 COMMANDS = frozenset({"memory-record", "memory-list", "memory-show", "memory-stow"})
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
+SOURCE_CHUNK_BYTES = 65_536
 
 
 def location(path):
@@ -76,11 +77,15 @@ def _receipt(path):
              "Memory evidence and required reads must use absolute file paths; supply the durable source location.")
     try:
         resolved = Path(path).resolve()
-        data = resolved.read_bytes()
+        digest, size = hashlib.sha256(), 0
+        with resolved.open("rb") as stream:
+            while chunk := stream.read(SOURCE_CHUNK_BYTES):
+                digest.update(chunk)
+                size += len(chunk)
     except (OSError, ValueError) as exc:
         raise UsageError("Cannot read memory source {}: {}. Restore it or capture the missing evidence as an explicit stow gap.".format(path, exc), {}) from None
     return {"schema_version": SCHEMA_VERSION, "kind": "file", "path": str(resolved),
-            "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+            "sha256": digest.hexdigest(), "size": size}
 
 
 def _source(value):
@@ -264,10 +269,13 @@ def _append(path, data, kind, at):
                      "Memory id already records different content; preserve it and use a new id.")
             _require(timestamp(at, "Retry") >= timestamp(prior["recorded_at"], "Original recording"),
                      "Memory retry precedes its original recording; supply the current UTC checkpoint.")
+            history_count = sum(old["kind"] == "lesson" and old["lesson_id"] == prior.get("lesson_id")
+                                for old in document["records"])
+            result = _write_result(path, prior, at, replayed=True, history_count=history_count)
             if migrated:
                 # The owner persists an upgrade on every write, a replay included.
                 save_state(location(path), document)
-            return _write_result(path, prior, at, replayed=True)
+            return result
         _require(not document["records"] or timestamp(at, "Recording") >= timestamp(document["records"][-1]["recorded_at"], "Previous recording"),
                  "Memory recording precedes saved history; use the current UTC checkpoint without rewriting old records.")
         row = {"schema_version": SCHEMA_VERSION if kind == "lesson" else STOW_VERSION,
@@ -288,9 +296,14 @@ def _append(path, data, kind, at):
                      "Memory revision must supersede the current lesson record id; reload `{}` and retain its history.".format(
                          runnable.command("memory-list")))
             _require(prior_lesson is not None or row["status"] == "active", "Record an active lesson before archiving it; preserve existing revision history.")
+        # Refuse an oversized new capture before committing it. Its successor
+        # must be able to retrieve every saved gap and unresolved obligation.
+        history_count = (sum(old["kind"] == "lesson" and old["lesson_id"] == row["lesson_id"]
+                             for old in document["records"]) + 1) if kind == "lesson" else 0
+        result = _write_result(path, row, at, replayed=False, history_count=history_count)
         document["records"].append(row)
         save_state(location(path), document)
-    return _write_result(path, row, at, replayed=False)
+    return result
 
 
 def record(path, data, at):
@@ -329,8 +342,17 @@ def _view(row, at):
     return result
 
 
-def _write_result(path, row, at, *, replayed):
-    return {"schema_version": SCHEMA_VERSION, "memory_path": str(location(path)), "record": _view(row, at), "replayed": replayed}
+def _current_result(path, at, record, history_count):
+    return {"schema_version": SCHEMA_VERSION, "memory_path": str(location(path)), "checked_at": at,
+            "record": record, "history": [], "history_included": False, "history_count": history_count,
+            "history_pagination": None, "context_complete": True}
+
+
+def _write_result(path, row, at, *, replayed, history_count):
+    observed = _view(row, at)
+    context_output.bounded(_current_result(path, at, observed, history_count))
+    return context_output.bounded({"schema_version": SCHEMA_VERSION, "memory_path": str(location(path)),
+                                   "record": observed, "replayed": replayed})
 
 
 def _checkpoint(document, at):
@@ -338,20 +360,32 @@ def _checkpoint(document, at):
              "Memory checkpoint precedes saved history; use the current UTC checkpoint.")
 
 
-def list_lessons(path, at, *, scopes=None, include_archived=False):
+def list_lessons(path, at, *, scopes=None, include_archived=False,
+                 limit=context_output.DEFAULT_LIMIT, offset=0):
     at = _utc(at)
+    context_output.validate_page(limit, offset)
     _require(scopes is None or _names(scopes), "Memory scopes must be distinct non-empty strings; use project, task or role identifiers.")
     document = load(path)
     _checkpoint(document, at)
     latest = {row["lesson_id"]: row for row in document["records"] if row["kind"] == "lesson"}
-    rows = [_view(row, at) for row in latest.values()
+    rows = [row for row in latest.values()
             if (include_archived or row["status"] == "active")
             and (not scopes or "*" in row["scopes"] or set(scopes) & set(row["scopes"]))]
-    return {"schema_version": SCHEMA_VERSION, "memory_path": str(location(path)), "checked_at": at, "lessons": rows}
+    observed = {row["id"]: _view(row, at) for row in rows[offset:offset + limit]}
+
+    def build(effective):
+        selected = context_output.page(rows, offset, effective)
+        lessons = [observed[row["id"]] for row in selected.pop("items")]
+        return {"schema_version": SCHEMA_VERSION, "memory_path": str(location(path)), "checked_at": at,
+                "lessons": lessons, "pagination": selected, "context_complete": selected["omitted"] == 0}
+
+    return context_output.fit_pages(build, limit, offset)
 
 
-def show(path, at, name="latest"):
+def show(path, at, name="latest", *, include_history=False, limit=context_output.DEFAULT_LIMIT, offset=0):
     at = _utc(at)
+    context_output.validate_page(limit, offset)
+    _require(include_history or offset == 0, "Use --offset with --history for a targeted lesson-history page.")
     document = load(path)
     _checkpoint(document, at)
     rows = document["records"]
@@ -359,9 +393,22 @@ def show(path, at, name="latest"):
                 else [row for row in rows if row["id"] == name])
     _require(bool(selected), "No saved memory matches; use `{}` or `{}` with the same --state path.".format(
         runnable.command("memory-list"), runnable.command("memory-show --id latest")))
-    return {"schema_version": SCHEMA_VERSION, "memory_path": str(location(path)), "checked_at": at,
-            "record": _view(selected[-1], at), "history": [row for row in rows if selected[-1]["kind"] == "lesson"
-                                                          and row["kind"] == "lesson" and row["lesson_id"] == selected[-1]["lesson_id"]]}
+    row = selected[-1]
+    # An old oversized capture remains intact, but cannot clear a foreman into
+    # a handoff its bounded reader cannot retrieve. Check before source probes.
+    history = [old for old in rows if row["kind"] == "lesson" and old["kind"] == "lesson"
+               and old["lesson_id"] == row["lesson_id"]]
+    base = context_output.bounded(_current_result(path, at, row, len(history)))
+    base["record"] = _view(row, at)
+
+    def build(effective):
+        selected_history = context_output.page(history, offset, effective) if include_history else None
+        return {**base, "history": selected_history.pop("items") if selected_history is not None else [],
+                "history_included": include_history, "history_count": len(history),
+                "history_pagination": selected_history,
+                "context_complete": selected_history is None or selected_history["omitted"] == 0}
+
+    return context_output.fit_pages(build, limit, offset)
 
 
 def register_commands(sub, common):
@@ -375,6 +422,10 @@ def register_commands(sub, common):
             parser.add_argument("--include-archived", action="store_true")
         else:
             parser.add_argument("--id", default="latest", help="Immutable record id, or latest for the latest foreman stow.")
+            parser.add_argument("--history", action="store_true", help="Include one bounded page of the selected lesson's revisions.")
+        if command in {"memory-list", "memory-show"}:
+            parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+            parser.add_argument("--offset", type=int, default=0)
 
 
 def run_command(args, state_path, now):
@@ -384,8 +435,10 @@ def run_command(args, state_path, now):
     if args.command == "memory-stow":
         return stow(state_path, _json(args.record), now)
     if args.command == "memory-list":
-        return list_lessons(state_path, now, scopes=args.scopes, include_archived=args.include_archived)
+        return list_lessons(state_path, now, scopes=args.scopes, include_archived=args.include_archived,
+                            limit=getattr(args, "limit", context_output.DEFAULT_LIMIT), offset=getattr(args, "offset", 0))
     if args.command == "memory-show":
-        return show(state_path, now, args.id)
+        return show(state_path, now, args.id, include_history=getattr(args, "history", False),
+                    limit=getattr(args, "limit", context_output.DEFAULT_LIMIT), offset=getattr(args, "offset", 0))
     raise UsageError("Unknown memory command; use one of {}.".format(", ".join(
         "`{}`".format(runnable.command(name)) for name in sorted(COMMANDS))), {})

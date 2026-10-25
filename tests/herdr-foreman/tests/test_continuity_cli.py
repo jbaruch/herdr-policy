@@ -51,7 +51,7 @@ class ContinuityCliTests(unittest.TestCase):
                 "resolution_condition": "Record the user's review outcome.",
                 "sources": [{"schema_version": 1, "kind": "task_ledger", "ref": str(self.source)}]}
 
-    def test_empty_read_creates_no_files_even_with_unreadable_dispatch_content(self):
+    def test_empty_read_writes_nothing_with_unreadable_dispatch_content(self):
         self.state.write_text("not valid dispatch JSON", encoding="utf-8")
         before = {str(path): path.read_bytes() for path in self.root.iterdir()}
         for command in ("memory-list", "memory-show", "catch-up", "attention-list"):

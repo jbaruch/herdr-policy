@@ -11,7 +11,8 @@ Claude's complete matching native long-paste frame is removed before exact
 input comparison; mismatched frames and extra inner content remain refused.
 
 The input envelope is a locator, not authority. The claimed deliverer first
-saves its original foreground pins in the reset owner's schema-3 row. The
+saves its original foreground pins in the reset owner's current row before
+the first clear keystroke, so clear/settle failures retain recovery proof. The
 hook first reads and verifies an existing candidate without creating a lock;
 the locked read repeats that proof. It verifies the row, its live child, the
 unchanged stow and complete prompt,
@@ -19,6 +20,45 @@ and the native payload's new session. It consumes the old supervision binding
 under its owner lock, preserves members/events/holds, and saves acceptance on
 the reset row. Replay cannot consume the original binding twice. The deliverer
 requires that acceptance and the matching new binding before reporting success.
+For Codex, input admission also requires source retirement through the host-goal receipt owned by
+`skills/herdr-foreman/foreman/host_goals.py` (`prepare`, `transfer`). That module
+defines supported host control, ordering, recovery phases and budget accounting;
+the record shape is in `skills/herdr-foreman/state-schema.md` Foreman Reset Record.
+An unavailable existing Codex daemon refuses scheduling before pane input.
+The transfer never starts another app-server or changes the user's goal status
+to represent executor retirement. Native Claude/Grok retain their session reset
+without creating an external host goal; external schedulers need their own
+supported integration before a reset can claim that goal's handoff.
+The input hook creates no successor goal: it retires the source, commits the
+incoming binding/acceptance, and admits the saved continuation. That continuation
+reads its scope and holds, then uses `foreman-reset-reconcile --outcome delivered`
+to restore the original lifecycle. A blocked hook can never activate automatic
+target work. Goal activation and its recovery therefore happen after the
+continuation instructions have reached the model, without a synthetic pause.
+Reconciliation requires matching durable native admission and verifies the live
+Herdr pane/session under the existing binding boundary before goal RPCs. An
+operator's delivery assertion alone cannot activate an unadmitted target.
+After an interrupted, unadmitted Codex input, the existing saved recovery prompt
+is guarded too. Inspect its host-goal target and current supervision binding.
+With no journaled target and supervision still on the source, the operator
+clears the same pinned runtime before pasting. Once a target is journaled or
+supervision has rebound, paste into that same incoming session without clearing
+or restarting it. Restore an idle, unblocked pane first.
+Its hook verifies the saved input, foreground and binding,
+then records admission once; the admitted continuation finishes reconciliation.
+No automated input is repeated and no new recovery record is added.
+The existing daemon's `appServerVersion` must match `SUPPORTED_CODEX_VERSIONS`
+in `skills/herdr-foreman/foreman/codex_goals.py`, checked at discovery and each
+connection to the saved socket. An unknown version or changed daemon refuses
+before goal RPCs. Renew the supported set with the installed app-server JSON
+schema, existing protocol/handoff regressions and an owned paused-goal smoke;
+never start, upgrade or restart a daemon as reset recovery.
+The host protocol's transaction limits are owned by that module's docstring.
+The Herdr supervision lock serializes its handoff owners, and the transfer
+rechecks the live goal after its last journal write, immediately before clear.
+It refuses observed changes. Concurrent edits by an unrelated host client are
+outside that API's transaction guarantees; this handshake claims no atomicity
+against such clients.
 Only a verified input receives native `additionalContext` authenticating the
 planned continuation. It preserves the saved user scope, questions and holds;
 it grants no new task authority. This distinguishes a proved machine handoff
@@ -65,14 +105,34 @@ For each supported runtime:
   only the claimed child may deliver. Claimed/uncertain input never retries.
 - Replay the exact continuation: the hook blocks it and preserves the current
 binding. Verify changed stows and replacement process identities refuse too.
+- In an owned Codex fixture, activate a bounded goal and perform the reset.
+  Read both thread goals and the selected `foreman-reset-status` receipt. The
+  outgoing goal must be absent, the successor must retain the objective and
+  remaining budget, and only it may continue after the outgoing turn ends.
+  Include an outgoing continuation already running at handoff: its exact turn
+  must be interrupted and its final usage retained before successor admission.
+  Repeat the reset after spending part of the successor budget; carried usage
+  must accumulate without replenishing that budget. Repeat with no token cap.
+  Lose a host mutation response in the deterministic protocol fixture, restore
+  access and reconcile; no additional goal or native continuation may be sent.
 - Close only the owned fixture surfaces and stop only its named test server.
 
 Binding transfer and receipt acceptance are separate atomic owner writes.
 A failed receipt commit admits no model input and leaves no delivery proof;
 replay refuses the consumed original binding. Preserve both records, restore
 storage, and use the saved owner recovery route; never retry uncertain input.
+For a pending Codex goal handoff, `foreman-reset-reconcile --outcome delivered`
+finishes that handoff against the already bound incoming session. It may finish
+an admitted goal while the deliverer is still saving its native delivery result;
+it leaves that result for the deliverer. A
+missing or changed incoming owner refuses without replacing it. Continue from
+the verified receipt through the ordinary saved resume prompt, without another
+clear or guarded-input replay. A legacy receipt without a host snapshot proves
+no goal transfer; preserve those goals for explicit owner recovery.
 
 Development unit and subprocess coverage lives in this repository's source checkout at
 `tests/herdr-foreman/tests/test_reset_input_hook.py` and
 `tests/herdr-foreman/tests/test_foreman_reset.py`; the full repository runner discovers both.
+Host transfer and real Unix WebSocket protocol tests live beside them in
+`test_host_goals.py` and `test_codex_goals.py`.
 Native validation supplements those deterministic tests, never replaces them.

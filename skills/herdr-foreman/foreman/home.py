@@ -12,8 +12,10 @@ make this more than a directory move:
 - Owner stores carry a `state_path` identity field that must equal the
   canonical state path, or the store refuses to load. `migrate` rewrites
   every `state_path` field holding the old canonical path to the new one. A
-  pending retrospective journal's derived ancestry digest is rebased with
-  that identity; no record shape or version changes
+  pending retrospective journal's derived ancestry digest is rebased with that identity; no record
+  shape or version changes
+- Retired context counters and presence receipts move as opaque files; they
+  no longer gate reads or require identity rewriting
 - Records also quote old absolute paths as history: stow required reads,
   retrospective notes, attention evidence. Rewriting history is forbidden, so
   the old home is left as a symlink to the new one and every quoted path
@@ -175,7 +177,7 @@ def _held_locks(directory):
 
 
 def _rewrite_identity(value, old, new):
-    """Replace `state_path` fields equal to `old`; return (value, count)."""
+    """Rebind named state-path identities and hashes; return (value, count)."""
     if isinstance(value, dict):
         count = 0
         for key, item in value.items():
@@ -260,6 +262,8 @@ def _rebase_retrospective_pending(path, document, old_state, new_state):
 def _rewrite_home(home, old_state, new_state):
     rewritten = []
     for path in sorted(home.rglob("*.json")):
+        if path.name.endswith((".context.json", ".context-presence.json")):
+            continue  # Retired read counters move with the home, uninterpreted.
         if path.is_symlink() or not path.is_file():
             continue
         try:

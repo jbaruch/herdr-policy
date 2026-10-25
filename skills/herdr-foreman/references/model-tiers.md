@@ -29,10 +29,11 @@ live measurement.
 Accepted round names, role mappings, model pins, effort enums, mechanical
 eligibility, risk escalation, and supported launch options are the constants
 and functions in `skills/herdr-foreman/foreman/tiers.py`. The parser rejects
-unknown rounds and unsupported adapters. Claude Code, Codex CLI, and Grok
-Build have launch adapters verified against their installed CLI help.
-Antigravity's research column remains a future adapter; the example does not
-declare an inactive agent or accept unused tier rows for it.
+unknown rounds and unsupported adapters. Claude Code, Codex CLI, Grok Build
+and native Antigravity CLI (`agy`) have launch adapters verified against their
+installed CLI help. Antigravity setup and subscription boundaries are in
+`skills/herdr-foreman/references/antigravity.md`; it supplies workers while the
+existing supported foreman retains coordination/reset ownership.
 
 ## Minimum Adequate Routing
 
@@ -109,6 +110,22 @@ authorization and permitted actions before dispatch. Worker permission prompts
 are not a second assignment gate; the brief's role, path, and authority limits
 still apply in YOLO mode.
 
+Fresh owned panes wait through startup utilities without treating them as the
+requested agent. After one admitted native start, the owner observes the same
+root until the requested executable and exact flags are stable; a real mismatch
+refuses. Existing panes retain their occupancy checks. Poll bounds and evidence
+fields are owned by `skills/herdr-foreman/foreman/launch.py`, `skills/herdr-foreman/foreman/lifecycle.py` and `skills/herdr-foreman/state-schema.md`.
+The host's start result acknowledges queue admission, so this readiness check
+belongs in the policy before it sends usage or assignment input.
+
+After resolving a measurement failure, use `measure --retry-failed`. It measures
+failed, missing, skipped or expired profiles and reuses valid successful windows
+from the latest snapshot. No additional cache file is written. Reuse requires
+unchanged profiles/account windows and transport context within the existing
+capacity freshness bound in `skills/herdr-foreman/foreman/tier_routing.py`; shared windows retry
+together. The combined snapshot retains the older observation time. Plain
+`measure` still takes new readings, and `--agent` remains an explicit subset.
+
 `launch_args` preserves supported UI options across restarts. The launcher
 supplies each runtime's YOLO flags and refuses conflicting permission options
 before stopping a worker. The permission contract is in
@@ -130,7 +147,7 @@ under the comment block above them. Tiered proof (`verify_argv`) stays exact
 and accepts no resume form.
 Do not clear a retained worker to repair a permission mismatch. Use the normal
 fresh-dispatch boundary once the current assignment is resolved, or the
-same-session restoration in `references/dispatch-recovery.md` when the
+same-session restoration in `skills/herdr-foreman/references/dispatch-recovery.md` when the
 operator expressly requires YOLO for that retained developer.
 
 Recheck model availability and CLI flag spellings when upgrading a worker's
@@ -217,7 +234,7 @@ never seats the foreman on a worker: `plan --roles foreman` is refused.
 
 Start the foreman from any shell, naming an empty Herdr shell pane. This is a
 synopsis; the runnable command, through `bash` and the resolved plugin root,
-is `skills/herdr-foreman/SKILL.md` Step 2:
+is `skills/herdr-foreman/references/foreman-workflow.md` Step 2:
 
 ```text
 foreman start-foreman --pane <pane-id>
@@ -283,7 +300,7 @@ Codex `consultation` and `test_plan` rows at `medium` are a starting point, not
 a measured result; record a measurement in the capability table before
 relying on it. Config schema 4 refuses a tier table without a `consultation`
 row; copy the example's row, never synthesize one from `build`. A schema-3
-table keeps the judgment defaults it was written against (`state-schema.md`).
+table keeps the judgment defaults it was written against (`skills/herdr-foreman/state-schema.md`).
 
 `--round-context FILE` reads a JSON object keyed by assigned role. A
 mechanical context has this shape:
@@ -309,7 +326,7 @@ Which shapes qualify is the decision contract of
 
 The licence holds only if the comparison runs. Before a mechanical round is
 accepted, `verify-oracle` compares its whole result against the oracle the plan
-declared (SKILL.md Step 12). The result is the pushed diff for a `patch` oracle
+declared (`skills/herdr-foreman/references/foreman-workflow.md` Step 12). The result is the pushed diff for a `patch` oracle
 and the produced output otherwise. `plan` pins each `patch` or `fixture`
 file's sha256 in the plan's `oracle_pins`; an oracle file edited after planning
 is refused rather than compared. `apply` binds the oracle and its pin into the
@@ -462,7 +479,7 @@ are `SOURCE_KINDS` and `SUPPORTING_SOURCES` in
 
 Staleness is silent — a retired entry keeps routing work with no error and no
 failing check — so the table comes due on a cadence. The round preflight
-reports it under `due`, and SKILL.md Step 2 carries the refresh commands:
+reports it under `due`, and `skills/herdr-foreman/references/foreman-workflow.md` Step 2 carries the refresh commands:
 `capability-check` (read-only, whether a refresh is due), `capability-record`
 and `capability-show`. A table never refreshed comes due as
 soon as the ledger holds any work, and a fleet that dispatched nothing never
@@ -519,7 +536,7 @@ required capabilities, the selected pair, the capability-table evidence, each
 cheaper candidate with its verdict or an unknown cost, and the escalation
 conditions. Opted-in routing also records separate launch support, account
 access, qualification and capacity, candidate refusals and overrides. The
-record shape is plan schemas 17/18 in `state-schema.md`; it
+record shape is plan schemas 17/18 in `skills/herdr-foreman/state-schema.md`; it
 explains a selection and never changes one.
 
 `cost-report` reports each task's resource use through acceptance from the
@@ -527,7 +544,7 @@ state file alone, as JSON, each quantity separately. Token counts are not in
 any owner record and read `unknown`, listed under `unrecorded`. A shared or
 concurrently used window keeps `attribution: unknown`. The report makes no
 savings claim: a tier's quota or multiplier change is never read as a cost
-reduction. The output contract is in `state-schema.md` (Writer / Reader
+reduction. The output contract is in `skills/herdr-foreman/state-schema.md` (Writer / Reader
 Contract); what each field counts is `skills/herdr-foreman/foreman/cost_report.py`.
 
 ## What stands in for a validation battery
@@ -553,4 +570,4 @@ cover what one would catch:
 The pinned judge start path keeps its own launch proof. The operator owns
 billing inputs inside config.json; these readers never write or migrate that
 file. The state owner records launch proof in assignment rows; see
-`state-schema.md` for reader behavior.
+`skills/herdr-foreman/state-schema.md` for reader behavior.

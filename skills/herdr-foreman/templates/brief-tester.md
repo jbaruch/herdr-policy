@@ -56,8 +56,9 @@ Expected range: `{{REVIEW_BASE}}..{{REVIEW_HEAD}}`.
 1. Read the package in full, then fetch the pushed branch into `{{WORKTREE}}`.
    Confirm both endpoints match the expected range and HEAD matches that
    checkout. A mismatch is BLOCKED; request a fresh package.
-2. Run every gate `CONTRIBUTING.md` names. Record the exact command and its
-   summary output.
+2. Cover every gate `CONTRIBUTING.md` names under the independent testing
+   responsibility. Record the exact command, actual result and head-bound
+   artifact for each; execute gates without usable independent evidence.
 3. Apply your acceptance patch and run it against the branch.
 4. Report each acceptance criterion as met or unmet, with the evidence.
 

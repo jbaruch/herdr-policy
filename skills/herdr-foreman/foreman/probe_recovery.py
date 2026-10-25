@@ -12,7 +12,7 @@ import re
 import shlex
 from pathlib import Path
 
-from . import runnable
+from . import report_delivery, runnable
 from .composer import ensure_ready
 from .config import assignment_worker, default_config_path
 from .errors import ConfigError, HerdrError, StateError, UsageError, owner_recovery
@@ -54,7 +54,7 @@ def load(state_path):
 
 def _valid_native(native, kind):
     return native is None or (isinstance(native, dict)
-        and native.get("source") == "herdr:" + kind and native.get("agent") == kind
+        and native.get("source") == report_delivery.NATIVE_SOURCES.get(kind) and native.get("agent") == kind
         and native.get("kind") in ("id", "path")
         and isinstance(native.get("value"), str) and bool(native["value"].strip()))
 

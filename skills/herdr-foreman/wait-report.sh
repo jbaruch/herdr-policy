@@ -75,9 +75,10 @@
 #             unchanged terminal notice directly above an empty composer at
 #             the live bottom of the same terminal session, and
 #             no report file (`found` false, `reason` terminal_provider_refusal).
-#             A supported native model/account error instead requires the
+#             A supported native availability error or content refusal requires the
 #             source/session proof in skills/herdr-foreman/foreman/model_unavailability.py and adds
-#             `unavailability` schema 1. Unknown formats remain unconfirmed.
+#             `unavailability` schema 1 (availability) or 2 (content refusal,
+#             with turn_id). Unknown formats remain unconfirmed.
 #             Save this JSON and record it with the launcher's `record-refusal`;
 #             never rephrase or synthesize the missing report. The bounded
 #             move to another provider is dispatch-recovery.md's Wait
@@ -507,7 +508,7 @@ confirmed_provider_refusal() { # <pane-id>
   REFUSAL_STATE=""; REFUSAL_PANE=""; REFUSAL_UNAVAILABILITY=null
   before="$(read_refusal_view "$1")" || return 2
   if ! terminal_refusal_on_screen "$before"; then
-    # A model/account error needs native source authority, never a matching
+    # A native terminal error needs source authority, never a matching
     # rendered sentence. The read-only helper owns its versioned contracts.
     if ! resolve_skill_dir; then return 2; fi
     result="$(printf '%s' "$before" | FOREMAN_REFUSAL_CONFIRM_SEC="$FOREMAN_REFUSAL_CONFIRM_SEC" \

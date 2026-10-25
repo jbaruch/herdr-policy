@@ -28,8 +28,11 @@ from . import runnable
 from . import __version__
 from .assign import apply as apply_assignments
 from .assign import APPLY_SCHEMA_VERSION, dry_run, freeze_decision, freeze_paths, read_frozen, native_context_session, normalize_assignments, resolve_paths, validate_context_mode, validate_fix_history
-from . import no_work_recovery, bootstrap_recovery, model_unavailability, probe_recovery, renderable
+from . import no_work_recovery, bootstrap_recovery, context_evidence, model_unavailability, probe_recovery, renderable
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
+from . import progression_owner
+from . import progression_service
+from . import config as config_owner
 from .config import FOREMAN_CONFIG_VERSION, default_config_path, load_config, load_foreman, load_judge, load_role_costs, select_agents
 from .errors import AgentBusyError, IDENTIFIER_UNAVAILABLE_KIND, IDENTIFIER_UNAVAILABLE_RECOVERY, TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND, PlanError, StateError, ForemanError, HerdrError, UsageError, owner_recovery
 from .herdr import (
@@ -54,7 +57,7 @@ from .planner import plan as build_plan
 from .planner import ASSIGNMENT_PLAN_SCHEMA_VERSION, headroom_of
 from .tiers import (COORDINATION_ROUND, FOREMAN_ROLE, JUDGMENT_ROUNDS, MissingTierError,
                     parse_launch_args, parse_tiers, select_tier, worker_launch_args)
-from . import cost_report, selection, successors, tier_routing
+from . import context_output, cost_report, github_context, measurement_retry, selection, successors, tier_routing
 from .launch import configured_running_tier, restart_worker, start_foreman, start_worker, verify_foreman, verify_running, require_empty_shell
 from .state import (
     add_assignment,
@@ -91,11 +94,26 @@ RECOVERY_HELP = {
 }
 
 
+class BoundedArgumentParser(argparse.ArgumentParser):
+    """Keep ordinary argparse behavior while refusing oversized diagnostics."""
+
+    def error(self, message):
+        try:
+            size = len((self.format_usage() + self.prog + ": error: " + message + "\n").encode("utf-8"))
+        except UnicodeError:
+            size = context_output.OUTPUT_BYTES + 1
+        if size > context_output.OUTPUT_BYTES:
+            self.exit(2, context_output.printed_json(UsageError(
+                "The argument diagnostic exceeds its context budget. Run the selected foreman command with --help and provide bounded values; no operation ran.",
+                {"reason": "context_diagnostic_budget_exceeded", "context_complete": False}).to_dict()))
+        super().error(message)
+
+
 def build_parser():
     # SUPPRESS keeps a subparser's copy of these flags from clobbering a value
     # given before the subcommand, so `foreman --state F plan` and
     # `foreman plan --state F` both work.
-    common = argparse.ArgumentParser(add_help=False)
+    common = BoundedArgumentParser(add_help=False)
     common.add_argument(
         "--config",
         metavar="FILE",
@@ -122,7 +140,7 @@ def build_parser():
         "status to stderr. Same as FOREMAN_TRACE=1.",
     )
 
-    parser = argparse.ArgumentParser(
+    parser = BoundedArgumentParser(
         prog="foreman",
         parents=[common],
         description="Load-balance coding agents running inside Herdr.",
@@ -131,6 +149,8 @@ def build_parser():
     parser.add_argument("--version", action="version", version="foreman " + __version__)
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
+    progression_owner.register_commands(sub, common)
+    progression_service.register_commands(sub, common)
 
     judge_parser = sub.add_parser("start-judge", parents=[common],
                                   help="Start the plan's judge in a shell pane and verify its launch argv.")
@@ -175,8 +195,10 @@ def build_parser():
                                      help="Read the saved capability table without contacting Herdr.")
     sub.add_parser("capability-migrate", parents=[common],
                    help="Owner upgrade of an older capability table, preserving historical evidence.")
-    sub.add_parser("supervision-gate", parents=[common],
-                   help="Which pending supervision events need the foreman. Read-only.")
+    gate_parser = sub.add_parser("supervision-gate", parents=[common],
+                               help="Page verdicts for pending supervision events. Read-only.")
+    gate_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    gate_parser.add_argument("--after", type=int, default=0)
 
     retro_list = sub.add_parser("retro-list", parents=[common], help="List saved retrospective notes without contacting Herdr.")
     retro_list.add_argument("--task")
@@ -209,7 +231,10 @@ def build_parser():
             "reported as skipped, not interrupted."
         ),
     )
-    measure_parser.add_argument(
+    measurement_scope = measure_parser.add_mutually_exclusive_group()
+    measurement_scope.add_argument("--retry-failed", action="store_true",
+        help="Retry failed, missing or expired profiles; reuse still-valid successes from the latest snapshot.")
+    measurement_scope.add_argument(
         "--agent",
         action="append",
         dest="agents",
@@ -423,7 +448,7 @@ def build_parser():
     report_parser.add_argument("--pane", required=True)
     report_parser.add_argument("--report", required=True)
     report_parser.add_argument("--lines", type=int, required=True)
-    unavailable_parser = sub.add_parser("probe-unavailable", parents=[common], help="Read-only confirmation of a terminal native model/account error, with visible rows on stdin.")
+    unavailable_parser = sub.add_parser("probe-unavailable", parents=[common], help="Read-only confirmation of a terminal native availability error or content refusal, with visible rows on stdin.")
     unavailable_parser.add_argument("--agent", required=True)
     unavailable_parser.add_argument("--pane", required=True)
     unavailable_parser.add_argument("--report", required=True)
@@ -443,7 +468,20 @@ def build_parser():
         else:
             record_parser.add_argument("--record", required=True, metavar="FILE", help="Structured evidence JSON; see dispatch-recovery.md.")
         record_parser.add_argument("--now", metavar="ISO8601")
-    sub.add_parser("status", parents=[common], help="Show implementation budgets and paused work separately from active audit workers.")
+    prepare_context = sub.add_parser("prepare-context-quarantine", parents=[common], help="Derive and validate an immutable private quarantine request through the existing bound foreman; see state-schema.md.")
+    prepare_context.add_argument("--assignment-index", type=int, required=True)
+    prepare_context.add_argument("--dispatch", required=True)
+    prepare_context.add_argument("--id", required=True)
+    prepare_context.add_argument("--authorization-source", required=True)
+    prepare_context.add_argument("--authorization-quote", required=True)
+    prepare_context.add_argument("--output", required=True)
+    prepare_context.add_argument("--now", metavar="ISO8601")
+    quarantine_parser = sub.add_parser("quarantine-context-evidence", parents=[common], help="Preserve and quarantine the exact fresh/no-clear writer contradiction through the bound native foreman; see state-schema.md.")
+    quarantine_parser.add_argument("--record", required=True, metavar="FILE")
+    quarantine_parser.add_argument("--now", metavar="ISO8601")
+    quarantine_parser.add_argument("--dry-run", action="store_true")
+    status_parser = sub.add_parser("status", parents=[common], help="Show implementation budgets and paused work within the stdout budget; select one task for a large owner file.")
+    status_parser.add_argument("--task", help="One known canonical task; leaves every other task unresolved.")
     reset_parser = sub.add_parser("foreman-reset", parents=[common], help="Schedule an explicitly requested maintenance reset, never an automatic round-boundary reset.")
     reset_parser.add_argument("--explicit-reset", action="store_true", help="Declare an existing explicit operator request for this maintenance reset; ordinary checkpoints do not use it.")
     reset_parser.add_argument("--stow", default="latest", help="Stow id the reset resumes from (default: the latest).")
@@ -456,6 +494,9 @@ def build_parser():
     reconcile_parser.add_argument("--pane", required=True)
     reconcile_parser.add_argument("--stow", required=True)
     reconcile_parser.add_argument("--outcome", required=True, choices=["delivered", "failed"])
+    reset_status = sub.add_parser("foreman-reset-status", parents=[common], help="Read one bounded reset and host-goal receipt without dumping history.")
+    reset_status.add_argument("--stow", required=True)
+    reset_status.add_argument("--pane", help="Select the exact pane when the stow appears in more than one reset.")
     close_member = sub.add_parser("close-member", parents=[common], help="Acknowledge an enrollment's pending events and resolve it, once the task ledger records its assessed outcome; an `accepted` reviewer, tester or consultation outcome needs its report's recorded contract lines.")
     close_member.add_argument("--enrollment", required=True)
     close_member.add_argument("--ledger", required=True, help="Absolute path of the task's TASK-LEDGER.md.")
@@ -464,22 +505,40 @@ def build_parser():
     check_member.add_argument("--enrollment", required=True)
     check_member.add_argument("--worktree", help="The worker's own checkout, when it has one.")
     sub.add_parser("migrate-home", parents=[common], help="Move the state and config homes from teamlead to foreman, once per machine, with every foreman stopped.")
-    sub.add_parser("foreman-queue", parents=[common], help="List open tasks waiting for their next seat, oldest first, derived from the owner records.")
+    queue_parser = sub.add_parser("foreman-queue", parents=[common], help="Page open tasks waiting for their next seat, oldest first, within a printed-byte budget.")
+    queue_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    queue_parser.add_argument("--offset", type=int, default=0)
+    readiness_parser = sub.add_parser("workflow-readiness", parents=[common],
+        help="Inspect a bounded page of native task readiness, dispatchability and named exclusions without claiming work.")
+    readiness_parser.add_argument("--task", help="Inspect one known open task instead of the current open-task page.")
+    readiness_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    readiness_parser.add_argument("--offset", type=int, default=0)
+    readiness_parser.add_argument("--now", metavar="ISO8601")
+    sub.add_parser("role-context", parents=[common],
+        help="Select a bounded Herdr role capsule from current native or attested owner evidence without changing authority.")
     cost_parser = sub.add_parser("cost-report", parents=[common],
                                  help="Report each task's resource use through acceptance from the owner records. Read-only.")
     cost_parser.add_argument("--task", help="Report this task alone.")
-    load_parser = sub.add_parser("load-set", parents=[common], help="List the durable records one foreman decision must load, derived from the owner records.")
+    cost_parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    cost_parser.add_argument("--offset", type=int, default=0)
+    github_context.register_parser(sub, common)
+    load_parser = sub.add_parser("load-set", parents=[common], help="Return bounded current decision context without replaying task history or writing read counters.")
     load_parser.add_argument("--decision", required=True, choices=load_set.DECISIONS)
     load_target = load_parser.add_mutually_exclusive_group(required=True)
     load_target.add_argument("--task", help="Task identity for plan, brief, gate and diagnose.")
     load_target.add_argument("--enrollment", help="Enrollment (dispatch) id for wake.")
+    load_parser.add_argument("--read-file", help="Read a bounded excerpt from one listed current evidence reference.")
+    load_parser.add_argument("--question", help="Specific question requiring the selected evidence excerpt.")
+    load_parser.add_argument("--offset", type=int, default=0, help="Byte offset for an explicit evidence continuation.")
 
-    sub.add_parser(
+    state_parser = sub.add_parser(
         "state",
         parents=[common],
         help="Print the state file.",
         description="Print the state file, or a fresh empty document if none exists.",
     )
+    state_parser.add_argument("--migrate-only", action="store_true",
+                              help="Commit required owner migrations and return a compact readiness receipt without history.")
     return parser
 
 
@@ -795,13 +854,13 @@ def _parse_excludes(pairs):
     return excludes
 
 
-def _load_assignments(value, document=False):
+def _load_assignments(value, document=False, contents=None):
     """`--assignments` takes inline JSON or a path to a JSON file."""
     text = value.strip()
     if not text.startswith("{"):
         path = Path(text)
         try:
-            text = path.read_text(encoding="utf-8")
+            text = contents[str(path.resolve())].decode("utf-8") if contents is not None else path.read_text(encoding="utf-8")
         except FileNotFoundError:
             raise UsageError(
                 "--assignments file {} not found - pass the path to `{}` "
@@ -1009,9 +1068,9 @@ def _load_state_for_write(path, warn, *, persist_migration=True):
     return state
 
 
-def _read_record(path):
+def _read_record(path, contents=None):
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(contents[str(Path(path).resolve())] if contents is not None else Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UsageError("Cannot read record {}: {}. Supply readable UTF-8 JSON with the documented fields.".format(path, exc), {}) from None
     if not isinstance(data, dict):
@@ -1020,17 +1079,25 @@ def _read_record(path):
 
 
 def cmd_measure(args, client=None, warn=None, trace=None):
-    agents = select_agents(load_config(_config_path(args)), args.agents)
+    roster = load_config(_config_path(args))
+    agents = select_agents(roster, args.agents)
     client = client if client is not None else _client(args, trace=trace)
+    state_path = _state_path(args)
+    state = _load_state_for_write(state_path, warn)
+    previous = latest_snapshot(state)
+    digest = measurement_retry.context_digest(roster, client)
+    at = args.now or now_iso()
+    reused = {}
+    if args.retry_failed:
+        agents, reused = measurement_retry.split(roster, previous, digest, at)
     measure_fn = lifecycle.measure_worker_kinds if agents and all(agent.assignment_scoped for agent in agents) else measure
     snapshot = measure_fn(
-        client, agents, args.now or now_iso(), marker_timeout_ms=args.marker_timeout,
+        client, agents, at, marker_timeout_ms=args.marker_timeout,
         read_lines=args.lines, warn=warn, poll_attempts=args.marker_poll_attempts,
         poll_interval_sec=args.marker_poll_interval, settle_sec=args.composer_settle,
         allow_recovery=args.allow_recovery,
         **({"state_path": _state_path(args), "config_path": _config_path(args)} if measure_fn is lifecycle.measure_worker_kinds else {}))
-    state_path = _state_path(args)
-    state = _load_state_for_write(state_path, warn)
+    snapshot = measurement_retry.combine(snapshot, reused, previous, digest)
     add_snapshot(state, snapshot)
     save_state(state_path, state)
     if not snapshot["failed_agents"]:
@@ -1038,7 +1105,7 @@ def cmd_measure(args, client=None, warn=None, trace=None):
     return snapshot, {
         "error": "measure_incomplete",
         "message": "Could not measure {} - see the `error` field on each agent "
-        "in the snapshot on stdout.".format(", ".join(snapshot["failed_agents"])),
+        "in the snapshot on stdout. After its specific recovery, run `{} --retry-failed` to keep still-valid successful readings.".format(", ".join(snapshot["failed_agents"]), runnable.command("measure")),
         "details": {"failed_agents": snapshot["failed_agents"]},
     }
 
@@ -1445,14 +1512,27 @@ def cmd_apply(args, client=None, warn=None, trace=None):
     # apply returns, so no verdict gate is recorded between the check and the
     # send (#646; foreman/report_gates.py `holding`).
     with ExitStack() as stack:
+        gates_held = False
         def hold_gates():
-            stack.enter_context(report_gates.holding(_state_path(args)))
+            nonlocal gates_held
+            if not gates_held:
+                stack.enter_context(report_gates.holding(_state_path(args)))
+                gates_held = True
+        for report in getattr(args, "service_gate_reports", ()):
+            hold_gates()
+            report_gates.require_clear(_state_path(args), report, True)
         return _apply(args, client, warn, trace, hold_gates)
 
 
 def _apply(args, client, warn, trace, hold_gates):
-    templates = load_config(_config_path(args))
-    document = _load_assignments(args.assignments, document=True)
+    pinned = getattr(args, "service_inputs", None)
+    try:
+        config_payload = json.loads(pinned[str(Path(_config_path(args)).resolve())]) if pinned is not None else None
+    except (KeyError, UnicodeError, ValueError):
+        raise UsageError("Restore the admitted UTF-8 config JSON before dispatch; no replacement configuration is inferred.", {}) from None
+    templates = (config_owner.parse_config(config_payload, source=str(_config_path(args)))
+                 if pinned is not None else load_config(_config_path(args)))
+    document = _load_assignments(args.assignments, document=True, contents=pinned)
     assignments = normalize_assignments(document)
     scoped = bool(templates) and all(agent.assignment_scoped for agent in templates)
     worker_kinds = document.get("worker_kinds") if isinstance(document, dict) else None
@@ -1491,7 +1571,8 @@ def _apply(args, client, warn, trace, hold_gates):
     for value in rounds.values():
         if not isinstance(value, dict) or set(value) - {"type", "context"}:
             raise UsageError("Plan round inputs allow only type and context; model overrides are forbidden.", {})
-    judge = load_judge(_config_path(args))
+    judge = (config_owner.parse_judge(config_payload, source=str(_config_path(args)))
+             if pinned is not None else load_judge(_config_path(args)))
     judge_kind = document.get("worker_kinds", {}).get("judge") if scoped else assignments.get("judge")
     if "judge" in assignments and (judge is None or judge_kind != judge.agent):
         raise UsageError("Judge assignment must use the pinned judge worker kind in config.json.", {})
@@ -1503,7 +1584,7 @@ def _apply(args, client, warn, trace, hold_gates):
     state = _load_state_for_write(state_path, warn, persist_migration=not args.dry_run)
     store = state["recovery"]
     at = args.now or now_iso()
-    work = _read_record(args.work) if args.work else None
+    work = _read_record(args.work, contents=pinned) if args.work else None
     task_context = {"task": args.task, "fix_round": args.fix_round, "plan": args.correction_plan, "work": work}
     if document.get("task_context") is not None and document["task_context"] != task_context:
         raise UsageError("Saved plan and apply name different task, count or correction bounds; replan from the current ledger.", {})
@@ -1607,8 +1688,13 @@ def _apply(args, client, warn, trace, hold_gates):
 
     decision = "frozen" if args.dry_run or not args.task else freeze_decision(assignments, is_replay)
     if decision == "frozen" and not args.dry_run:
+        source_paths = dict(paths)
         paths = freeze_paths(paths)
         contents = paths.contents
+        if pinned is not None:
+            for role, source in source_paths.items():
+                if contents[paths[role]] != pinned[str(Path(source).resolve())]:
+                    raise UsageError("Frozen dispatch bytes differ from the admitted inputs; preserve the task and obtain a new handoff.", {})
     if seated or any(key in document for key in ("slice_paths", "slice_digest", "seat_digests")):
         # Keyed on the metadata, not only on the seats: a saved plan stripped
         # of every seat would otherwise skip the check entirely and dispatch a
@@ -2041,9 +2127,12 @@ def _apply(args, client, warn, trace, hold_gates):
                     })
                 owned = {}
                 try:
+                    from .role_context import startup_environment
                     pane = lifecycle.spawn(
                         client, agents_by_name[name], tier,
                         history=state["assignments"], before_start=preflight_start, owned=owned,
+                        workspace_env=(startup_environment(state_path, _config_path(args))
+                                       if getattr(getattr(client, "context", None), "mode", "native") == "native" else ()),
                     )
                 except HerdrError as exc:
                     if exc.details.get("failure_kind") in (TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND):
@@ -2137,14 +2226,56 @@ def _apply(args, client, warn, trace, hold_gates):
     }
 
 
+def cmd_prepare_context_quarantine(args, client=None, warn=None, trace=None):
+    client = client if client is not None else _client(args, trace=trace)
+    return context_evidence.prepare(_state_path(args), args.assignment_index, args.dispatch, args.id,
+                                    {"source": args.authorization_source, "quote": args.authorization_quote},
+                                    args.output, args.now or now_iso(), client), None
+
+
+def cmd_quarantine_context(args, client=None, warn=None, trace=None):
+    client = client if client is not None else _client(args, trace=trace)
+    return context_evidence.quarantine(_state_path(args), _read_record(args.record), args.now or now_iso(),
+                                       client, dry_run=args.dry_run), None
+
+
 def cmd_state(args, client=None, warn=None, trace=None):
-    return load_state(_state_path(args), warn=warn), None
+    state, usable = load_state_checked(_state_path(args), warn=warn)
+    if not usable:
+        raise StateError("Current state is unreadable or unsupported. Preserve the original owner, holds and unknown deliveries; restore a supported owner backup or update its owning plugin before inspecting it.",
+                         {"context_complete": False})
+    if getattr(args, "migrate_only", False):
+        return {"schema_version": 1, "status": "ready", "owner_present": _state_path(args).is_file(),
+                "state_schema_version": state["schema_version"], "authorizes_progression": False}, None
+    return context_output.enforce_budget(
+        state,
+        "State exceeds its printed output budget. Preserve the owner file and use `{}` or `{}` for the specific pending question; do not dump or copy its history into context.".format(
+            runnable.command("status --task <task>"), runnable.command("load-set --decision diagnose --task <task>"))), None
+
+
+def _validate_context_selector(value):
+    if value is None:
+        return
+    if (not isinstance(value, str) or not value
+            or context_output.utf8_size(value, "the task/enrollment identity") > 1_024):
+        raise UsageError("Select a recorded canonical task or enrollment identity encoded as valid UTF-8, at most 1024 bytes.", {})
 
 
 def cmd_status(args, client=None, warn=None, trace=None):
-    state = load_state(_state_path(args), warn=warn)
-    return {"schema_version": recovery.RECOVERY_SCHEMA_VERSION,
-            "tasks": recovery.task_statuses(state["recovery"], state["assignments"])}, None
+    _validate_context_selector(args.task)
+    state, usable = load_state_checked(_state_path(args), warn=warn)
+    if not usable:
+        raise StateError("Task status is unavailable from this owner state. Restore the supported original owner before inspecting status; no unavailable task is complete.",
+                         {"context_complete": False})
+    tasks = recovery.task_statuses(state["recovery"], state["assignments"])
+    if args.task is not None:
+        if args.task not in tasks:
+            raise UsageError("The selected task has no recorded implementation status. Keep its outcome unresolved and select its canonical identity from the task's owning GitHub issue or dispatch receipt.", {})
+        tasks = {args.task: tasks[args.task]}
+    return context_output.enforce_budget(
+        {"schema_version": recovery.RECOVERY_SCHEMA_VERSION, "tasks": tasks},
+        "Status exceeds its printed output budget. Select one known canonical task with `{}`; every unexamined task remains unresolved.".format(
+            runnable.command("status --task <task>"))), None
 
 
 def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
@@ -2157,7 +2288,7 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
     # (stow readiness, supervision work); reading the stow and supervision and
     # checking the caller's pane still come first (see foreman_reset.replay).
     # A pane id alone can be set by any process; a Herdr pane also carries HERDR_ENV.
-    # rules/agent-team-operation.md Two Modes: a team round is HERDR_ENV set, any value.
+    # skills/herdr-foreman/references/team-scope.md Two Modes: a team round is HERDR_ENV set, any value.
     caller = os.environ.get("HERDR_PANE_ID") if "HERDR_ENV" in os.environ else None
     if bound_pane and caller != bound_pane:
         raise UsageError("foreman-reset runs from the bound foreman's own pane ({}); this call came from {}.".format(
@@ -2170,7 +2301,8 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
     plan = foreman_reset.preflight(stow, data, caller)
     native_session = foreman_reset.bound_session(data)
     client = client if client is not None else _client(args, trace=trace)
-    foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    live = foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    host_goal = foreman_reset.prepare_host_goal(state_path, live["agent"], native_session)
     log = Path(str(state_path) + ".foreman-reset.log")
     # The deliverer runs from the package directory, so every path it gets is absolute.
     argv = [sys.executable, "-m", "foreman", "foreman-reset-deliver", "--pane", plan["pane_id"], "--stow", plan["stow"],
@@ -2190,7 +2322,7 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
             raise StateError("Could not start the reset deliverer ({}); nothing was sent.".format(exc),
                              {"log": str(log)}) from None
 
-    row = foreman_reset.schedule(state_path, plan, at, start, native_session=native_session, options=options)
+    row = foreman_reset.schedule(state_path, plan, at, start, native_session=native_session, options=options, host_goal=host_goal)
     return {"schema_version": foreman_reset.RESET_SCHEMA_VERSION, "scheduled": True, **row, "log": str(log),
             "next": "End this turn now; the deliverer clears the pane once it is idle."}, None
 
@@ -2304,7 +2436,12 @@ def cmd_foreman_reset_deliver(args, client=None, warn=None, trace=None):
 def cmd_foreman_reset_reconcile(args, client=None, warn=None, trace=None):
     state_path = Path(_state_path(args)).expanduser().resolve()
     return foreman_reset.reconcile(state_path, {"pane_id": args.pane, "stow": args.stow}, args.outcome,
-                                   getattr(args, "now", None) or now_iso()), None
+                                   getattr(args, "now", None) or now_iso(),
+                                   client=client if client is not None else _client(args, trace=trace)), None
+
+
+def cmd_foreman_reset_status(args, client=None, warn=None, trace=None):
+    return foreman_reset.status(_state_path(args), args.stow, args.pane), None
 
 
 def cmd_close_member(args, client=None, warn=None, trace=None):
@@ -2333,29 +2470,81 @@ def cmd_foreman_queue(args, client=None, warn=None, trace=None):
         raise StateError("State file {} is unusable, so the queue cannot be derived; restore it before planning.".format(state_path),
                          {"path": str(state_path)})
     busy = {row["assignment"]["task"] for row in supervision.load(state_path)["members"] if row["active"]}
-    return foreman_queue.waiting(state["recovery"], state["assignments"], busy), None
+    return foreman_queue.view(state["recovery"], state["assignments"], busy, limit=args.limit, offset=args.offset), None
 
 
 def cmd_cost_report(args, client=None, warn=None, trace=None):
     state_path = _state_path(args)
+    _validate_context_selector(args.task)
     # An unusable ledger is not an empty one: reporting no tasks would read as
     # no resource spent.
     state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
     if not usable:
-        raise StateError("State file {} is unusable, so no task's resource use can be derived; repair or migrate it with `{}` first.".format(
-            state_path, runnable.command("state")), {"path": str(state_path)})
-    return cost_report.report(state, args.task), None
+        raise StateError("State file {} is unusable, so no task's resource use can be derived. Restore supported owner bytes or update the owning plugin before retrying; preserve unknown costs and all existing records.".format(
+            state_path), {"path": str(state_path), "context_complete": False})
+    return cost_report.view(state, args.task, limit=args.limit, offset=args.offset), None
+
+
+def cmd_role_context(args, client=None, warn=None, trace=None):
+    from . import role_context
+    environment = dict(os.environ)
+    if getattr(args, "herdr_bin", None):
+        environment["HERDR_BIN"] = args.herdr_bin
+    return role_context.select(Path(__file__).resolve().parents[1], client=client,
+                               state_path=getattr(args, "state", None), config_path=getattr(args, "config", None),
+                               environment=environment), None
+
+
+def cmd_github_context(args, client=None, warn=None, trace=None):
+    return github_context.read(args.reference, args.question, section=args.section,
+                               page=args.page, limit=args.limit, offset=args.offset, snapshot=args.snapshot), None
+
+
+def cmd_workflow_readiness(args, client=None, warn=None, trace=None):
+    from . import workflow_readiness
+    from .native_policy import executing_policy_root
+    _validate_context_selector(args.task)
+    state_path = _state_path(args)
+    state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
+    if not usable:
+        raise StateError("Restore readable owner state before inspecting readiness; an unusable ledger is not an empty queue.",
+                         {"context_complete": False})
+    supervised = supervision.load(state_path)
+    verified, reason = False, "native_context_unavailable"
+    if "HERDR_ENV" in os.environ:
+        try:
+            selected_client = client if client is not None else _client(args, trace=trace)
+            progression_owner.verify_foreman(state_path, selected_client, native_only=True, supervised=supervised)
+            verified, reason = True, "verified"
+        except ForemanError as exc:
+            reason = "native_foreman_unverified:" + exc.code
+    return workflow_readiness.view(state, state_path, supervised, args.now or now_iso(), executing_policy_root(),
+        task=args.task, limit=args.limit, offset=args.offset, native_verified=verified, native_reason=reason), None
 
 
 def cmd_load_set(args, client=None, warn=None, trace=None):
+    for value in (args.task, args.enrollment):
+        _validate_context_selector(value)
+    if args.question is not None:
+        context_output.utf8_size(args.question, "the evidence question")
     if (args.decision == "wake") != (args.enrollment is not None):
         raise UsageError("Pass --enrollment for wake and --task for every other decision.", {"decision": args.decision})
+    if args.read_file is None and (args.question is not None or args.offset != 0):
+        raise UsageError("Use --question and --offset only with --read-file for one listed evidence reference.", {})
     state_path = _state_path(args)
     state, usable = load_state_checked(state_path, warn=warn, persist_migration=False)
     if not usable:
         raise StateError("State file {} is unusable, so the load set cannot be derived; restore it before deciding.".format(state_path),
                          {"path": str(state_path)})
-    members = supervision.load(state_path)["members"]
+    supervision_document = supervision.load(state_path)
+    members = supervision_document["members"]
+    supervision_view = {
+        "bound": supervision_document["binding"] is not None,
+        "boundary_held": supervision.held(supervision_document),
+        "unresumed_holds": [{key: row[key] for key in ("id", "kind", "resume_condition", "evidence")}
+                            for row in supervision_document["holds"] if row["resumed_at"] is None],
+        "observation_only": True,
+    }
     reports = {row["id"]: row["assignment"].get("report") for row in members}
     busy = {row["assignment"]["task"] for row in members if row["active"]}
     _document, entries, _progress = attention.load(state_path)
@@ -2365,9 +2554,13 @@ def cmd_load_set(args, client=None, warn=None, trace=None):
             args.enrollment, runnable.command("supervision-status")), {})
     if args.decision != "wake" and args.task not in state["recovery"]["tasks"] and not any(
             row.get("task") == args.task for row in state["assignments"]):
-        raise UsageError("Task {!r} is neither registered nor assigned; check its identity with `{}`.".format(args.task, runnable.command("state")), {})
-    return load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
-                          exists=_file_present), None
+        raise UsageError("Task {!r} is neither registered nor assigned; select its canonical identity from `{}` or `{}` before retrying.".format(
+            args.task, runnable.command("foreman-queue"), runnable.command("supervision-status --compact")), {})
+    packet = load_set.build(state, reports, entries, busy, args.decision, task=args.task, enrollment=args.enrollment,
+                            exists=_file_present, supervision_view=supervision_view)
+    if args.read_file is not None:
+        packet = load_set.read_evidence(packet, args.read_file, args.question, args.offset)
+    return packet, None
 
 
 def _file_present(path):
@@ -2835,15 +3028,11 @@ def cmd_relaunch_worker(args, client=None, warn=None, trace=None):
             "assignment_index": len(state["assignments"]) - 1}, None
 
 
-#: The minimal `foreman` block the unconfigured warning tells the operator to add.
-FOREMAN_BLOCK_SNIPPET = ('"foreman": {"agent": "foreman", "kind": "claude", "window_group": "<window-group>", '
-                         '"tiers": {"coordination": {"model": "<model>", "effort": "<effort>"}}}')
-
-
 def _foreman_unconfigured(path):
-    return ("Config at {} has no `foreman` block, so the foreman's tier is neither selected nor proven. Edit that "
-            "file: set `schema_version` to {}, and add {}. Then launch the foreman with `{}`.".format(
-                path, FOREMAN_CONFIG_VERSION, FOREMAN_BLOCK_SNIPPET, runnable.command("start-foreman --pane <pane-id>")))
+    return ("Config at {} has no `foreman` block (nonblocking). Add the foreman example from "
+            "skills/herdr-foreman/config.example.json; preserve the current supported schema_version. "
+            "Older schemas need an additive upgrade to at least {}. Then use `{}`.".format(
+                path, FOREMAN_CONFIG_VERSION, runnable.command("start-foreman --pane <pane-id>")))
 
 
 def _foreman_headroom(seat, snapshot):
@@ -2936,7 +3125,7 @@ def cmd_verify_foreman(args, client=None, warn=None, trace=None):
         return {"configured": True, "agent": seat.agent}, None
     pane = args.pane
     if not pane:
-        # rules/agent-team-operation.md Two Modes: a team round is HERDR_ENV set, any value.
+        # skills/herdr-foreman/references/team-scope.md Two Modes: a team round is HERDR_ENV set, any value.
         pane = os.environ.get("HERDR_PANE_ID") if "HERDR_ENV" in os.environ else None
     if not pane:
         raise UsageError("verify-foreman reads the foreman's own pane; run it from the foreman's Herdr pane or pass "
@@ -3266,9 +3455,19 @@ def cmd_supervision(args, client=None, warn=None, trace=None):
                                            client=client, clock=now_iso, sleeper=time.sleep), None
 
 
+def cmd_progression_handoff(args, client=None, warn=None, trace=None):
+    return progression_owner.run_command(args, _state_path(args), args.now or now_iso(),
+                                         client if client is not None else _client(args, trace=trace))
+
+
+def cmd_progression_run(args, client=None, warn=None, trace=None):
+    return progression_service.run_command(args, _state_path(args),
+                                           client if client is not None else _client(args, trace=trace), sleeper=time.sleep)
+
+
 def cmd_supervision_gate(args, client=None, warn=None, trace=None):
     """Which pending supervision events need the foreman; see supervision_gate.py."""
-    return supervision_gate.pending(supervision.load(_state_path(args))), None
+    return supervision_gate.view(supervision.load(_state_path(args)), limit=args.limit, after=args.after), None
 
 
 def cmd_restoration(args, client=None, warn=None, trace=None):
@@ -3287,15 +3486,23 @@ COMMANDS = {
     "plan": cmd_plan,
     "apply": cmd_apply,
     "state": cmd_state,
+    "prepare-context-quarantine": cmd_prepare_context_quarantine,
+    "quarantine-context-evidence": cmd_quarantine_context,
     "status": cmd_status,
     "foreman-queue": cmd_foreman_queue,
+    "workflow-readiness": cmd_workflow_readiness,
+    "role-context": cmd_role_context,
+    "github-context": cmd_github_context,
     "cost-report": cmd_cost_report,
     "foreman-reset": cmd_foreman_reset,
     "foreman-reset-deliver": cmd_foreman_reset_deliver,
     "foreman-reset-reconcile": cmd_foreman_reset_reconcile,
+    "foreman-reset-status": cmd_foreman_reset_status,
     "close-member": cmd_close_member,
     "check-member": cmd_check_member,
     "load-set": cmd_load_set,
+    **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return", "progression-reconcile", "progression-resume")},
+    "progression-run": cmd_progression_run,
     **{command: cmd_recovery for command in ("task", "checkpoint", "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report", "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work", "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review", "recover-report", "assess-specialist", "close-task")},
     "detect-triggers": cmd_detect_triggers,
     "finding-churn": cmd_finding_churn,
@@ -3325,24 +3532,56 @@ COMMANDS = {
 HOME_FREE_COMMANDS = frozenset({"marker-fit", "finding-churn", "probe-unavailable"})
 
 
-def main(argv=None, stdout=None, stderr=None, client=None):
+def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability=None):
     """Entry point. Returns the process exit code rather than calling sys.exit."""
     stdout = stdout if stdout is not None else sys.stdout
     stderr = stderr if stderr is not None else sys.stderr
     args = build_parser().parse_args(argv)
+    context_call = args.command in context_output.READ_COMMANDS | {"load-set", "role-context"}
+    diagnostics = []
+
+    def diagnostic(message):
+        if not context_call:
+            stderr.write(message + "\n")
+            return
+        line = message + "\n"
+        try:
+            size = len(("".join(diagnostics) + line).encode("utf-8"))
+        except UnicodeError:
+            raise UsageError("A context diagnostic is not valid UTF-8. Preserve the original owner and repair its diagnostic source before retrying; unread evidence remains unresolved.", {}) from None
+        if size > context_output.WARNING_BYTES:
+            raise UsageError("Context diagnostics exceed their budget. Preserve the original owner, holds and unknown deliveries; repair the diagnostic source instead of loading its raw contents.",
+                             {"reason": "context_diagnostic_budget_exceeded", "context_complete": False})
+        diagnostics.append(line)
 
     def trace(message):
         # Trace lines identify themselves ("herdr> ..."), so they go out bare.
-        stderr.write(message + "\n")
+        diagnostic(message)
 
     def warn(message):
-        stderr.write(DIAGNOSTIC_PREFIX + message + "\n")
+        diagnostic(DIAGNOSTIC_PREFIX + message)
+
+    def context_failure(exc):
+        text = context_output.error_text(exc, "".join(diagnostics))
+        stderr.write(text)
+        return 1
 
     try:
         if args.command == "foreman-reset" and not args.explicit_reset:
             raise UsageError("Automatic foreman context resets are disabled. Keep the current context, active goal and foreground supervision; checkpoint and continue at the saved step. Use --explicit-reset only for an existing explicit operator-requested maintenance reset.",
                              {"reason": "automatic_foreman_reset_disabled"})
-        if client is not None and getattr(getattr(client, "context", None), "mode", None) == "attested-remote":
+        remote_context = getattr(getattr(client, "context", None), "mode", None) == "attested-remote"
+        if args.command == "role-context":
+            if not remote_context and "HERDR_ENV" in os.environ:
+                from .role_context import selected_paths
+                selected = selected_paths(os.environ, state_path=getattr(args, "state", None),
+                                          config_path=getattr(args, "config", None))
+                for field, attribute in (("state_path", "state"), ("config_path", "config")):
+                    if selected[field] is not None:
+                        setattr(args, attribute, str(selected[field]))
+        # Role selection owns its preflight and recovery capsule. Other remote
+        # commands still require the generic preflight before their handlers.
+        if remote_context and client is not None and args.command != "role-context":
             client.remote_preflight(_state_path(args), allow_indeterminate=True)
             if args.command in {"start-foreman", "foreman-reset", "foreman-reset-deliver", "foreman-reset-reconcile", "migrate-home"}:
                 from .command_context import refuse
@@ -3366,28 +3605,52 @@ def main(argv=None, stdout=None, stderr=None, client=None):
         # blocks them.
         # A command that reads no state or config uses no home, so it neither
         # takes the guard nor refuses on a home awaiting migration.
-        defaults = set() if args.command in HOME_FREE_COMMANDS else {
+        standalone_role = args.command == "role-context" and ("HERDR_ENV" not in os.environ or remote_context)
+        defaults = set() if args.command in HOME_FREE_COMMANDS or standalone_role else {
             kind for kind, given in (("state", getattr(args, "state", None)),
                                      ("config", getattr(args, "config", None))) if not given}
         with home.guard(False) if defaults else nullcontext():
             home.require_current(defaults)
             # Commands that may migrate or write state share its canonical lock.
             # Dry runs, probes, and retrospective reads remain read-only.
-            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "load-set", "foreman-queue", "cost-report", "check-member", "verify-foreman", "report-gate-status"} or getattr(args, "dry_run", False)
+            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "github-context", "check-member", "verify-foreman", "report-gate-status"} or (getattr(args, "dry_run", False) and args.command != "quarantine-context-evidence")
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "close-member"}
-            lock = nullcontext() if readonly or separate_owner else state_lock(retrospective.canonical_state(_state_path(args)))
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run"}
+            authority_transaction = service_capability is not None
+            lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:
+                progression_owner.require_command(_state_path(args), args, service_capability, client,
+                                                   lambda: _client(args, trace=trace))
+                if service_capability is not None and args.command == "apply":
+                    args.service_inputs = service_capability.capture_inputs(args)
+                    args.service_gate_reports = service_capability.gate_reports
+                    client = service_capability.authorized_client(client if client is not None else _client(args, trace=trace))
                 retro_lock = retrospective.lock(_state_path(args)) if not readonly and args.command in {"apply", "start-judge", "relaunch-worker", "retro-record"} else nullcontext()
-                with retro_lock:
-                    payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)
+                try:
+                    with retro_lock:
+                        payload, failure = COMMANDS[args.command](args, client=client, warn=warn, trace=trace)
+                    if context_call:
+                        diagnostic_text = "".join(diagnostics)
+                        if failure:
+                            diagnostic_text += context_output.printed_json(failure)
+                        context_output.enforce_budget(payload,
+                            "Select a narrower task, page or evidence question; this response exceeds its output bound.",
+                            diagnostic_text=diagnostic_text)
+                except ForemanError as exc:
+                    if context_call:
+                        return context_failure(exc)
+                    raise
     except ForemanError as exc:
+        if context_call:
+            return context_failure(exc)
         json.dump(exc.to_dict(), stderr, indent=2)
         stderr.write("\n")
         return 1
 
+    if diagnostics:
+        stderr.write("".join(diagnostics))
     json.dump(payload, stdout, indent=2)
     stdout.write("\n")
     if failure:

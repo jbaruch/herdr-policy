@@ -7,7 +7,7 @@
 - A transient shell, transport or measurement failure proves neither provider unavailability nor zero capacity.
 - Missing capacity stays `unknown`.
 - Require fresh facts for the affected seat; preserve independent authorized work whose own gates hold.
-- Follow the emitted owner diagnostic and repair its cause before re-measuring through SKILL.md Step 4.
+- Follow the emitted owner diagnostic and repair its cause before re-measuring through `skills/herdr-foreman/references/foreman-workflow.md` Step 4.
 - Never remove a provider or rewrite its capabilities to make a failed measurement disappear.
 - Fresh-workspace readiness and pre-input recovery belong to `skills/herdr-foreman/foreman/lifecycle.py` (`_await_fresh_shell`, `_start_fresh_worker`); existing panes keep their strict refusal.
 - Herdr is an external CLI runtime dependency. Native busy-start retry requires the running-server compatibility check in `skills/herdr-foreman/foreman/herdr.py` (`require_start_retry_compatibility`); its `MIN_START_REFUSAL_VERSION` comment owns the minimum and renewal cadence. Unknown, older or incompatible servers authorize no repeat launch.
@@ -65,7 +65,7 @@ Plan that one responsibility with the same task, normalized requirements and
 worker. Compose a new self-contained brief with the follow-up question, the
 previous report and a fresh report destination. Then use the saved plan:
 
-Use the installed invocation in SKILL.md Step 10 with this argument synopsis:
+Use the installed invocation in `skills/herdr-foreman/references/foreman-workflow.md` Step 10 with this argument synopsis:
 
 ```text
 apply \
@@ -286,7 +286,7 @@ instruction into permission to exceed an exhausted correction budget.
 | `diagnose` | unique `id`, `task`, `checkpoint`, absolute `judge_report`, `scope`, `allowed_paths`; optional `supersedes` with `authorization` | Record the judge's diagnosis of a non-converging loop. The report supplies `REMEDY`, `BOUND` and `ASSESSMENT`; a `continue` or `restructure` remedy records the bounded plan its bound names, and `stop` records the terminal remedy and files a user-attention obligation. `BOUND` counts developer attempts, carries its justification, and is refused above the command's ceiling. `ASSESSMENT` must name the accepted investigator report this diagnosis ruled on, and that report is bound into the record. Each re-entry moves down `continue` → `restructure` → `stop`, or repeats the last rung once when the report carries a `PROGRESS` line; a rung already repeated is spent and `stop` never repeats. A re-entry before its bound is spent names the plan it supersedes and carries the change it claims — different `scope` or `allowed_paths`, or the operator's `authorization` — and the superseded plan is preserved. A bound foreman's cited report must be the one supervision enrolled for the pinned judge on that task, and the task needs an accepted investigator assessment, every criterion `met` and no `blocking` verdict, after its latest developer attempt. |
 | `authorize-corrections` | unique `id`, `task`, `checkpoint`, `scope`, `allowed_paths`, positive `additional_fixes`, `authorization`; optional `supersedes` | The operator's override of this exhaustion's recorded remedy; the task needs a diagnosis at the current fix round first. Store an explicit bounded approval once. Continue while it covers the next attempt; do not ask again within those bounds. A changed decision names the active plan in `supersedes`. |
 | `authorize-approach` | unique `id`, `task`, `checkpoint`, `direction`, `verification`, positive `allowance`, `authorization`; optional `supersedes` | The operator's own approval of a materially different direction, and the path that reopens a task diagnosed `stop`. Requires this task's current exhausted checkpoint, no unknown dispatch outcome, and an allowance at or below the command's ceiling. The new approach starts its own allowance and its own remedy ladder; the cumulative fix numbering continues unchanged. A plan still holding unspent attempts is named in `supersedes` and retired with the approach it was bought for; its cumulative fix range would otherwise outlive that approach. A direction already recorded on the task is refused, and so is an authorization already spent on an earlier approach. |
-| `record-report` | `dispatch`, full `head_revision`, `verdict` (`blocking` or `approved`), `review_mode` (`full` or `scoped`), independent `reviewer`, absolute `report`, `changed_paths` | Read the report in full, record the round's gates (SKILL.md Step 12), and verify the VCS diff first. The report must carry exactly one `VERDICT:` line equal to `verdict`; a gap or a differing verdict is refused before its classifier gates. The command binds its bytes and stated head to the dispatch; it does not establish the tester, CI, external-review, or release gates. |
+| `record-report` | `dispatch`, full `head_revision`, `verdict` (`blocking` or `approved`), `review_mode` (`full` or `scoped`), independent `reviewer`, absolute `report`, `changed_paths` | Read the report in full, record the round's gates (`skills/herdr-foreman/references/foreman-workflow.md` Step 12), and verify the VCS diff first. The report must carry exactly one `VERDICT:` line equal to `verdict`; a gap or a differing verdict is refused before its classifier gates. The command binds its bytes and stated head to the dispatch; it does not establish the tester, CI, external-review, or release gates. |
 | `authorize-refused-dispatch` | unique `id`, `task`, `role`, `fix_round` or null, approved `provider`, `brief` (`unchanged` or `revised`), `decision`, `authorization` | Record the operator's decision after two independent refusals; fewer is refused, since one refusal is a move. One authorization permits one further dispatch on that task, role and round to the approved provider, with the refused brief unchanged unless the operator approved a revision, carried on the dispatch's `refusal_move.authorization`. |
 | `record-refusal` | `dispatch`, absolute `receipt` | Bind a saved `wait-report` exit-5 JSON to the applied dispatch it stopped. The receipt's `report_path` must equal the report its supervision enrollment bound; an unenrolled dispatch is refused. The refusing provider is the worker's config `kind`. Same receipt replays; a second receipt for the same dispatch is refused. |
 | `recover-context` | `task`, original `assignment_index`, `reason`, `authorization`, absolute `evidence` | For the latest confirmed developer row with null native-session proof. Records a live observation separately and permits the next fresh handoff. The original null stays null. |
@@ -740,27 +740,41 @@ header and `confirmed_provider_refusal`. Missing terminal evidence keeps the ord
 wait. The read-only `foreman probe-unavailable` command takes `--agent`, `--pane`,
 absolute `--report`, positive `--lines` and the observed visible text on stdin.
 It needs no config/state home. It emits `{confirmed: false, reason}` for unknown
-evidence, or `{confirmed: true, unavailability}` with schema-1 native proof;
+evidence, or `{confirmed: true, unavailability}` with versioned native proof;
 usage/tool/source faults exit non-zero, never a pending verdict. The wait's
 validated `FOREMAN_REFUSAL_CONFIRM_SEC` supplies its confirmation interval.
 
 The source adapter in `skills/herdr-foreman/foreman/model_unavailability.py` owns supported native
-formats (`SUPPORTED_VERSIONS`, `source_error`) and the read-only confirmation
+formats (`SUPPORTED_VERSIONS`, `CODEX_REFUSAL_VERSIONS`, `source_error`) and the read-only confirmation
 contract (`probe`). An unconfirmed result grants no recovery authority. Grok
 retains the legacy refusal path.
 
-For native account failures exit 5 adds `unavailability`. `record-refusal` binds
+For native account failures and supported content refusals exit 5 adds
+`unavailability`. Schema 1 retains the availability contract. Schema 2 proves
+Codex 0.162.0's terminal `cyber_policy` event and adds its `turn_id`; prior tool
+work does not invalidate a terminal refusal or establish that no work occurred.
+Only the latest completed turn's structured error supplies authority. Quoted
+notices, a later turn, an occupied composer and unknown formats stay unconfirmed.
+The pinned [Codex protocol](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/protocol/src/protocol.rs)
+and sanitized source fixtures document this supported format.
+
+`record-refusal` binds
 that proof to the original dispatch under the adapter's `verify_refusal`
 contract; invalid evidence refuses without changing the dispatch.
 An identical recorded receipt replays without new input; different evidence
 refuses. The record owns no delivered report, capability change or judge ruling.
-For a developer's latest native-unavailable attempt, the unchanged bounded move
+For a developer's latest native-refused attempt, the unchanged bounded move
 keeps its cumulative fix number (initial development keeps null). Both applied
 transport rows remain in history; the move resets no counter or allowance.
 It still requires the normal fresh-context route, unchanged brief, alternate
 provider and fresh report. A moved attempt without its own recorded refusal
 permits no further move. The existing refusal decision gate remains in force;
 an authorization buys only the dispatch it names.
+
+Content refusal creates no model/account negative, capability change or access
+claim. Other tasks may still select that model; this refused brief remains
+subject to the existing unchanged-brief, alternate-provider and one-move limits.
+Provider notices grant no Daybreak access or permission to rewrite the request.
 
 New dispatches freeze the configured launch scope before input. A fresh native
 model negative excludes only that model in that provider's recorded account

@@ -90,6 +90,15 @@ class RoundTripTest(unittest.TestCase):
         self.assertTrue(self.path.exists())
         self.assertEqual(load_state(self.path), state)
 
+    def test_writer_refuses_inconsistent_context_before_appending(self):
+        state = empty_state()
+        for cleared, reason in ((True, "hand"), (False, "automatic"), (True, "unknown"), (None, "retained")):
+            with self.subTest(cleared=cleared, reason=reason):
+                with self.assertRaisesRegex(UsageError, "contradicts"):
+                    add_assignment(state, "2026-01-02T03:04:05+00:00", "developer", "worker",
+                                   cleared=cleared, clear_reason=reason)
+                self.assertEqual(state, empty_state())
+
     def test_maintenance_relaunch_preserves_an_authorized_later_fix_without_a_dispatch(self):
         state = empty_state()
         add_assignment(
@@ -262,7 +271,7 @@ class MigrationTest(unittest.TestCase):
                 self.assertEqual(migrated["schema_version"], STATE_SCHEMA_VERSION)
                 self.assertEqual(migrated["snapshots"], [{"schema_version": SNAPSHOT_SCHEMA_VERSION,
                                                           "agents": {"grok": {"window_group": "pool", "tier_billing": {}}},
-                                                          "failed_agents": []}])
+                                              "failed_agents": [], "measurement_context_sha256": None, "reused_agents": []}])
                 self.assertEqual(migrated["assignments"], [dict(
                     row, schema_version=STATE_SCHEMA_VERSION, cleared=None,
                     clear_reason="unknown", task=None, fix_round=None, context_session=None, tier=None,
@@ -302,10 +311,10 @@ class MigrationTest(unittest.TestCase):
         self.write(state)
         migrated = self.load()
         first, second = migrated["snapshots"]
-        self.assertEqual(first["schema_version"], 5)
+        self.assertEqual(first["schema_version"], SNAPSHOT_SCHEMA_VERSION)
         self.assertEqual(first["agents"]["claude"]["error"],
                          {"code": "parse_error", "message": "old failure", "details": details})
-        self.assertEqual(second["schema_version"], 5)
+        self.assertEqual(second["schema_version"], SNAPSHOT_SCHEMA_VERSION)
         self.assertEqual(second["agents"]["grok"]["error"]["details"], {})
         self.assertEqual(self.on_disk(), migrated)
 

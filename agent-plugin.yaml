@@ -1,6 +1,6 @@
 schemaVersion: 1
 name: jbaruch/herdr-policy
-version: 0.2.0
+version: 0.16.1
 description: Herdr team coordination policy for AI coding agents
 source:
   repository: https://github.com/jbaruch/herdr-policy
@@ -10,28 +10,15 @@ artifacts:
       path: rules/herdr-scope.md
       activation:
         mode: always
-    - id: agent-team-operation
-      path: rules/agent-team-operation.md
-      activation:
-        mode: always
-    - id: herdr-bootstrap
-      path: rules/herdr-bootstrap.md
-      activation:
-        mode: paths
-        paths:
-          - skills/herdr-foreman/**
-          - skills/herdr-standup/**
-          - '**/skills/**'
-    - id: coding-policy-integration
-      path: rules/coding-policy-integration.md
-      activation:
-        mode: paths
-        paths: ['**']
   skills:
     - id: herdr-foreman
       path: skills/herdr-foreman
     - id: herdr-standup
       path: skills/herdr-standup
+    - id: herdr-observer
+      path: skills/herdr-observer
+    - id: herdr-optimizer
+      path: skills/herdr-optimizer
   hooks:
     - id: herdr-session-start
       event: session-start

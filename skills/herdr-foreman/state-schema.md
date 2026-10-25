@@ -8,6 +8,20 @@ the utility alone records the saved notes and their separate index.
 
 ## Artifacts
 
+`foreman.sh state --migrate-only` uses the state owner under its existing lock.
+It commits required supported migrations, then returns a schema-1 receipt with
+`status: ready`, `owner_present`, `state_schema_version` and
+`authorizes_progression: false`. It prints no history. A missing owner remains
+missing; corrupt or unsupported originals remain unchanged and return nonzero.
+Read-only previews prescribe this mode before retrying their original action.
+
+`skills/herdr-foreman/observer-view.py` reads selected owner metadata without
+migration. `skills/herdr-foreman/foreman/observer_projection.py` owns its schema-2 ephemeral page
+contract: section, typed rows, pagination, coverage gaps and false authority
+fields. Sections are binding, current and closures. The private observer reads
+these projections instead of complete historical state/supervision documents.
+This interface writes no owner, gate or replacement store.
+
 | Path | Owner | Purpose |
 | ---- | ----- | ------- |
 | `$XDG_STATE_HOME/foreman/state.json` (default `~/.local/state/foreman/state.json`, override `--state FILE`) | `skills/herdr-foreman/foreman/state.py` and its `skills/herdr-foreman/foreman/recovery.py` helper, within the same owner skill | Snapshots, append-only assignments, and audited task recovery |
@@ -16,7 +30,63 @@ the utility alone records the saved notes and their separate index.
 | `<canonical-state-path>.retrospectives/` | `herdr-foreman`, through its retrospective utility | Immutable retrospective notes, versioned index, and transition coverage |
 | `<canonical-state-path>.foreman-reset.json` | `skills/herdr-foreman/foreman/foreman_reset.py` | One record per explicitly requested foreman maintenance reset; see Foreman Reset Record below |
 | `<canonical-state-path>.bootstrap.json` | `skills/herdr-foreman/foreman/bootstrap_recovery.py` | Original Codex launch provenance and durable bootstrap transport/cleanup receipts |
+| `<state-path>.context-evidence/` | `skills/herdr-foreman/foreman/context_evidence.py` | Immutable original ledgers and schema-1 quarantine intent journals for the known fresh/no-clear contradiction |
 | Controller-configured private remote owner JSON | `skills/herdr-foreman/foreman/remote_owner.py` | Attested command context, current single-controller lease, indeterminate intent and task ingress; schema and writer/reader contract in `skills/herdr-foreman/references/remote-context.md` |
+
+## Contradictory Context Evidence
+
+The state owner supports `quarantine-context-evidence --record FILE [--dry-run]`
+under its canonical state transaction lock. This maintenance command requires the
+existing bound native foreman; standalone callers, workers and remote callers
+cannot use it. It issues no terminal input, dispatch, clear or task-authority grant.
+
+The owner command `prepare-context-quarantine` accepts the selected existing
+state, original assignment index, dispatch id, repair id, explicit authorization
+source/quote and output path. Under the canonical state transaction lock it
+validates the same native authority and whole-owner conditions, derives the row
+digest and publishes the schema-1 input immutably as a private file in an existing
+parent directory. Success returns its path, id, row index/digest and false dispatch
+authority. It prints no ledger history and changes no owner or quarantine evidence.
+A conflicting output is preserved and refused; retry uses the original request.
+
+The input is a schema-1 object with `id`, `assignment_index`,
+`assignment_sha256`, `dispatch`, and explicit operator `authorization` (`source`
+and `quote`). `assignment_sha256` is the canonical JSON digest of the original
+row, not a guessed replacement. The id is a safe filename component. See
+`skills/herdr-foreman/foreman/context_evidence.py` — `FIELDS`, `digest()` and
+`quarantine()` and `prepare()` — for the accepted input and evidence predicates.
+The original applied dispatch must bind the selected assignment and
+the same contradictory writer result. Every other part of the owner must validate
+without migration. Other corruption remains refused and unchanged.
+
+Only the known true/hand/null-session contradiction is quarantined. The current
+row's `cleared` and `clear_reason` become null/unknown. This narrow owner repair
+is an exception to ordinary append-only history: the exact original row and
+complete original ledger bytes remain preserved, rather than being replaced by
+an invented hand or automatic clear. The dispatch result, worker enrollment,
+task/base, budgets, service grants, pending intents and holds do not change.
+Any later continuity recovery still uses its existing native-evidence contract.
+
+The owner alone writes the private evidence directory. Each `<id>.json` journal
+has `schema_version: 1`, `at`, exact `input`, `state_path`,
+`original_state_sha256` and `original_assignment`. The corresponding
+`<sha256>.original.json` holds the original ledger bytes. The journal is an
+intent, not proof that the owner write completed. Both are published immutably
+before the owner write; replay checks the actual current row and original backup.
+A prepared-but-unapplied repair retries only against its original whole-owner
+digest. Changed input, conflicting evidence, foreign paths, unsupported journals
+or other changed state refuse. The quarantine journal uses the
+`rules/stateful-artifacts.md` gate-store exception: a retained intent withholds
+another repair until its original evidence is verified. Unsupported versions
+refuse with an actionable update-owner diagnostic; they never imply no gate.
+Version 1 is the first schema, so no older version is accepted today. This owner
+must migrate and rewrite every older version it accepts on read, preserving the
+original intent and evidence.
+
+Dry run validates the same authority, row and whole-owner conditions but creates
+no evidence and writes no owner. Success returns the repair id, quarantine/replay
+result, evidence paths and `authorizes_dispatch: false`. A refusal is nonzero
+with an actionable diagnostic; preserve the original row and evidence.
 
 ## Bootstrap Transport Evidence
 
@@ -148,14 +218,14 @@ Mode is `minimum_adequate` or `pinned`; absence preserves legacy configured-row
 selection. Evidence maps configured rows to `{model, effort, launch, access}`.
 Launch is `{status, ref, checked_at}`; access adds `window_group`. Status enums,
 pair/account binding, timezone and freshness checks are owned by
-`foreman/tier_routing.py`; their meaning is in `references/model-tiers.md`
+`skills/herdr-foreman/foreman/tier_routing.py`; their meaning is in `skills/herdr-foreman/references/model-tiers.md`
 Minimum Adequate Routing. The operator remains the only writer. Schemas 1–7
 remain readable without rewriting; they may not carry the new field.
 
 `window_group` names the usage window a worker kind shares with other kinds.
 Schema-7 `measure` starts one short-lived probe per group, reads usage once,
 closes it, and copies the result onto every kind in that group (snapshot schema
-2 introduced the field; current schema 5). `plan` charges a seat's cost
+2 introduced the field; current schema 6). `plan` charges a seat's cost
 against every kind in that window. A kind declaring none has a window to itself.
 
 The optional top-level `judge` key pins the judge worker kind, model, and effort.
@@ -172,7 +242,7 @@ the pinned kind may independently supply another fresh seat.
 
 Plan schema 5 also carries `tiers` keyed by role and `rounds` with the foreman's
 round type and context inputs. Legacy non-tiered assignments have no tier
-metadata. The operator's tier table, supported flags, and billing evidence are documented in `references/model-tiers.md`.
+metadata. The operator's tier table, supported flags, and billing evidence are documented in `skills/herdr-foreman/references/model-tiers.md`.
 `task_context` is null for an unlabelled plan, otherwise an object containing
 `task`, cumulative `fix_round`, correction `plan` identity or null, and `work`
 bounds or null. Apply refuses different task context. Earlier plan shapes and
@@ -199,7 +269,7 @@ and stable `engagement`. The input envelope to `plan --requirements` is
 The plan stores normalized requirement objects directly, without that envelope.
 Absent requirements preserve legacy planning. New consultation responsibilities
 require explicit requirements; the parser and selection contract live in
-`references/specialists.md`. Apply rechecks current eligibility before an unsent
+`skills/herdr-foreman/references/specialists.md`. Apply rechecks current eligibility before an unsent
 dispatch. A completed exact retry returns its original receipt.
 
 Plan schema 11 adds `partition_proof` to a partitioned plan, copied unchanged
@@ -607,8 +677,10 @@ skills/herdr-foreman/references/retrospectives.md
 | `schema_version` | integer | Currently `11`. Version 11 adds `reconciled_not_sent` context provenance with cleared true for an owner-proved closed immutable no-brief retry; older records migrate without inventing that proof. Version 10 adds the non-counting assignment status `maintenance`; version 9 adds `judge_mode` to every row: the judge seat's declared mode, `unknown` for a judge row migrated from before it, null for other roles. Version 8 drops the retired qualification battery's summary from `tier`; migration removes it from older rows. Version 7 adds `pressure_headroom` and `de_escalated` to a row's `tier`; an older tier row migrates to null headroom and `de_escalated: false`, since nothing could de-escalate before it. Bumped on any shape change |
 | `snapshots` | array | Whole `measure` documents, oldest first; the ring holds the last 20 |
 | `assignments` | array | Append-only ledger of who held which role |
-| `snapshots[].schema_version` | integer | Currently `5`. Version 2 added `window_group`; version 3 adds per-round `tier_billing`; version 4 adds `error.details` to failed agent records; version 5 lets `error.details` carry the optional cleanup evidence keys below. Older snapshots migrate on read, preserving headroom and shared-window membership |
-| `snapshots[].agents[].error.details` | object | Bounded, redacted failure evidence. Optional keys, each present only when recorded: `pending_cli_update` (boolean `true`), `failure_kind` (non-empty string), `pane` and `pane_id` (non-empty strings), `foreground_pids` (array of positive integers), `occupant_names` (array of non-empty strings). A missing key means not recorded, never an observed empty pane or occupant set. Argv, environment, composer text and nested errors are never stored. Hints, not authority: cleanup still proves live ownership |
+| `snapshots[].schema_version` | integer | Currently `6`. Versions 2–5 added window membership, tier billing and failure/cleanup evidence. Version 6 adds retry context, reused names and bounded startup evidence. The owner migrates 5 → 6 with null context and an empty reused list, preserving readings without inventing reuse proof |
+| `snapshots[].measurement_context_sha256` | string or null | SHA-256 of parsed worker profiles/account windows and the bound transport/host context; null means no reuse proof. Never authority or account credentials |
+| `snapshots[].reused_agents` | array of strings | Sorted names copied from the latest still-valid snapshot by `measure --retry-failed`; empty for new observations. `measured_at` retains the older observation time when any reading is reused |
+| `snapshots[].agents[].error.details` | object | Bounded, redacted failure evidence. Optional keys: `pending_cli_update` (true), `failure_kind`, `pane`, `pane_id`, `expected_kind`, `expected_model`, `expected_effort` (nonempty strings); `foreground_pids` (positive integers); `occupant_names`, `expected_flags` (strings); `startup_elapsed_ms`, `shell_pid`, `foreground_process_group_id` (nonnegative integers). Process/flag lists retain at most 16 items, with text capped at 256 bytes per item. A missing key means not recorded. Expected flags are generated model/effort flags, never raw observed argv or operator arguments. Environment, composer text and nested errors are never stored. Shell/group IDs do not establish parent lineage; the installed Herdr process-info API exposes no parent PID. Hints only: cleanup still proves live ownership |
 | `snapshots[].agents[].window_group` | string | The usage window this agent shares with others; empty means a window of its own. Present on every agent record, including skipped and failed ones — pool membership is config, not a measurement result |
 | `assignments[].schema_version` | integer | The row's own version, stamped on write |
 | `assignments[].at` | string | ISO-8601 timestamp, from `--now` or the CLI's clock |
@@ -651,7 +723,7 @@ document and arrives already stamped.
 
 ## Recovery records
 
-The recovery document uses `schema_version: 18`; individual records retain their
+The recovery document uses `schema_version: 19`; individual records retain their
 independent versions. Version 6 adds the dispatch fields `brief_identity`, `refusal` and
 `refusal_move` and the `refusal_authorizations` collection; version 7 adds the
 dispatch's send-time `provider`; version 8 adds the `diagnoses` collection;
@@ -673,7 +745,7 @@ dispatch is reserved immediately after spawn, before another worker starts.
 Planner rotation counts map completed assignment indices back through these
 dispatches so fresh live names do not erase worker-kind history. The
 owner stamps an older store on load, adds the empty collections, and refuses one
-already carrying a field — or a seat-named dispatch — its version did not own. Generic records remain version 1; stale-Grok delivery and
+already carrying a field — or a seat-named dispatch — its version did not own. Generic records remain version 1; explicitly admitted task metadata uses version 2. Stale-Grok delivery and
 composition-bearing dispatch/result records use version 2; a judge
 dispatch/result carrying its `judge_mode` uses version 3; assignment-scoped
 dispatch/result records use version 4. Version 16 adds dispatch/result version 5's
@@ -699,7 +771,9 @@ prove closure before apply can advertise this retry.
 Version-5 rows may carry the existing composition, judge and scoped
 lifecycle fields. Version-2 refusals add the original `launch_scope` or null and
 `unavailability` schema 1 (source-bound model/error/account-class/CLI-version,
-prompt digest, native identity and viewport proof). Its exact fields and first
+prompt digest, native identity and viewport proof) or schema 2 (terminal
+`cyber_policy` refusal with an additional `turn_id`, without a model/account
+negative). Its exact fields and first
 recording checks belong to `skills/herdr-foreman/foreman/model_unavailability.py` `validate_proof`
 and `verify_refusal`. Historical dispatches and schema-1 refusals acquire no
 scope or native proof from current config. Store versions below 16 carrying
@@ -731,8 +805,8 @@ gains empty `hand_clearances` and `historical_attempts` arrays. Existing
 record shapes, contents and evidence remain unchanged. Recovery 4 → 5 changes
 only the enclosing version. Older stores containing future dispatch fields or
 versions are refused without rewriting. State and assignment versions migrate
-independently; snapshot schemas 4 and 5 carry failed-record details and cleanup
-evidence through their own 3 → 4 and 4 → 5 migrations.
+independently; snapshot schemas 4–6 carry failed-record details, cleanup/startup
+evidence and measurement reuse through their own migration chain.
 Every record carries `at` and `task`. Authorizations contain the actual operator
 message `source` and `quote`; evidence receipts contain absolute `path` and
 `sha256` of the bytes read by the owner. Receipts are audit evidence, not a
@@ -795,6 +869,155 @@ change.
 The command's input/output and continuation contract is
 `skills/herdr-foreman/references/no-work-recovery.md`. The source-binding and
 one-replacement validation lives in the owner module's `validate` function.
+
+### Admitted Task Progression
+
+Recovery store version 19 owns task metadata version 2. The single writer is
+the herdr-foreman owner through `progression-admit`, `progression-return`,
+`progression-reconcile`, `progression-resume` and
+the admitted `progression-run` loop. All changes share the canonical state
+transaction lock. Legacy task metadata remains version 1 with no grant;
+upgrading an older store never invents a service handoff. A version-18-or-older
+store carrying task authority is unowned newer data and fails validation.
+
+A version-2 task retains its original task fields and adds `authority`. Its
+grant fields and validation/budget contract are `GRANT_FIELDS` and
+`validate_grant` in `skills/herdr-foreman/foreman/progression_owner.py`. A grant records one current
+generation, service identity, dedicated kernel lease path, immutable workflow
+receipt, loaded policy identity, supervision-binding identity, authorization
+and timestamp. Returned grants keep the generation and clear service fields.
+No second task database or local handoff history is written.
+
+New grants use schema 2 and also record `contract_schema`: 1 for a prepared
+chain, 2 for the admitted task executor, null on return. The state owner's
+existing on-read migration upgrades and rewrites accepted schema-1 grants.
+Their original admission protocol supported prepared chains only: a service
+grant gains `contract_schema: 1`, and a returned grant gains null. Every prior
+field, generation, policy, binding and pending obligation is preserved. This
+derivation reads no historical contract and never admits a task executor from
+an old document's claimed type. Read-only previews refuse with the existing
+owner-migration instruction and leave the original file untouched. Admission
+and each capability check verify the
+captured contract type. This explicit discriminator lets Stop ignore legacy
+historical contracts instead of opening them to infer an execution mode.
+
+An optional schema-1 `progression` record starts at the first dispatch intent. Its
+schema-1 fields are `schema_version`, `generation`, `cursor` and `pending`.
+`pending` is null or a schema-1 record with `step` and stable `intent` identity.
+`skills/herdr-foreman/foreman/progression_service.py` owns `validate_progress`, cursor bounds and
+readback. The cursor advances only after the exact expected task dispatches
+are owner-recorded as applied. A persisted pending intent with incomplete
+readback remains uncertain after restart. Completion of this cursor means the
+prepared assignment chain ended; it proves no acceptance, release or outcome.
+
+Schema-2 admission creates one current `progression` object with
+`schema_version`, `generation`, `phase`, `round`, `pending`, `jobs`, `head`,
+`blockers`, `exception`, `at`, `publication_baseline`, `plan` and `delivery`.
+`skills/herdr-foreman/foreman/workflow_contract.py` owns its exact fields, cross-field validation and
+budgets. Phases are `implement`, `verify`, `release`, `merge`, `publish`,
+`cleanup`, `complete` and `exception`. `jobs` maps responsibilities to existing
+canonical dispatch IDs, never another assignment log. `head` binds the actual
+commit/tree/affected paths against the original task base. `blockers` and `plan`
+are current byte receipts. `round` is cumulative for the original task.
+
+The single schema-2 pending intent has `schema_version`, `id`, `operation`,
+`argv`, `inputs`, `effects_started`, `dispatches` and `job`. Only unresolved
+launch/close intents carry a transient full native `job`; canonical readback
+removes it. Operations are `measure`, `apply`, `record`, `close`, `merge` and
+`cleanup`; unsupported effects refuse. Worker delivery/claim shapes and limits
+are `JOB_FIELDS` and `CLAIM_FIELDS` in the same owner module, with their human
+contract in `skills/herdr-foreman/references/task-workflow.md`. Claims never replace actual native
+delivery, independent identities, Git scope or existing gate evidence.
+
+`exception` is null or `{id, code, phase, sources, actions}`. `id` binds this
+occurrence to its task generation, phase, capture time and existing canonical
+event boundary. A recorded resume advances that boundary even under a frozen
+clock; replaying its authorization cannot clear a later identical failure.
+`phase` preserves the
+original stage; source pointers and permitted actions are bounded, with no
+copied report/history. Resume takes the exact packet digest and explicit
+authorization, verifies the current foreman and a free lease, then restores
+only a retryable stage. One `progression_exception_resumed` owner event records
+that authorization. It cannot resolve material decisions or unknown sends.
+
+`delivery` is null or a schema-2 object with `pull_request`, `merge_commit`,
+`publisher_run`, `tag`, `tessl_version`, `tessl_confirmed`, `acr_confirmed`,
+`accepted`, `base_checkout`, `cleanup_step` and `artifacts`. Actual confirmations are retained
+separately; one channel never substitutes for another. Cleanup has five Git
+steps followed by artifact retirement at `cleanup_step: 5`. `artifacts` is
+schema 1 with `phase`, `quarantine`, `root`, `stage` and `remaining`. Phases are
+`pending`, `staging`, `retiring`, `retired` and migrated `legacy_preserved`.
+Root/stage identities are schema-1 `{device,inode}` records. At most 256
+remaining schema-1 entries bind `name`, `sha256`, `device` and `inode`.
+The existing schema-2 cleanup intent uses empty `argv` and at most 32 `inputs`
+receipts for one batch. Atomic moves precede inode/byte verification and
+deletion in the exclusive `.herdr-retire-` namespace. Its empty envelope moves
+to the recorded path plus `.retired` before final removal. Mismatches preserve
+the moved bytes. The manifest clears when retirement completes.
+
+The primary owner migrates delivery 1 to 2 on read and rewrites it before use.
+Before committing that whole-file format change, `skills/herdr-foreman/foreman/workflow_upgrade.py`
+checks every unfinished service against the executing policy identity. A
+mismatch refuses with a state error and leaves the original file unchanged,
+including on read-only previews. Restore the exact admitted policy to drain or
+explicitly return its service through its original owner before upgrading;
+editing grants never supplies a handoff. A completed workflow has no remaining
+executor obligation. The same preflight runs before creating the first delivery-2
+record; a file with no prior delivery still needs its other readers preserved.
+The check reads no native history and transfers no authority.
+Completed records become `legacy_preserved` without filesystem changes;
+active records gain pending cleanup. Read-only previews require that owner
+migration first. Older readers reject delivery 2; retain a compatible owner
+for in-flight records rather than downgrading their obligations. Canonical
+dispatch/closure receipts and the GitHub closure reference survive retirement.
+The CLI projects `artifacts` as schema-1 `kind: artifact_cleanup_view`, with
+phase, quarantine, finalization suffix and remaining count; it omits the
+manifest. Task records in `load-set` use that same observational projection;
+the owner retains the full manifest. Native close records both report and
+delivery byte receipts in the existing enrollment resolution, checked against
+the durable close intent. Retirement requires those original receipts and all
+expected reports, delivery files, briefs, common text, plan and claimed release
+review snapshots before any initial move. Preparatory release outcomes need no
+snapshot file; an unclaimed file at that name stays protected. Missing or changed evidence refuses; older
+closures lacking a delivery receipt are preserved rather than adopted by name.
+Full lifecycle ownership is in `skills/herdr-foreman/references/progression.md`.
+A `complete` label without its matching merged task
+closure, accepted delivery, finished cleanup and no pending intent cannot
+release Stop obligations.
+
+`progression-reconcile` clears only a complete expected dispatch set already
+recorded `not_sent`, with no active enrollment and no live service lease. It
+keeps the cursor and grant unchanged. One `progression_intent_reconciled` event
+records the task, expected generation, intent and explicit authorization in
+`details`; that owner receipt supports idempotent replay. Missing or partially
+applied sets do not qualify. No new store or parallel task history is created.
+For schema 2 the same command retires only a proved unsent pending launch and
+its current plan, preserving generation, task, base, jobs and correction count.
+It requires settled enrollments and no report; a later execution plans a fresh
+native identity rather than reusing an uncertain attempt.
+
+The kernel lease is a dedicated empty file, not a schema-bearing authority
+record. Its separate empty `.owner` sibling holds a process-associated lock;
+`F_GETLK` joins the exact PID to both actual inode identities. A live process
+plus another process's occupied flock is not continuation proof. Same-process
+checks require the actual registered in-memory lease capability. Process death
+releases its locks but neither returns the task nor
+classifies an effect. Every service mutation verifies its live capability,
+task generation, policy, contract and supervision binding inside the owner
+transaction. The real bound foreman retains exception assessment; foreground
+dispatch of a service-owned task is refused. Operator holds stay effective.
+Service transport checks the current supervision binding and unresumed holds
+inside `supervision.effect_boundary`, sharing the hold/bind lock through the
+native invocation. This boundary writes no snapshot and introduces no record
+shape. The enclosing CLI still owns the primary transaction; enrollment uses
+its ordinary separate supervision transaction between native invocations.
+
+This is a gate store under `stateful-artifacts` Gate Store: a reader that cannot
+accept its version must refuse effects. Existing state-mutating owners refuse
+newer recovery versions rather than substituting an empty ledger. Install
+compatible CLI owners and native hooks before admission; never run an old
+sidecar against admitted tasks. Readers do not independently migrate grants.
+The command and initial-adapter limits are in `skills/herdr-foreman/references/progression.md`.
 
 ## Specialist assessment records
 
@@ -907,7 +1130,8 @@ original `input`, `evidence_receipt`, and later `observed_state`/`observed_sessi
 An applied recovery appends a new assignment with null contemporaneous session
 proof and marks its result `recovered: true`; it preserves the original row.
 
-Each snapshot is one `measure` document: `schema_version`, `measured_at`, an
+Each snapshot is one `measure` document: `schema_version`, `measured_at`,
+`measurement_context_sha256`, `reused_agents`, an
 `agents` object keyed by agent name (`kind`, `state`, `herdr_state`,
 `state_source`, `pane_id`, `windows`, `credits`, `plan`, `headroom_pct`,
 `skipped`), and `failed_agents`. A failed agent carries `error.code`,
@@ -946,17 +1170,16 @@ in `skills/herdr-foreman/references/probe-recovery.md`.
   implementation separately from active audit work. `apply --dry-run` reads
   current recovery bounds without writes; an older ledger requires an owner
   `state` command first. Dry-run never proves live continuity.
-  `cost-report [--task TASK]` reads the ledger, the recovery events and the
-  snapshots without writing or migrating, and refuses an unusable state file
-  rather than reporting no tasks. Its output is
-  `{"schema_version": 1, "unrecorded": [...], "tasks": [...]}`: per task its
-  `status` (`accepted`, `abandoned` or `open`), `started_at`, `ended_at`,
-  `elapsed_seconds`, `tokens`, `correction_rounds`, `work`, `coordination` and
-  `windows`, each reported separately. `unrecorded` names every field no owner
-  record carries. A window's movement carries `attribution: unknown` unless the
-  report's attribution predicate holds. What each field counts, and that
-  predicate, are the contract of `skills/herdr-foreman/foreman/cost_report.py`
-  (module docstring), not restated here.
+  Foreman-facing context reads debit the separate existing exposure counter;
+  this changes no operational owner record. The command set and continuation,
+  error, budget and GitHub-read contracts are in
+  `skills/herdr-foreman/references/decision-context.md`.
+  `cost-report [--task TASK] [--limit N] [--offset N]` now returns a schema-2
+  bounded view with `tasks`, `unrecorded` and `coverage`. Each quantity retains
+  its previous meaning and unknown values. The internal complete calculator
+  remains schema 1; it is not the model-facing CLI view. Quantity meanings
+  and attribution belong to `skills/herdr-foreman/foreman/cost_report.py`
+  (module docstring).
   Readers identify the maintenance tier variant by `status: maintenance`.
   `role_counts` excludes it from assignment experience; `cost-report` excludes
   it from both work and `unstarted_assignments`; chronology may still use its
@@ -1031,6 +1254,11 @@ include their locations in foreman handoffs. A saved observation is never task
 acceptance or permission to act. The referenced contracts own full field shapes,
 retry and unsupported-schema behavior; only their owner commands mutate them.
 
+The former schema-1 context counter (`<selected-state>.context.json`) and fixed
+presence receipt (`<selected-state>.context-presence.json`) are retired. No
+reader, writer, migration or runtime gate uses them. Existing bytes remain
+untouched; home relocation carries them as opaque files. See `skills/herdr-foreman/references/decision-context.md`.
+
 ### Supervision schema 1
 
 `skills/herdr-foreman/foreman/supervision.py` owns `<canonical selected state>.supervision.json`.
@@ -1091,17 +1319,31 @@ store requires recovery of its history before rebinding or writing.
   `waiting_for_user` hold may authorize Stop. A current `handoff` hold does not
   authorize Stop until its exact live reset continuation is verified. More
   than one current handoff is ambiguous and authorizes no Stop.
-- `watchers`: `{schema_version, id, at, heartbeat, deadline, process, status,
+- Schema-1 `watchers`: `{schema_version, id, at, heartbeat, deadline, process, status,
   reason, ended_at}`. `process` contains positive `pid` and an `identity` digest
   of its observed start time and argv. `status` is `running|stopped`; `reason`
   and `ended_at` are null until the watch stops. Health also checks a fresh
   heartbeat and bounded deadline. A PID alone proves no live watcher.
+- Schema-2 task `watchers` add `task`, `generation`, `service_id`, `lease_path`,
+  `policy`, `binding` and `lease_proof` to those fields. Only the actual live
+  service capability writes the current task row through
+  `skills/herdr-foreman/foreman/progression_runtime.py`; schema-2 grants additionally require an
+  initialized task executor. Pulses replace one row without events/history.
+  `lease_proof` is schema 1 with `lease` and `owner` inode pairs `[device,inode]`.
+  Health joins the exact kernel owner PID and both current physical paths to
+  the OS process, fresh pulse and unchanged admitted authority. A foreground
+  watcher never borrows this row as its own health. Stop reads only current
+  schema-2 obligations; legacy chains provide no delegated continuation.
 - `evidence` arrays contain readable file receipts:
   `{schema_version: 1, path, sha256, size}` with canonical absolute `path`,
   lowercase 64-character SHA-256, and nonnegative byte `size`. They preserve
   observed bytes, never infer that a prose claim is true or an action authorized.
 
 The native Stop reader performs local read-only checks for the exact bound foreman.
+ACR policy ownership additionally invokes its public read-only realization
+check, which can fetch locked dependencies in a fresh process. Unavailable
+verification refuses continuation; it never reclaims task authority. Source
+and Tessl policy identity use local bytes.
 It never migrates state, acknowledges events, clears attention, or marks task
 completion. Its normal no-binding result applies only to a session never bound
 as foreman; missing or unreadable bound-owner history cannot release obligations.
@@ -1138,7 +1380,9 @@ Only the owner migrates, and it reads a version in one of three directions.
   empty `tier_billing` maps, preserving window groups and readings. Snapshot
   `3 → 4` adds an empty `error.details` object to failed records, preserving
   their code and message. Snapshot `4 → 5` stamps the version only: it keeps every
-  `error.details` as stored and adds none of the cleanup evidence keys. Each row is migrated even in
+  `error.details` as stored and adds none of the cleanup evidence keys. Snapshot
+  `5 → 6` adds `measurement_context_sha256: null` and `reused_agents: []` without
+  inventing context/reuse proof or changing existing observations. Each row is migrated even in
   a document already at the current version.
 - **Newer** — this build is the lagging reader, not the migrator. The caller
   gets an empty document in memory, the file on disk is left exactly as found,
@@ -1216,14 +1460,14 @@ file's own state lock, never the main state lock.
 for an existing explicit operator-requested maintenance reset. Without the flag,
 the CLI refuses before owner reads/writes, child startup or input. Ordinary
 round checkpoints schedule nothing and preserve the current goal and context.
-Existing reset rows and recovery commands remain readable; no schema changes.
+Existing reset rows and recovery commands remain readable.
 The reader
 checks every field, and the `result` shape each `status` requires.
 `foreman-reset-deliver` claims that row and finishes it.
 
-Envelope: `{"schema_version": 3, "resets": [<row>, ...]}`, rows in append
+Envelope: `{"schema_version": 4, "resets": [<row>, ...]}`, rows in append
 order. A missing file means no prior reset. A file whose envelope carries an
-integer `schema_version` above 3 was written by a newer build: a read takes it
+integer `schema_version` above 4 was written by a newer build: a read takes it
 as no prior reset, and a write refuses with `reset_record_newer`, leaving the
 file untouched (`rules/stateful-artifacts.md` Migration Policy). A record that
 is a link, cannot be read or parsed, fails any row's validation, or holds two
@@ -1233,12 +1477,15 @@ an outcome that would not validate is refused before it is written. The
 deliverer waits up to `CLAIM_LOCK_BUDGET_SEC` for the record lock, which
 `foreman-reset` holds until it has saved the deliverer's identity.
 
-Schema 2 added `native_session` (#523). Schema 3 adds `foreground` and
-`accepted_session` (#707). The owner migrates schema 1/2 on read
+Schema 2 added `native_session` (#523). Schema 3 added `foreground` and
+`accepted_session` (#707). Schema 4 adds `host_goal` (#51).
+The owner migrates schema 1/2/3 on read
 (`foreman_reset._migrate`): every row first validates against its own version;
 invalid records remain untouched. Schema-1 rows gain `native_session: null`;
-all older rows gain `foreground: null` and `accepted_session: null`. Row,
-delivered-result and envelope versions become 3. The owner rewrites
+schemas 1/2 gain `foreground: null` and `accepted_session: null`. Schema-3
+pins and acceptance remain intact. Every legacy row gains `host_goal: null`;
+that value proves no host-goal transfer and cannot admit a Codex reset input.
+Row, delivered-result and envelope versions become 4. The owner rewrites
 the upgraded record on that read, under the record lock, `catch-up`'s read
 included. A deliverer of the schema-1 build still running then reads a newer
 record and cannot record its outcome: its row stays `scheduled` or
@@ -1248,9 +1495,10 @@ could not take.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schema_version` | integer, always `3` | Row version |
-| `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before continuation input. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
+| `schema_version` | integer, always `4` | Row version |
+| `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before the first clear keystroke. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
+| `host_goal` | null or goal-receipt schema 1 | Legacy null grants no goal authority. New rows carry host preflight and the journal below. The input hook retires the source before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
 | `stow` | string | The stow id the resume prompt names |
 | `status` | one of `scheduled`, `delivering`, `delivered`, `failed`, `interrupted`, `reconciled` | `scheduled` → `delivering` → `delivered`; `failed` before any keystroke; `interrupted` after one; `reconciled` when the operator confirmed through `foreman-reset-reconcile` that the foreman resumed |
@@ -1259,6 +1507,49 @@ could not take.
 | `process` | `{"pid": integer, "identity": string}`, or null | The deliverer's process: its pid and a digest of its start time and command line (`supervision_runtime.process_identity`). A reused pid carries another identity. Null only on a `scheduled` row before its deliverer is identified, or on a `failed` row whose deliverer never started or was gone before identification. Every `delivering`, `delivered` and `interrupted` row carries one |
 | `native_session` | `{"kind": "id" \| "path", "value": non-empty string}`, or null | Original native binding. Null is retained only from schema-1 migration and authorizes no input. The per-keystroke session/process contract is `skills/herdr-foreman/foreman/foreman_reset.py` (`deliver`); hook transfer is `skills/herdr-foreman/foreman/reset_input_hook.py` (`check`) |
 | `result` | null, the delivery object, or the failure object | `scheduled` and `delivering` hold null. `delivered` holds exactly `{"schema_version", "pane_id", "stow", "agent", "cleared": true, "resume": {"landed": true, "started": true}}`, whose `schema_version`, `pane_id` and `stow` equal the row's. `failed` and `interrupted` hold exactly `{"error": string, "message": string, "details": object, "resume_prompt": string}`; the saved prompt is used only when the recovery instruction requires operator input. `reconciled` holds exactly `{"outcome": "delivered", "reconciled_at": ISO-8601 string}` |
+
+The reset owner writes and reads goal-receipt schema 1 through
+`skills/herdr-foreman/foreman/host_goals.py`; the host adapter is
+`skills/herdr-foreman/foreman/codex_goals.py`. Native Claude/Grok receipts contain
+only `schema_version`, `runtime` and `phase: not_applicable`: they create no
+Codex goal and prove nothing about an external scheduler. Codex receipts contain:
+
+| Field | Contract |
+| --- | --- |
+| `schema_version`, `runtime` | Integer `1`, literal `codex` |
+| `socket` | Absolute existing daemon control socket selected during read-only preflight |
+| `source_thread`, `source_goal` | Original native ID and its authoritative host goal snapshot, or null when no goal exists. Snapshot fields are `threadId`, `objective`, `status`, nullable `tokenBudget`, `tokensUsed`, `timeUsedSeconds`, `createdAt`, `updatedAt`; additional host fields are preserved |
+| `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration |
+| `phase` | `prepared`, `quiescing`, `retiring`, `retired`, `restoring`, `restored`, `verified`; intermediate intent is never proof the corresponding host mutation succeeded |
+| `retiring_turn`, `resume_status` | Exact outgoing turn ID selected for host interruption, or null; original goal lifecycle restored on the successor, or null with no source goal. A real interruption may pause the outgoing host goal; it never changes the saved objective's intended lifecycle |
+| `carried_tokens`, `carried_seconds` | Nonnegative cumulative usage from prior executors of this goal. The successor's native counters remain native; its token cap is only the remaining allowance |
+
+Each host mutation is preceded by a saved phase. Recovery reads live source and
+target state, preserves changed goals and never blindly repeats a lost mutation.
+An already-running obsolete continuation is interrupted by its exact host turn
+ID before final usage is captured; no new turn is started to stop it.
+The explicit reset request authorizes retiring its obsolete executor through
+host control; no completion, pause or blocked status represents retirement.
+Only a matching verified generation carries accounting into the next reset.
+`foreman-reset-status --stow <id> [--pane <pane>]` emits one bounded selected
+receipt under the per-response output bound; it prints no objective or
+history. A missing or ambiguous selection refuses. Its output is a receipt,
+not a substitute for live host/owner verification.
+Codex receipts bind `source_thread` to the row's original native session and
+any accepted session to `target_thread`. Non-prepared phases require a distinct
+target; restored/verified goals require their created generation. An absent
+source goal carries no generation, usage or interrupted-turn authority.
+Restoring/restored/verified Codex rows require native acceptance. Reconciliation
+matches that accepted identity to the live pane/runtime before host effects;
+it cannot label admitted input failed. An older failed row with accepted,
+unfinished restoration remains recoverable through delivered reconciliation.
+An unadmitted Codex terminal failure with foreground proof carries the existing
+guarded resume prompt in `result.resume_prompt`. Native submission in the same
+pinned session verifies it and writes `accepted_session` once before restoration;
+there is no automatic resend or new owner record. With no journaled target and
+supervision still bound to the source, operator recovery clears that same
+pinned runtime first. Once either target or rebound supervision exists, recovery
+preserves the incoming session without another clear or process restart.
 
 One claimed delivery attempt per pane and stow, never retried automatically.
 Production startup uses a private inherited pipe: the loaded child supplies
@@ -1269,7 +1560,7 @@ preclaim recovery follows `skills/herdr-foreman/foreman/foreman_reset.py` (`sche
 `STARTUP_ATTEMPTS`): under the record lock the owner proves its row remains
 unclaimed, reaps only its own child and revokes that process identity before
 another start. The private reset log retains each lost startup's attempt,
-process identity and fixed failure reason. No row shape changes. Exhaustion
+process identity and fixed failure reason. Exhaustion
 finishes `failed`; a claimed failure or uncertain send never retries.
 A
 retry replays before every precondition the reset itself changes (stow
@@ -1316,9 +1607,9 @@ reasons. An unnamed target uses `reset_foreman_unnamed`, reason
 record `phase: unclaimed` for a never-claimed child and `phase: unknown` for a
 claimed delivery whose outcome is unknown. Older reconciled failures without
 that phase retain the indeterminate operator route. Row/envelope shapes remain
-schema 3; no new stored field or legacy authority is introduced.
+schema 4; migration introduces no legacy host-goal authority.
 
-The Stop evaluator reads this record without migrating or rewriting it. A schema-1/2
+The Stop evaluator reads this record without migrating or rewriting it. A schema-1/2/3
 record supplies no usable prior state and refuses Stop with `reset_record_older`;
 the diagnostic names the owner's `catch-up` migration and rewrite. Only the sole current
 handoff whose id equals `stow` can use a live claimed `delivering` row. A live

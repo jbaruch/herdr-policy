@@ -91,7 +91,7 @@ an omitted field is not. Classification rules are in
 
 Run it before `plan`, with the roles and requirements that round intends. This
 is a synopsis; the runnable command, through `bash` and the resolved plugin
-root, is `skills/herdr-foreman/SKILL.md` Step 5:
+root, is `skills/herdr-foreman/references/foreman-workflow.md` Step 5:
 
 ```text
 foreman detect-triggers --repo <dir> --base <ref> [--head <ref>] \

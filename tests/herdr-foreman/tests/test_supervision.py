@@ -325,10 +325,38 @@ class SupervisionTest(unittest.TestCase):
         self.assertIsNone(self.stop())
         self.assertFalse(self.path.exists(), "Supervision must not rewrite dispatch/task state")
 
+    def test_unrelated_newer_or_unusable_reset_record_cannot_block_an_empty_foreman(self):
+        record = foreman_reset.record_path(self.path)
+        for body in ('{"schema_version":999,"resets":[]}', 'corrupt unrelated reset record'):
+            with self.subTest(body=body):
+                record.write_text(body)
+                self.assertIsNone(self.stop())
+                self.assertEqual(record.read_text(), body)
+
     def test_active_worker_always_blocks_stop_even_with_loop_guard(self):
         self.member()
         self.assertEqual(self.stop()["decision"], "block")
         self.assertEqual(self.stop({**self.payload, "stop_hook_active": True})["decision"], "block")
+
+    def test_expected_resolution_receipts_preserve_changed_evidence_and_the_open_member(self):
+        self.member()
+        delivery = self.root / "delivery.json"
+        original = b'{"found":true}\n'
+        delivery.write_bytes(original)
+        paths = [str(self.evidence), str(delivery)]
+        expected = [{key: row[key] for key in ("path", "sha256")} for row in store.evidence(paths)]
+        request = {"id": "dispatch-a", "outcome": "Closed original report and delivery bytes.", "evidence": paths}
+        before = store.load(self.path)
+        delivery.write_bytes(b"Changed after the original close intent.\n")
+        with self.assertRaisesRegex(UsageError, "differs from the original intent"):
+            store.resolve(self.path, request, AT, expected_evidence=expected)
+        self.assertEqual(store.load(self.path), before)
+        self.assertEqual(delivery.read_bytes(), b"Changed after the original close intent.\n")
+        delivery.write_bytes(original)
+        result = store.resolve(self.path, request, AT, expected_evidence=expected)
+        self.assertFalse(result["active"])
+        self.assertEqual([{key: row[key] for key in ("path", "sha256")}
+                          for row in result["resolution"]["evidence"]], expected)
 
     def test_worker_and_unrelated_session_do_not_inherit_lead_gate(self):
         self.member()
@@ -374,7 +402,7 @@ class SupervisionTest(unittest.TestCase):
             self.hold(["dispatch-a"])
         self.hold(["dispatch-a", "dispatch-b"])
         self.assertIsNone(self.stop())
-        store.resume(self.path, AT)
+        store.resume(self.path, AT, expected_holds=["hold-1"])
         self.assertEqual(self.stop()["decision"], "block")
 
     def test_nominal_handoff_does_not_release_stop_after_a_quiet_watch_deadline(self):

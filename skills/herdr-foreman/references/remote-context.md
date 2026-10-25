@@ -16,10 +16,14 @@ The lease authority serializes revocation/handoff with this same owner lock;
 the reader does not acquire it recursively. Remote observations are followed
 by a fresh lease check immediately before effect invocation or reconciliation.
 The owner checks it under the shared lock before initialization, effects,
-queries and reconciliation. The service first loads the installed in-tree rules and
-Herdr foreman skill/references in full. `loaded_policy(plugin_root)` computes
-the version and digest of those bytes; the hash alone does not prove that a
-model loaded or followed the policy. The controller attests that load.
+queries and reconciliation. The service first loads the installed routing rule and small foreman skill
+router. Its bound client selects the foreman operating context through
+`cli.main(["role-context"], client=...)`; only after actual owner preflight may
+it load the references needed for the current decision. It never preloads all
+foreman references into every agent. `loaded_policy(plugin_root)` computes the
+version and digest of the complete installed policy; that identity alone does
+not prove which instructions a model loaded or followed. The controller
+attests the applicable instruction load.
 
 The immutable receipt binds `controller_id`, `service_principal`, opaque saved
 `machine_profile_id`, `remote_session`, `workspace_id`, `foreman_pane_id`,

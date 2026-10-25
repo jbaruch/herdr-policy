@@ -2,11 +2,12 @@
 
 Read this contract when the execution plan reaches one of its steps. Execute
 only the current step and the continuation it names. Step numbers refer to
-`skills/herdr-foreman/SKILL.md`.
+`skills/herdr-foreman/references/foreman-workflow.md`.
 
 ## Step 12 — Gate the Round
 
-Classify every delivered report in one call, and save its stdout:
+Classify the selected task's delivered reports in one call, and save its stdout.
+Do not wait for unrelated tasks' reports before routing this task:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
@@ -47,7 +48,8 @@ owners' contract:
 skills/herdr-foreman/references/report-classifier.md
 ```
 
-Gate the reports together in one turn, not one turn per report.
+Gate the selected reports together in one turn where their evidence is ready;
+unrelated assessments never hold independent dispatch or delivery.
 Before accepting a mechanical round, compare its whole result against the
 oracle its plan declared. `<result-file>` is the pushed diff for a `patch`
 oracle and the produced output otherwise:
@@ -77,8 +79,7 @@ bash "$HS/foreman.sh" verify-partition \
 - Exit 1 also names a seat whose latest dispatch is not this plan's applied
   send to its assigned worker, or a plan made without `--task`
 - Exit 1 is a blocking finding on the round, gated below like any other
-- Run Step 16, then Step 17, with Step 4 as the stow's continuation step
-- The current foreman continues at Step 4 and re-validates the partition at the
+- Continue directly at Step 4 and re-validate the partition at the
   tip in Step 5, replanning from that result
 - The new plan then takes Step 8 composition, Step 10 dispatch, Step 11
   observation, and this step's gate
@@ -118,10 +119,10 @@ assess them yourself.
 Persist user-facing obligations under `skills/herdr-foreman/references/attention.md` before presenting
 them; record an actual answer or resolution separately from showing the item.
 
-Every return to Step 4 is a round boundary: run Step 16 to log the round and
-Step 17 to checkpoint first. Record the step this gate decision named as the stow's
-continuation step. The current foreman takes Step 17's Continue Route without
-clearing context or ending supervision.
+Take the gate decision's next action directly. Owner receipts already preserve
+routine facts; record only a new judgment or outcome. No lesson pass, round-start
+replay or new stow is required. Use Step 17's handoff only for a real context
+transition or knowledge otherwise at risk, retaining the selected continuation.
 
 After accepting a consultation, return to Step 4 for the next needed
 responsibility. For an investigation-only task, use the knowledge gate below.

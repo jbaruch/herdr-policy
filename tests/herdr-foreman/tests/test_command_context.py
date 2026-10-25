@@ -311,6 +311,31 @@ class RemoteOwnerTest(RemoteOwnerFixture):
         self.assertIn("remote_owner_state_path_changed", stderr.getvalue())
         self.assertEqual(self.calls, [])
 
+    def test_bound_remote_load_sets_preserve_owner_state_without_read_accounting(self):
+        state = empty_state()
+        recovery.register_task(state["recovery"], {"task": "remote-task", "base_revision": "a" * 40,
+            "scope": "bounded remote query", "allowed_paths": ["src/*"],
+            "authorization": {"source": "operator", "quote": "query the fixture"}}, "2026-09-01T12:00:01+00:00")
+        save_state(self.owner.state_path, state)
+        state_before = self.owner.state_path.read_bytes()
+        owner_before = self.store.read_bytes()
+        binding_before = supervision.load(self.owner.state_path)["binding"]
+        total = 0
+        for decision in ("plan", "brief", "gate", "diagnose"):
+            stdout, stderr = io.StringIO(), io.StringIO()
+            result = cli.main(["load-set", "--state", str(self.owner.state_path), "--decision", decision,
+                               "--task", "remote-task"], client=self.client, stdout=stdout, stderr=stderr)
+            self.assertEqual(result, 0, stderr.getvalue())
+            packet = json.loads(stdout.getvalue())
+            self.assertEqual(packet["schema_version"], 4)
+            self.assertFalse(packet["authorizes_progression"])
+            self.assertNotIn("aggregate_budget", packet)
+            total += len(stdout.getvalue().encode())
+        self.assertFalse(Path(str(self.owner.state_path) + ".context.json").exists())
+        self.assertEqual(self.owner.state_path.read_bytes(), state_before)
+        self.assertEqual(self.store.read_bytes(), owner_before)
+        self.assertEqual(supervision.load(self.owner.state_path)["binding"], binding_before)
+
     def test_pending_transport_remains_observable_but_not_context_ready(self):
         self.lost = True
         with self.assertRaises(RemoteIndeterminateError):

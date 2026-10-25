@@ -2,7 +2,7 @@
 
 Read this contract when the execution plan reaches one of its steps. Execute
 only the current step and the continuation it names. Step numbers refer to
-`skills/herdr-foreman/SKILL.md`.
+`skills/herdr-foreman/references/foreman-workflow.md`.
 
 ## Step 5 — Plan the Roles
 
@@ -13,7 +13,17 @@ HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS
 bash "$HS/foreman.sh" foreman-queue
 ```
 
-It prints `{"schema_version": 1, "queue": [...]}`. Each entry names `task`,
+It returns a byte-bounded CLI view with `schema_version: 2`, `queue`,
+`pagination`, `context_complete`, `authorizes_progression: false` and the output
+budget. The page metadata contains `total`, `offset`, `limit`, `returned`,
+`omitted` and `next_offset`. Continue with `--offset <next_offset>` and the same
+owner flags when the selected question needs another page; `--limit N` requests
+a row bound that may shrink to fit the printed-byte budget. Follow returned
+offsets until `next_offset` is null before claiming to have inspected the full
+queue. A partial page never proves that no authorized work remains. Select only
+from inspected entries and verify that task's current owner gates before acting;
+unexamined entries remain pending, rather than becoming a mandatory global
+context reload for an individual task decision. Each entry names `task`,
 `waiting_for` (a list of `developer`, `reviewer` or `tester`),
 `dispatched_seats`, `since`, `developer` and `fix_round`. A non-zero exit names
 an unusable state file on stderr; restore it before planning. Tasks with an
@@ -117,6 +127,11 @@ skills/herdr-foreman/references/dispatch-recovery.md
 ```
 
 Save the plan and rationale.
+Assign whole-suite execution to the tester, with exact-head artifacts available
+to the reviewer and specialists. Stagger expensive gates sharing a constrained
+CPU, memory, container service or host; keep code review and independent work
+moving. Use existing assignments and check evidence, without another scheduler
+or utilization ledger.
 Proceed immediately to Step 6.
 
 ## Step 6 — Build the Review Package

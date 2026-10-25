@@ -20,6 +20,8 @@ from . import runnable
 from . import foreman_reset
 from . import supervision as store
 from . import supervision_runtime as runtime
+from . import progression_runtime
+from .native_policy import executing_policy_root
 from .errors import ForemanError
 
 
@@ -73,9 +75,13 @@ def check(payload, environ, at, *, root=None, probe=runtime.process_identity):
                 continue
             events = store.pending(data)
             active = [row["id"] for row in data["members"] if row["active"]]
-            if not events and not active:
-                return None
             if not events and store.current_holds(data, "waiting_for_user"):
+                return None
+            delegated = progression_runtime.continuation(binding["state_path"], data, at, executing_policy_root(), probe=probe)
+            uncovered = set(active) - delegated["members"]
+            unhandled = [event for event in events if event["member"] not in delegated["members"]]
+            unhealthy = [task for task, status in delegated["tasks"].items() if status != "live"]
+            if not uncovered and not unhandled and not unhealthy:
                 return None
             continuation = None
             if not events and store.current_holds(data, "handoff"):
@@ -86,8 +92,8 @@ def check(payload, environ, at, *, root=None, probe=runtime.process_identity):
             handoff = ""
             if continuation is not None:
                 handoff = _ineligible_handoff_clause(continuation)
-            return block("{} active assignment(s), {} unhandled event(s); watcher is {}.{} Run `{}`, reconcile report/ledger evidence, acknowledge handled outcomes, and keep awaiting the foreground `{}` handle. A quiet watch deadline is a checkpoint: start the next foreground watch while authorized work remains. A genuine user-requested pause may use `{}`; a handoff permits Stop only after verified successor takeover or its explicitly requested reset continuation is live. State: {}".format(
-                len(active), len(events), health["state"], handoff, runnable.command("supervision-drain"), runnable.command("supervision-watch"),
+            return block("{} active assignment(s), {} unhandled event(s), {} task executor(s) needing recovery; watcher is {}.{} These counts exclude exact obligations covered by a healthy task executor. Read the bounded task exception for an admitted workflow. For legacy obligations, run `{}`, reconcile report/ledger evidence, acknowledge handled outcomes, and keep awaiting the foreground `{}` handle. A quiet watch deadline is a checkpoint: start the next foreground watch while authorized work remains. A genuine user-requested pause may use `{}`; a handoff permits Stop only after verified successor takeover, its explicitly requested reset continuation, or the exact healthy task executor is live. State: {}".format(
+                len(uncovered), len(unhandled), len(unhealthy), health["state"], handoff, runnable.command("supervision-drain"), runnable.command("supervision-watch"),
                 runnable.command("supervision-hold"),
                 binding["state_path"]))
         except ForemanError as exc:

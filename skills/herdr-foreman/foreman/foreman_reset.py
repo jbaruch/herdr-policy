@@ -2,8 +2,8 @@
 
 Ordinary round boundaries save a checkpoint and continue in the same context.
 The CLI refuses scheduling without --explicit-reset before any owner access.
-This legacy in-place maintenance route is not fresh-foreman succession and
-does not prove that a host runtime's active goal survives clearing.
+This in-place maintenance route verifies the Codex host-goal handoff as well
+as the native session binding before admitting its continuation.
 
 A foreman cannot type into its own composer mid-turn, so the reset is two
 commands. `foreman-reset` runs inside the turn: it checks the preconditions
@@ -67,20 +67,20 @@ import select
 import shlex
 import subprocess
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .assign import SETTLE_STATES
 from .composer import COMPOSER_SETTLE_SEC, send_command, send_message
 from .errors import HerdrError, StateError, ForemanError, UsageError
 from .herdr import DEFAULT_SETTLE_TIMEOUT_MS
-from . import supervision
+from . import supervision, host_goals, context_output
 from .chronology import timestamp
 from .runnable import command, launcher
-from .supervision_runtime import process_identity
+from .supervision_runtime import process_identity, read_client
 from .state import save_state, state_lock
 
-RESET_SCHEMA_VERSION = 3
+RESET_SCHEMA_VERSION = 4
 #: Startup is acknowledged by the loaded child, not guessed from its launcher
 #: PID. A macOS Python launcher execs the framework runtime in the same PID.
 STARTUP_BUDGET_SEC = 10
@@ -120,17 +120,32 @@ RESUME_TEMPLATE = (
     RESUME_OPENING + " Your earlier conversation is gone by design. Run the "
     "herdr-foreman skill; every owner launcher command takes the same `{flags}`. Before "
     "anything else: run `{tl} memory-show {flags} --id {stow}` and read its "
-    "required files in order. Explicitly set `/goal <saved objective>` in this "
-    "foreman's host runtime and verify the goal is active under the working-memory "
-    "Successor Goal contract, preserving any remaining budget. Naming a goal in "
-    "a prompt is not goal activation. If the goal or runtime facility is unavailable, "
-    "recover that gap without dispatch or claiming healthy takeover. Then run "
-    "`{tl} supervision-bind {flags}`, "
-    "`{tl} supervision-resume {flags}`, `{tl} supervision-status {flags}` "
-    "and `{tl} supervision-drain {flags}`; then "
-    "`{tl} foreman-queue {flags}`. Then complete SKILL.md Step 17's Resume Route: Step 1, Step 2, "
-    "then the continuation step the stow's unresolved work names, in place of Step 5. "
-    "Load each decision's records before making it, with "
+    "capture and unresolved work. Its file receipts are references for targeted "
+    "owner queries, not an instruction to dump the memory index, raw owner files "
+    "or prior reports. The reset owner controls host-goal restoration and outgoing "
+    "executor retirement; run `{tl} foreman-reset-status {flags} --stow {stow}` for this reset's host_goal receipt under the working-memory "
+    "Successor Goal contract. Never create or rewrite a goal to emulate that transfer. "
+    "If host_goal.phase is retired, the hook safely retired the source without activating a target. "
+    "Only for a Codex receipt whose phase is not verified: after reading the saved scope and holds, run "
+    "`{tl} foreman-reset-reconcile {flags} --pane <current-pane> --stow {stow} --outcome delivered` "
+    "to finish goal restoration from this admitted continuation. Claude/Grok receipts with phase not_applicable skip this command. "
+    "If the receipt is otherwise unavailable or the required goal transfer is unverified, recover without dispatch or claiming "
+    "healthy takeover. Then run "
+    "`{tl} supervision-bind {flags}`, `{tl} supervision-status {flags} --compact --section holds`, "
+    "`{tl} catch-up {flags} --compact --section resets` and `{tl} supervision-drain {flags} --compact`. "
+    "Inspect the complete unresumed hold set and relevant pending events/resets before covered effects. "
+    "Do not replay historical progress, all attention pages, active-enrollment bodies or unrelated queue pages "
+    "before the saved continuation. Retrieve current task-gating attention with the decision query below. "
+    "An omitted or unavailable "
+    "obligation remains unresolved. Preserve operator holds. Run "
+    "`{tl} supervision-resume {flags} --compact --hold <observed-hold-id>` only when existing authority "
+    "permits resumption and every unresumed hold's condition is satisfied. "
+    "Repeat --hold for the complete inspected set; a changed set refuses. "
+    "A context reset itself supplies no permission to clear holds. "
+    "Do not continue while any hold condition is unsatisfied or this task's supervision reconciliation is incomplete. "
+    "Use `{workflow}` Step 17's Resume Route and take the continuation step the stow's unresolved work names directly. "
+    "Do not rerun round-start preparation or a whole-fleet assessment. Query the queue only when selecting new work. "
+    "Retrieve missing current decision inputs with "
     "`{tl} load-set {flags} --decision <plan|brief|gate|diagnose> --task <task>` or "
     "`{tl} load-set {flags} --decision wake --enrollment <enrollment-id>`."
 )
@@ -143,7 +158,8 @@ def resume_prompt(stow, state, *, config=None, herdr_bin=None):
         flags += " --config " + shlex.quote(config)
     if herdr_bin:
         flags += " --herdr-bin " + shlex.quote(herdr_bin)
-    return RESUME_TEMPLATE.format(tl="bash " + shlex.quote(launcher()), stow=shlex.quote(stow), flags=flags)
+    return RESUME_TEMPLATE.format(tl="bash " + shlex.quote(launcher()), stow=shlex.quote(stow), flags=flags,
+                                  workflow=str(Path(__file__).resolve().parents[1] / "references/foreman-workflow.md"))
 
 
 def guarded_resume(stow, state, native_session, processes, *, options=None):
@@ -165,6 +181,7 @@ def accepted_resume(state, pane_id, stow, before):
     who = binding["identity"] if binding is not None else {}
     current = {key: who.get(key) for key in ("kind", "value")}
     if (row is not None and row["status"] == "delivering" and row["accepted_session"] == current
+            and (row["host_goal"] is None or row["host_goal"]["phase"] in ("retired", "verified", "not_applicable"))
             and who.get("pane_id") == pane_id and _valid_session(current) and current != before):
         return current
     return None
@@ -184,6 +201,12 @@ UNTOUCHED_RECOVERY = ("Do not run `{}` again for this stow. Nothing was typed by
 
 def recovery_instruction(status, result):
     """Failed delivery typed nothing; operator-reconciled uncertainty is not that proof."""
+    if "\n" + RESET_RECEIPT_PREFIX in result.get("resume_prompt", ""):
+        return ("The input was not admitted. Inspect this reset's host_goal target and current supervision binding. "
+                "If no target is journaled and supervision still names the saved source, the operator clears the same pinned runtime "
+                "and pastes the saved recovery prompt. If a target is journaled or supervision already rebound, paste into that "
+                "same incoming native session without clearing or restarting it. Restore an idle, unblocked pane first; "
+                "its native hook verifies admission before goal restoration.")
     if status == "failed" and (result["details"].get("reconciled") != "failed"
                                or result["details"].get("phase") == "unclaimed"):
         return UNTOUCHED_RECOVERY
@@ -374,7 +397,8 @@ STATUSES = frozenset({"scheduled", "delivering", "delivered", "failed", "interru
 #: Schema 1 rows lack `native_session`; schema 2 adds it (#523).
 ROW_FIELDS_V1 = frozenset({"schema_version", "pane_id", "stow", "status", "scheduled_at", "options", "process", "result"})
 ROW_FIELDS_V2 = ROW_FIELDS_V1 | {"native_session"}
-ROW_FIELDS = ROW_FIELDS_V2 | {"foreground", "accepted_session"}
+ROW_FIELDS_V3 = ROW_FIELDS_V2 | {"foreground", "accepted_session"}
+ROW_FIELDS = ROW_FIELDS_V3 | {"host_goal"}
 OPTION_FIELDS = frozenset({"config", "herdr_bin"})
 SESSION_KINDS = ("id", "path")
 #: The agents whose native session supervision-bind accepts (supervision_runtime.bind_current).
@@ -416,7 +440,7 @@ def arm_resume(state, pane, stow, before, processes):
 
 
 def _migrate(document):
-    """Upgrade schema 1/2 in memory; `_open` persists schema 3.
+    """Upgrade schema 1/2/3 in memory; `_open` persists schema 4.
 
     A schema-1 row never recorded the bound native session, so it migrates
     with `native_session: null`, and a deliverer that claims such a row
@@ -425,10 +449,12 @@ def _migrate(document):
     """
     rows = document.get("resets")
     version = document.get("schema_version")
-    if version not in (1, 2) or not isinstance(rows, list) or not all(_valid_row(row, version) for row in rows):
+    if version not in (1, 2, 3) or not isinstance(rows, list) or not all(_valid_row(row, version) for row in rows):
         return False
     for row in rows:
-        row.update(schema_version=RESET_SCHEMA_VERSION, foreground=None, accepted_session=None)
+        row.update(schema_version=RESET_SCHEMA_VERSION, host_goal=None)
+        if version < 3:
+            row.update(foreground=None, accepted_session=None)
         if version == 1:
             row["native_session"] = None
         if row["status"] == "delivered":
@@ -469,7 +495,7 @@ def _load(path, *, migrate_legacy=True):
                                "herdr-policy plugin, then run `{}`.".format(path, version, RESET_SCHEMA_VERSION,
                                                                           command("foreman-reset --explicit-reset")),
                                {"record": str(path), "schema_version": version})
-    migrated = _version(version, 1) or _version(version, 2)
+    migrated = any(_version(version, old) for old in (1, 2, 3))
     if migrated and not migrate_legacy:
         assert type(version) is int  # migration detection above narrows the legacy version
         rows = document.get("resets")
@@ -524,16 +550,24 @@ def _readable(path):
 
 def _valid_row(row, version=RESET_SCHEMA_VERSION):
     """Every documented field of that schema version, typed, with the result shape its status requires."""
-    fields = ROW_FIELDS_V1 if version == 1 else ROW_FIELDS_V2 if version == 2 else ROW_FIELDS
+    fields = ROW_FIELDS_V1 if version == 1 else ROW_FIELDS_V2 if version == 2 else ROW_FIELDS_V3 if version == 3 else ROW_FIELDS
     if not isinstance(row, dict) or set(row) != fields or not _version(row["schema_version"], version):
         return False
     # Null only on a row migrated from schema 1, which never recorded it.
     if version != 1 and row["native_session"] is not None and not _valid_session(row["native_session"]):
         return False
-    if version == 3 and row["foreground"] is not None and not _valid_foreground(row["foreground"]):
+    if version >= 3 and row["foreground"] is not None and not _valid_foreground(row["foreground"]):
         return False
-    if version == 3 and row["accepted_session"] is not None and not _valid_session(row["accepted_session"]):
+    if version >= 3 and row["accepted_session"] is not None and not _valid_session(row["accepted_session"]):
         return False
+    if version >= 4 and not host_goals.valid(row["host_goal"]):
+        return False
+    if version >= 4 and row["host_goal"] is not None and row["host_goal"]["runtime"] == "codex":
+        goal, source, accepted = row["host_goal"], row["native_session"], row["accepted_session"]
+        if (source is None or source["kind"] != "id" or goal["source_thread"] != source["value"]
+                or goal["phase"] in ("restoring", "restored", "verified") and accepted is None
+                or accepted is not None and (accepted["kind"] != "id" or goal["target_thread"] != accepted["value"])):
+            return False
     options = row["options"]
     if not (isinstance(options, dict) and set(options) <= OPTION_FIELDS
             and all(isinstance(value, str) and value for value in options.values())):
@@ -580,6 +614,28 @@ def _row(document, plan):
                  if row["pane_id"] == plan["pane_id"] and row["stow"] == plan["stow"]), None)
 
 
+def status(state_path, stow, pane=None):
+    """One bounded receipt, without loading reset history into model context."""
+    path = record_path(state_path)
+    with state_lock(path):
+        document = _records(path)
+        rows = [row for row in document["resets"] if row["stow"] == stow and (pane is None or row["pane_id"] == pane)]
+        if len(rows) != 1:
+            raise UsageError("No unique reset matches this stow. Select its exact --stow and --pane; preserve every other reset.", {"stow": stow})
+        row = rows[0]
+        goal = row["host_goal"]
+        summary = {"schema_version": 1, "phase": "unverified"} if goal is None else {
+            key: goal[key] for key in ("schema_version", "runtime", "phase")}
+        if goal is not None and goal["runtime"] == "codex":
+            summary.update({key: goal[key] for key in ("source_thread", "target_thread", "carried_tokens", "carried_seconds",
+                                                       "retiring_turn", "resume_status")})
+            summary["remaining_budget"] = host_goals.remaining(goal)
+        return context_output.enforce_budget(
+            {"schema_version": RESET_SCHEMA_VERSION, "pane_id": row["pane_id"], "stow": stow,
+             "status": row["status"], "host_goal": summary},
+            "This reset receipt exceeds the context budget. Preserve its owner record and inspect the named reset through owner recovery; do not dump reset history.")
+
+
 def _settle(document, row, state_path, alive):
     """Replay a live, delivered or reconciled reset; finalize any other, then refuse it for the operator.
 
@@ -596,6 +652,7 @@ def _settle(document, row, state_path, alive):
         lost = StateError("The reset deliverer for stow {} exited without finishing.".format(row["stow"]), {"process": row["process"]})
         row.update(status="failed" if row["status"] == "scheduled" else "interrupted",
                    result=failure(lost, row["stow"], state, **row["options"]))
+        _guard_recovery(row, state_path)
     return None, changed
 
 
@@ -639,7 +696,7 @@ def replay(state_path, plan, *, alive=_alive):
     return _claimed_replay(live, state_path)
 
 
-def schedule(state_path, plan, at, start, *, native_session, alive=_alive, probe=None, options=None):
+def schedule(state_path, plan, at, start, *, native_session, alive=_alive, probe=None, options=None, host_goal=None):
     """Record one reset for (pane, stow), with bounded proved-preclaim recovery.
 
     `native_session` is the foreman's session bound at supervision-bind
@@ -676,7 +733,7 @@ def schedule(state_path, plan, at, start, *, native_session, alive=_alive, probe
                     _refuse(row, state_path)
                 row = {"schema_version": RESET_SCHEMA_VERSION, **plan, "status": "scheduled", "scheduled_at": at,
                        "options": dict(options or {}), "process": None, "result": None, "native_session": dict(native_session),
-                       "foreground": None, "accepted_session": None}
+                       "foreground": None, "accepted_session": None, "host_goal": copy.deepcopy(host_goal)}
                 if not _valid_row(row):
                     raise UsageError("The reset for stow {} would not validate as a reset row; nothing was scheduled.".format(
                         plan.get("stow")), {"row": row})
@@ -747,7 +804,7 @@ def schedule(state_path, plan, at, start, *, native_session, alive=_alive, probe
 #: Herdr or composer failure above all, can carry raw subprocess output or pane
 #: text in its message; the record and log keep a generic line and safe fields.
 OWN_MESSAGE_CODES = frozenset({"usage_error", "state_error", "reset_ended", "reset_record_newer", "reset_record_unusable",
-                               "reset_session_changed", "reset_startup_failed", "reset_foreman_unnamed"})
+                               "reset_session_changed", "reset_startup_failed", "reset_foreman_unnamed", "reset_host_goal"})
 
 
 def failure(exc, stow, state, **options):
@@ -774,6 +831,12 @@ def reconcile_command(state_path, pane_id, stow, outcome):
 
 
 TERMINAL_FAILURES = frozenset({"failed", "interrupted"})
+
+
+def _goal_pending(row):
+    goal = row["host_goal"]
+    return (row["accepted_session"] is not None and goal is not None
+            and goal["runtime"] == "codex" and goal["phase"] != "verified")
 
 
 def outstanding(state_path, *, alive=_alive):
@@ -808,10 +871,15 @@ def outstanding(state_path, *, alive=_alive):
         latest[row["pane_id"]] = row
     items = []
     for row in latest.values():
-        if row["status"] in TERMINAL_FAILURES:
+        if _goal_pending(row):
+            prompt = None
+            needed = ("The admitted continuation has not finished its host-goal restoration. Preserve its saved scope and holds; "
+                      "run `{}` from the bound successor. No reset or repeated input is needed.".format(
+                          reconcile_command(state_path, row["pane_id"], row["stow"], "delivered")))
+        elif row["status"] in TERMINAL_FAILURES:
             prompt = row["result"]["resume_prompt"]
             needed = row["result"]["message"].replace(OPERATOR_RECOVERY, "").strip() + " " + recovery_instruction(row["status"], row["result"])
-            if row["status"] == "interrupted":
+            if row["status"] == "interrupted" and "\n" + RESET_RECEIPT_PREFIX not in prompt:
                 # Typing began, so the pane may already hold a resumed foreman:
                 # the record alone cannot say, and clearing it would erase that context.
                 needed = ("Look at pane {} first: if a foreman resumed from this reset is running there, run `{}` "
@@ -841,7 +909,7 @@ def outstanding(state_path, *, alive=_alive):
 RECONCILE_OUTCOMES = ("delivered", "failed")
 
 
-def reconcile(state_path, plan, outcome, at, *, alive=_alive):
+def reconcile(state_path, plan, outcome, at, *, alive=_alive, client=None):
     """Close a reset whose deliverer is gone without an outcome; the operator says which one happened.
 
     The owner's repair for a record that could not say how a delivery ended.
@@ -850,12 +918,14 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
     operator saw resume (`delivered` only). A live deliverer is still working,
     and any other finished row already has its outcome. `failed` records the failure with the resume prompt built
     from the row's own settings; `delivered` records that the operator saw the
-    foreman resume.
+    foreman resume. Codex goal restoration additionally requires this native
+    hook's admitted session and a matching live pane; an operator outcome alone
+    never admits model input or activates a goal.
     """
     if outcome not in RECONCILE_OUTCOMES:
         raise UsageError("Reconcile outcome is delivered or failed.", {"outcome": outcome})
     path = record_path(state_path)
-    with state_lock(path):
+    with state_lock(path), ExitStack() as boundary:
         document = _records(path)
         row = _row(document, plan)
         if row is None:
@@ -869,24 +939,47 @@ def reconcile(state_path, plan, outcome, at, *, alive=_alive):
         # operator who sees it running reconciles it as delivered.
         # A `scheduled` row was never claimed, so nothing was typed and it can
         # only have failed; a delivery that began may have resumed the foreman.
+        goal = row["host_goal"]
+        if outcome == "failed" and row["accepted_session"] is not None:
+            raise UsageError("This continuation was admitted. Preserve that delivery fact and finish its saved goal restoration with --outcome delivered; do not classify admitted input as failed.", {})
+        admitted_goal = (outcome == "delivered" and row["accepted_session"] is not None
+                         and goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified")
         reopenable = ((row["status"] == "scheduled" and outcome == "failed")
                       or row["status"] == "delivering"
+                      or row["status"] in ("delivered", "failed") and admitted_goal
                       or (row["status"] == "interrupted" and outcome == "delivered"))
         if not reopenable:
             raise UsageError("The reset from stow {} already ended {}{}; there is nothing to reconcile.".format(
                 row["stow"], row["status"], " (reconciled as {})".format(previous) if previous else ""),
                 {"record": str(path), "status": row["status"]})
-        if row["status"] != "interrupted" and alive(row["process"]):
+        live_deliverer = row["status"] in ("scheduled", "delivering") and alive(row["process"])
+        if live_deliverer and not admitted_goal:
             raise UsageError("The reset from stow {} still has its deliverer running; let it finish instead of "
                              "reconciling.".format(row["stow"]), {"record": str(path), "process": row["process"]})
         if outcome == "delivered":
-            row.update(status="reconciled", result={"outcome": "delivered", "reconciled_at": at})
+            if goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified":
+                if row["accepted_session"] is None:
+                    raise UsageError("The reset input was not admitted. Keep its goals unchanged; use the owner's saved native recovery prompt after the deliverer ends, then reconcile from that admitted continuation.", {"record": str(path)})
+                data = boundary.enter_context(supervision.effect_boundary(state_path))
+                bound = data["binding"]["identity"]
+                if (bound.get("kind") != "id" or bound.get("value") != goal["target_thread"]
+                        or bound.get("pane_id") != row["pane_id"]
+                        or row["accepted_session"] != {key: bound.get(key) for key in ("kind", "value")}):
+                    raise UsageError("The incoming host-goal executor is not the bound foreman. Restore its verified native binding before reconciling; no goal was changed.", {})
+                native = client or read_client(binary=row["options"].get("herdr_bin"))
+                if (_foreman_record(native, row["pane_id"]).get("agent") != "codex"
+                        or pane_session(native, row["pane_id"]) != row["accepted_session"]):
+                    raise UsageError("The live foreman pane no longer matches the admitted goal target. Preserve the reset and restore its verified native session before reconciling; no goal was changed.", {})
+                host_goals.transfer(goal, bound["value"], lambda: save_state(path, document))
+            if not live_deliverer:
+                row.update(status="reconciled", result={"outcome": "delivered", "reconciled_at": at})
         else:
             lost = StateError("The operator reconciled this reset as failed: its deliverer stopped without an outcome.",
                               {"reconciled": "failed", "reconciled_at": at,
                                "phase": "unclaimed" if row["status"] == "scheduled" else "unknown"})
             row.update(status="failed", result=failure(lost, row["stow"], str(Path(state_path).expanduser().resolve()),
                                                        **row["options"]))
+            _guard_recovery(row, state_path)
         if not _valid_row(row):
             raise UsageError("The reconciled row does not validate; nothing was written.", {"record": str(path)})
         save_state(path, document)
@@ -974,6 +1067,7 @@ def fail_unclaimed(state_path, plan, result, *, sleep=time.sleep, clock=time.mon
                                       {"record": str(path)})
         if row["status"] == "scheduled":
             row.update(status="failed", result=result)
+            _guard_recovery(row, state_path)
             save_state(path, document)
         return row["status"]
 
@@ -989,10 +1083,21 @@ def finish(state_path, plan, status, result):
                                       "not recorded. The operator reconciles the record before any reset.".format(
                                           path, plan["stow"], plan["pane_id"], status), {"record": str(path)})
         row.update(status=status, result=result)
+        _guard_recovery(row, state_path)
         if not _valid_row(row):
             raise ResetRecordUnusable("The {} outcome for stow {} does not match the reset record's shape; it was not recorded.".format(
                 status, plan["stow"]), {"record": str(path)})
         save_state(path, document)
+
+
+def _guard_recovery(row, state_path):
+    """Reuse the saved recovery input; its native hook attests admission once."""
+    goal = row["host_goal"]
+    if (row["status"] in TERMINAL_FAILURES and row["accepted_session"] is None
+            and goal is not None and goal["runtime"] == "codex" and row["foreground"] is not None):
+        row["result"] = {**row["result"], "resume_prompt": guarded_resume(
+            row["stow"], str(Path(state_path).expanduser().resolve()), row["native_session"],
+            row["foreground"], options=row["options"])}
 
 
 def _handoff_held(data, stow=None):
@@ -1149,6 +1254,16 @@ def live_preflight(client, agents, pane_id, native_session):
         raise SessionChanged("The foreman's pane {} no longer holds its bound native session; revalidate the current "
                              "foreman and supervision binding before scheduling. Nothing was scheduled or typed.".format(pane_id),
                              {"pane_id": pane_id, "reason": "native_session_changed", "phase": "schedule_preflight"})
+    return record
+
+
+def prepare_host_goal(state, runtime, native_session):
+    """The reset owner carries prior verified usage, never model-restored text."""
+    path = record_path(state)
+    with state_lock(path):
+        document = _records(path)
+        previous = [row["host_goal"] for row in document["resets"]]
+    return host_goals.prepare(runtime, native_session, previous)
 
 
 def mechanics(agents, kind, name):
@@ -1358,6 +1473,9 @@ def deliver(client, agents, pane_id, stow, state, *, native_session, still_ready
             if found is None:
                 raise HerdrError("Herdr reports no foreground process for the foreman's pane {}, so the clear could not be "
                                  "tied to it; nothing was sent. {}".format(pane_id, OPERATOR_RECOVERY), {"pane_id": pane_id})
+            # Persist recovery proof before the first clear effect. A failed
+            # clear or settle must not strand an unadmitted host-goal handoff.
+            arm_resume(state, pane_id, stow, native_session, found)
             processes.append(found)
         elif foreground_processes(client, pane_id) != processes[0]:
             raise SessionChanged("The foreman's pane {} is under another process before typing; nothing more was sent. {}".format(
@@ -1379,8 +1497,6 @@ def deliver(client, agents, pane_id, stow, state, *, native_session, still_ready
         if agent.kind != "codex":
             phase = "clear_native_receipt"
             expected[0] = _cleared_session(client, pane_id, native_session, processes[0], sleep=sleep, clock=clock)
-        phase = "arm_resume"
-        arm_resume(state, pane_id, stow, native_session, processes[0])
         prompt = guarded_resume(stow, state, native_session, processes[0], options=options)
         phase = "resume_input"
         landing = send_message(client, agent, prompt, RESUME_OPENING, pane_id=pane_id, sleep=sleep, warn=warn,

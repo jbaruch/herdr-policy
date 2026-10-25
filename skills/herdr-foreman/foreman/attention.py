@@ -7,7 +7,7 @@ from datetime import timezone
 from pathlib import Path
 from typing import NoReturn
 
-from . import runnable
+from . import context_output, runnable
 from .chronology import timestamp
 from .errors import StateError, UsageError
 from .state import save_state, state_lock
@@ -323,12 +323,23 @@ def require_dispatch_clear(path, task, at):
         {"task": task, "gating": gating})
 
 
-def show(path, name):
+def show(path, name, *, include_history=False, limit=context_output.DEFAULT_LIMIT, offset=0):
+    context_output.validate_page(limit, offset)
+    if not include_history and offset != 0:
+        _fail("Use --offset with --history for a targeted obligation-history page.")
     document, entries, _progress_rows = load(path)
     if name not in entries:
         _fail("No attention entry matches {}; use `{}` with the same --state path.".format(name, runnable.command("attention-list")))
-    return {"schema_version": SCHEMA_VERSION, "entry": entries[name],
-            "history": [event for event in document["events"] if event["action"] != "progress" and event["data"]["id"] == name]}
+    history = [event for event in document["events"] if event["action"] != "progress" and event["data"]["id"] == name]
+
+    def build(effective):
+        selected = context_output.page(history, offset, effective) if include_history else None
+        return {"schema_version": context_output.VIEW_SCHEMA_VERSION, "entry": entries[name],
+                "history": selected.pop("items") if selected is not None else [],
+                "history_included": include_history, "history_count": len(history), "history_pagination": selected,
+                "context_complete": selected is None or selected["omitted"] == 0}
+
+    return context_output.fit_pages(build, limit, offset)
 
 
 def register_commands(sub, common):
@@ -339,13 +350,19 @@ def register_commands(sub, common):
     for command in ("attention-list", "catch-up"):
         parser = sub.add_parser(command, parents=[common], help="Read a bounded offline view of saved user-facing obligations.")
         parser.add_argument("--task")
-        parser.add_argument("--limit", type=int, default=10)
+        parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
         parser.add_argument("--offset", type=int, default=0)
+        parser.add_argument("--section", choices=("attention", "deferred", "progress", "closed", "resets"),
+                            help="Page one section independently; other sections retain their unexamined counts.")
         parser.add_argument("--since", help="Filter progress and closed history; never suppress open obligations.")
         parser.add_argument("--include-closed", action="store_true")
+        parser.add_argument("--compact", action="store_true", help="Return current records once, without duplicated Markdown and source lists.")
         parser.add_argument("--now", help="ISO-8601 checkpoint with timezone.")
-    parser = sub.add_parser("attention-show", parents=[common], help="Read one obligation and its complete lifecycle history offline.")
+    parser = sub.add_parser("attention-show", parents=[common], help="Read one current obligation; request bounded history explicitly.")
     parser.add_argument("--id", required=True)
+    parser.add_argument("--history", action="store_true")
+    parser.add_argument("--limit", type=int, default=context_output.DEFAULT_LIMIT)
+    parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--now", help="ISO-8601 checkpoint; history readback itself has no clock-dependent mutation.")
 
 
@@ -357,7 +374,9 @@ def run_command(args, state_path, now):
             raise UsageError("Cannot read attention input {}: {}. Save valid UTF-8 JSON and retry the same event id.".format(args.record, exc), {}) from None
         return write(state_path, args.command.removeprefix("attention-"), data, getattr(args, "now", None) or now)
     if args.command == "attention-show":
-        return show(state_path, args.id)
+        return show(state_path, args.id, include_history=getattr(args, "history", False),
+                    limit=getattr(args, "limit", context_output.DEFAULT_LIMIT), offset=getattr(args, "offset", 0))
     from .attention_view import catch_up
     return catch_up(state_path, getattr(args, "now", None) or now, task=args.task, limit=args.limit,
-                    offset=args.offset, since=args.since, include_closed=args.include_closed)
+                    offset=args.offset, since=args.since, include_closed=args.include_closed,
+                    compact=getattr(args, "compact", False), section=getattr(args, "section", None))

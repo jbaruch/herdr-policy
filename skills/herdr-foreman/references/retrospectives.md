@@ -7,7 +7,8 @@ completed retrospective.
 
 ## When to run one
 
-Check on active resume, before planning and dispatch, and between report waits.
+Check at a maintenance checkpoint when the result will be used. A dispatch or
+resume does not require another cadence query or synthesis.
 The utility owns the elapsed-time calculation and daily interval. A due daily
 cadence is a maintenance observation, never a selected task's dispatch or
 delivery gate. Record it and complete the retrospective at the next maintenance
@@ -25,7 +26,7 @@ apply after a retrospective.
 
 A retained specialist follow-up still reports the daily cadence. Use
 `context: "retain"` in its check request; the continuation owner verifies the
-unchanged engagement under `references/dispatch-recovery.md`. A changed specialty
+unchanged engagement under `skills/herdr-foreman/references/dispatch-recovery.md`. A changed specialty
 or engagement uses the normal fresh assignment and transition path.
 
 One retrospective can cover the daily cadence and a batch of planned transitions.

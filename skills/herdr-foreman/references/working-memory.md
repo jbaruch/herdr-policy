@@ -11,7 +11,12 @@ command emits JSON; report a non-zero command's diagnostic before continuing.
 
 After synthesizing a retrospective, inspect the current lessons. Add a lesson only when it changes a future decision or brief. State the behavior, its relevance scope, the evidence supporting it, when the foreman last verified that evidence, and when the lesson must be revalidated. Link the actual retrospective, report, review, or source document. Capture unevidenced hypotheses as unresolved stow knowledge with an explicit gap.
 
-Before planning a round or composing a brief, use `memory-list` with the relevant project, task and role scopes. Read the source and verify the lesson against current conditions before applying it. Include only applicable lessons in the brief, with their source links. A `same_bytes` observation says the local file matches its saved receipt; it does not confirm the claim or renew verification. HTTPS evidence is never fetched by these offline commands. Expired, changed or unavailable evidence requires investigation before use.
+Retrieve a lesson only when a task-specific question needs it. Unchanged known
+lessons need no repeated list/read cycle before planning or briefing. Before
+relying on a recalled operational fact, verify its live source. Include only
+applicable lessons in the brief, with their source links. A `same_bytes`
+observation verifies file bytes, not the claim. Expired or unavailable evidence
+cannot support a decision, but unrelated lesson maintenance does not block it.
 
 Keep the active set concise. Merge overlapping lessons through a new revision, retaining the replaced record. Archive lessons that no longer affect active work with a concrete reason. A new active revision can reactivate an archived lesson after verification. Never delete historical revisions or rewrite the retrospective to make a lesson appear supported. These operations do not change policy, task authority, correction budgets or user preferences.
 
@@ -41,7 +46,15 @@ Minimal lesson input:
 
 Each revision needs a new `id`; retain `lesson_id` and set `supersedes` to its current record's `id`. An archive uses the same shape with `status: "archived"` and an archive reason. Reverification is a new revision with its actual verification time and newly captured evidence receipts. Repeating an identical command returns its original record and receipts without refreshing them. Reusing an id for changed input fails visibly.
 
-Scopes are exact labels chosen consistently by the foreman; `*` applies globally. Multiple requested scopes select their union. `memory-list` returns the latest active revision of each matching lesson, including expired lessons labeled as expired. `--include-archived` includes current archived revisions. `memory-show --id <record-id>` returns that immutable record and its lesson's complete revision history.
+Scopes are exact labels chosen consistently by the foreman; `*` applies globally.
+Multiple requested scopes select their union. `memory-list` pages the latest
+active revision of each matching lesson, including expired lessons labeled as
+expired. `--include-archived` includes current archived revisions. Follow
+`pagination.next_offset` with `--offset` for the selected question.
+`memory-show --id <record-id>` returns that immutable record without replaying
+its lesson's history. Request `--history` explicitly for bounded revision pages;
+follow `history_pagination.next_offset` with `--offset`. History is evidence for
+a specific investigation, not a normal resume input.
 
 ## Preserve specialist knowledge
 
@@ -61,13 +74,13 @@ selected knowledge through `KNOWLEDGE` in the consultation brief or
 Before releasing a useful session, capture decisions, rejected alternatives,
 unresolved evidence and lessons that would otherwise disappear. Link the outgoing
 report, report-contract assessment and retrospective from the task handoff. A warm session
-can support follow-up under `references/dispatch-recovery.md`; it is never the
+can support follow-up under `skills/herdr-foreman/references/dispatch-recovery.md`; it is never the
 only copy of valuable knowledge. Give a fresh worker the durable sources without
 claiming that recalled context proves present competence or independence.
 
 ## Stow before replacing the foreman
 
-Stow at every round boundary (SKILL.md Step 17), then continue in the same
+Stow at every round boundary (`skills/herdr-foreman/references/foreman-workflow.md` Step 17), then continue in the same
 context with the active goal intact. A checkpoint never schedules a reset or
 permits stopping supervision. Only an explicit operator-requested maintenance
 reset uses `foreman foreman-reset --explicit-reset`; it refuses unless the stow is
@@ -82,9 +95,9 @@ Record a stow containing:
 - A substantive capture of the remaining context the next foreman needs.
 - Unresolved work, including where each item is now recorded or what the replacement must recover.
 - The active goal's objective, status, remaining work and remaining budget, if any, in the capture and unresolved work. Saving a stow never pauses or completes the goal.
-- The continuation step, in the unresolved work: the SKILL.md step the replacement continues at under Step 17's Resume Route.
+- The continuation step, in the unresolved work: the `skills/herdr-foreman/references/foreman-workflow.md` step the replacement continues at under Step 17's Resume Route.
 - Explicit gaps, including missing evidence and work the foreman could not persist. Use an empty list only after checking for gaps. Each gap is `{"missing", "task", "recovery"}`: what is missing, the task it affects, and exactly one recovery — `{"reread": "/absolute/path"}`, `{"ask": "<question for the operator>"}` or `{"accept": "<why the loss is safe>"}`. A gap without a recovery is refused, and so is a new gap naming the task `unrecorded`, which is reserved for migrated version-1 gaps.
-- Ordered, absolute paths to the durable files the replacement must read, such as the task ledger, attention queue, active assignment state, relevant retrospective notes and task context. Use actual files, not directories or a vague instruction to inspect the workspace.
+- Ordered, absolute source references for the current unresolved questions. Use actual files, not directories or a workspace scan. Retrieve owner facts through their bounded commands; do not copy owner-state dumps, GitHub history or complete policy files into a handoff.
 
 ```text
 memory-stow --record /durable/team/stow-input.json
@@ -104,23 +117,51 @@ Minimal stow input:
 }
 ```
 
-The output supplies `memory_path`, the stow record and receipts for each required read. Preserve that exact `memory_path` in the foreman handoff. Do not list the memory index as a source or required read: its path is included automatically, and writing the stow changes its bytes. The replacement first reads this index through `memory-show`, then the stow's required files in order, then the relevant lessons through `memory-list`. `memory-show` defaults to the latest stow; `--id` retrieves an earlier capture.
+The output supplies `memory_path`, the stow record and source receipts. Preserve
+that exact `memory_path` in the handoff. Do not receipt the memory index: writing
+the stow changes it. `memory-show` retrieves the latest bounded capture; `--id`
+selects an earlier one. The legacy field name `required_reads` identifies captured
+sources; it is not an instruction to print each raw file. Use `catch-up --compact`,
+the paged `foreman-queue`, and the selected task's `load-set` for current owner
+facts. Retrieve only question-specific evidence and relevant lesson pages.
+
+New memory records must fit their complete current-record response before the
+owner commits them. An oversized legacy capture refuses without discarding its
+knowledge; reset preflight uses the same bounded reader before child startup or
+pane clearing. Keep the outgoing responsibility, recover the selected questions
+through current owners, and record a concise replacement with explicit gaps.
+Do not work around refusal by dumping the index or replaying the archive.
 
 `reset_ready` is false if any required file has changed or become unavailable, or if a gap names the task `unrecorded`. Any other gap names its own recovery and does not block a reset. A true value covers only the saved local capture and its unchanged required files. It does not prove that the foreman captured every conversation fact, reconcile a fleet, satisfy the supervision gate, authorize interruption, or accept tasks. The foreman must still apply the separate handoff and supervision rules. New unresolved knowledge after the stow requires a new stow id.
 
 ## Successor Goal
 
-For a new foreman taking over outstanding work, explicitly set
-`/goal <saved objective>` in that foreman's host runtime after reading the
-handoff and before resuming dispatch or retiring the outgoing foreman.
-Restore the saved remaining budget when the runtime supports a budget; never
-grant a fresh full budget for the same goal. Verify the runtime reports the
-goal active and that its objective and remaining work match the saved authority.
-A prompt saying "continue the goal" or naming the objective is not this action.
-If the saved goal or the runtime's `/goal` facility is unavailable, keep the
-outgoing foreman responsible and recover that gap; never silently skip goal
-activation or claim a healthy successor. A requested in-place reset uses the
-same goal restoration after resume; it does not implement successor takeover.
+For a requested maintenance reset, the native reset hook owns the host-goal
+handoff. Use `foreman-reset-status --stow <stow-id>` with the same owner flags
+to read that one receipt; do not open the reset history. The Codex receipt must
+report `host_goal.phase: verified` before dispatch. Its carried usage belongs
+to the same objective; the host's successor counter records only that thread's
+usage. Never grant a fresh full budget or recreate a goal from prompt text.
+At `phase: retired`, the native hook has admitted the continuation without
+creating a target goal. After reading the saved scope and holds, finish it with
+`foreman-reset-reconcile --outcome delivered` for that pane/stow. The model
+receives its continuation instructions before automatic target work can start.
+An unfinished admitted restoration remains in catch-up even if prompt delivery
+completed; it never counts as verified takeover. Reconciliation finishes the
+existing transfer before dispatch, with no pause, new reset or repeated input.
+Goal restoration requires a matching native admission and live pane/session.
+If the original hook blocked, use the owner's saved guarded operator-recovery
+prompt in the same pinned session without clearing it; delivery assertions alone
+cannot activate its goal. The hook consumes that recovery input once.
+
+Native Claude/Grok report `not_applicable` for the Codex goal scheduler and
+create no host goal. An external scheduler is outside that receipt's proof.
+If such a host owns an automatic goal, retain its executor and use its supported
+transfer integration before resetting; this plugin cannot claim its retirement.
+Fresh-foreman succession outside the requested reset also requires a supported
+host transfer. A new active goal alone never retires the outgoing executor.
+An unavailable or unfinished transfer remains recovery work; never emulate it
+with completion, a user pause, or blocked status.
 
 ## Reset Outcome Routing
 
@@ -189,25 +230,54 @@ and native-session verification to perform before scheduling.
 
 ## Load a decision's records
 
-`foreman load-set` lists the durable records one foreman decision depends on,
-joined from the owner records rather than recalled:
+`foreman load-set` returns bounded current-task context from the owner records:
 
 ```text
 foreman load-set --decision plan|brief|gate|diagnose --task <task>
 foreman load-set --decision wake --enrollment <enrollment-id>
+foreman load-set --decision diagnose --task <task> --read-file <listed-reference> --question <specific-question> [--offset <byte-offset>]
 ```
 
-Output: `{"schema_version": 1, "decision", "task", "enrollment", "round_start",
-"core", "records", "files"}`. `core` holds the task record, its budget status
-and each open attention item in full. `files` lists `{"path", "why", "present"}` in
-load order. A missing file stays listed with `present: false`. What each
-decision adds is the contract in `skills/herdr-foreman/foreman/load_set.py`
-(module docstring). Read every listed file before deciding. The set is a
-floor: lessons from `memory-list` come on top, and nothing on the list is
-skipped. A non-zero exit names an unusable state file, or a missing or
-mismatched `--task` / `--enrollment`, on stderr. An unknown task, or an
-enrollment with no supervision record, is refused rather than answered with an
-empty set.
+Schema 4 retains `budget`, `history_included: false` and
+`authorizes_progression: false`, removing aggregate read accounting. Reads create
+no counter or creation receipt. Operational owner schemas remain unchanged.
+It retains task/budget facts, task-local and global open attention,
+unknown deliveries of every role, and current-round references.
+The supervision view retains unresumed hold references even when an event changes
+their original boundary. `boundary_held: false` never means the operator cleared
+a hold. `observation_only` and an absent binding grant no authority.
+Briefing and diagnosis retain unsuperseded blocking review references. A missing
+file stays listed with `present: false`; an unknown send still refuses the decision.
+
+`files` is a retrieval menu, not a required reading list. Read only evidence
+needed for the specific current question. Use `--read-file` for a bounded excerpt;
+`next_offset` exposes unread bytes. An excerpt never proves a complete review,
+acceptance, or no unresolved findings. Recheck the current head and owner gates
+before acting. Required unavailable or unexamined evidence keeps the decision held.
+Evidence reads return a task-bound `kind: evidence_chunk` response with
+`decision_context_included: false`; they do not repeat or replace the decision
+packet. Reuse unchanged current decision context; owners revalidate effects. Byte
+continuations end at complete UTF-8 sequences. Invalid UTF-8 or an offset inside
+a character refuses with a recovery instruction; no replacement characters are
+substituted. Escaped text still obeys the printed output budget.
+
+The response and evidence-read bounds belong to `OUTPUT_BYTES` and `READ_BYTES`
+in `skills/herdr-foreman/foreman/load_set.py`. Oversized current obligations fail
+visibly rather than being silently truncated. Unknown tasks or enrollments refuse.
+Readers requiring earlier view schemas must update before consuming schema 4; no shape
+grants progression authority.
+
+Response bounds and the retired counter's lifecycle are documented here:
+
+```text
+skills/herdr-foreman/references/decision-context.md
+```
+
+GitHub owns durable issue, PR, review and delivery history. Retrieve historical
+evidence by task and question with an explicit output budget. Do not mirror it
+into `.hr`, recursively dump local records, or replay completed rounds on resume.
+Local records retain only their active operational/recovery purpose. Preserve
+existing unknown deliveries and protected artifacts until their owners reconcile.
 
 ## Persistence contract
 
@@ -222,3 +292,12 @@ Lesson records have `kind: "lesson"` and the lesson input fields above, replacin
 Stow records have `kind: "stow"` and the stow input fields above, replacing `required_reads` with file receipts in the supplied order. Stow records are version 2. A version-1 stow upgrades on read: each free-text gap becomes `{"missing": <text>, "task": "unrecorded", "recovery": {"ask": <a question quoting the text>}}`, since it never recorded a task or recovery. Such a gap names no task, so it keeps `reset_ready` false until a new stow records the gap with its actual task. `input_digest` keeps binding the original input. The owner's first read or write of a document holding a version-1 stow persists the upgrade under its lock; other readers never migrate. Captures and unresolved knowledge remain in the index even if those source files later disappear.
 
 Reader output adds observations to copies of saved sources: `same_bytes`, `changed`, `unavailable`, or `not_checked_offline` for URLs. Lesson views add `expired` and `use_requires_live_verification: true`. Stow views add `reset_ready` and `readiness_scope: "local_capture_only"`. These are computed views, never saved fields. Read commands return `memory_path` and `checked_at`; write commands return `memory_path` and `replayed` alongside the record. None of these fields is task acceptance evidence.
+
+CLI context responses use the view schema in
+`skills/herdr-foreman/foreman/context_output.py`, separately from the unchanged persisted schemas.
+The owner enforces the printed-byte bound before emitting JSON. Page counts,
+continuations and `context_complete` describe the selected records, not task
+acceptance; `authorizes_progression` remains false. Readiness still requires
+current owner checks. `load-set` uses its separately versioned view and aggregate
+allowance above. Aggregate coverage of other context commands, targeted GitHub
+retrieval and historical artifact retirement remain requirements under issue #11.
