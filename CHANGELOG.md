@@ -11,6 +11,9 @@
 - Add `state --migrate-only` with a compact readiness receipt and prescribe it from read-only previews (#65). Commit required owner migrations without a whole-history display failure; preserve original history and refuse unsupported state unchanged.
 - Replace obsolete schema-6 downgrade advice with a compact additive foreman setup reference (#55). Preserve an existing supported schema and keep the missing optional block warning nonblocking.
 
+- Establish a real empty initial base for an explicitly authorized new repository before normal task provisioning (#66). Construct the empty commit in a private scratch repository, preserve local files and existing remote refs, and confirm the actual remote base after an uncertain push or concurrent initialization.
+- Link the narrow setup exception from foreman scope and provisioning recovery. Implementation, review and release continue through existing task owners; no guessed SHA, forced push, new ledger or additional approval is required.
+
 ## 0.15.0 — 2026-10-25
 
 - Add a crew optimizer that finds and implements useful simplifications, removes redundant code and reduces evidenced waste (#63). Keep a standing improvement objective moving through existing scoped developer assignments alongside independent feature delivery, with ordinary review, tests and release.

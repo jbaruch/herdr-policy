@@ -139,7 +139,7 @@ main() {
       if git -C "$shared" show-ref --verify --quiet "refs/remotes/origin/$cand"; then db="$cand"; break; fi
     done
     if [[ -z "$db" ]]; then
-      warn "cannot resolve origin's default branch — set origin/HEAD before provisioning"
+      warn "cannot resolve origin's default branch — set origin/HEAD before provisioning; for an authorized new repository with no remote refs, use the co-shipped references/repository-bootstrap.md first"
       return 1
     fi
     default_ref="origin/$db"
