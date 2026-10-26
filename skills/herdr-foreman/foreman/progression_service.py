@@ -206,10 +206,11 @@ class ProgressionService:
         return supervision.digest({"assignment": supervision.expected_assignment(member),
                                    "active": member["active"], "resolution": member["resolution"]})
 
-    def _closed_dependency(self, state, member):
+    @staticmethod
+    def closed_dependency(state_path, state, member):
         """Verify canonical accepted evidence after the scoped pane has closed."""
         def refuse(stage, message):
-            return self._refusal(json.dumps({"error": "closed_dependency_" + stage, "message": message}))
+            return ProgressionService._refusal(json.dumps({"error": "closed_dependency_" + stage, "message": message}))
         expected = supervision.expected_assignment(member)
         resolution = member["resolution"]
         evidence = resolution["evidence"] if resolution else []
@@ -232,14 +233,14 @@ class ProgressionService:
             with tempfile.NamedTemporaryFile(suffix=".md") as ledger:
                 ledger.write(body)
                 ledger.flush()
-                event = members.assessed_event(ledger.name, expected, self.capability.state_path)
+                event = members.assessed_event(ledger.name, expected, state_path)
             if (event["decision"] != "accepted" or resolution["outcome"] not in
                     {"accepted", "Task ledger event {}: accepted".format(event["id"])}):
                 return refuse("assessment", "Obtain the current bound foreman's accepted assessment for this enrollment; a different resolution or later invalidation remains blocking.")
             stage = "contract"
-            members._require_contract(self.capability.state_path, member["id"], expected["report"])
+            members._require_contract(state_path, member["id"], expected["report"])
             stage = "classifier_gate"
-            report_gates.require_clear(self.capability.state_path, expected["report"], True)
+            report_gates.require_clear(state_path, expected["report"], True)
             stage = "native_source"
             path = report_delivery.source_path(identity)
             source = report_delivery.read_native_source(path) if path is not None else None
@@ -251,6 +252,9 @@ class ProgressionService:
             return refuse(stage, exc.to_dict()["message"])
         except (OSError, UnicodeError, ValueError):
             return refuse(stage, "Restore readable, valid original {} evidence through its owner, then retry; preserve the closed enrollment meanwhile.".format(stage))
+
+    def _closed_dependency(self, state, member):
+        return self.closed_dependency(self.capability.state_path, state, member)
 
     def _dependencies(self, state, step):
         """Probe without holding the global task-state transaction lock."""
@@ -380,7 +384,7 @@ def run_command(args, state_path, client, *, sleeper):
         grant = authority.current_grant(state, args.task)
         assert grant is not None
         _captured, document = capture_contract(grant["contract"]["path"])
-        workflow = isinstance(document, dict) and type(document.get("schema_version")) is int and document["schema_version"] == 2
+        workflow = isinstance(document, dict) and type(document.get("schema_version")) is int and document["schema_version"] in (2, 3)
         if workflow:
             from . import progression_runtime
             from .cli import now_iso

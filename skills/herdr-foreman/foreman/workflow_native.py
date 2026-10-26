@@ -1,7 +1,9 @@
 """Native launch, input and report adapters for the admitted task owner.
 
-The caller holds the primary owner transaction and a workflow_operation while
-mutating. `changed` persists the caller's actual current job/intent; no adapter
+The caller holds a workflow_operation and its task lease during transport.
+`owner_transaction` refreshes canonical state for short mutation checkpoints;
+native startup and composer waits hold no primary transaction. `changed`
+persists the actual current job/intent; no adapter
 creates a second journal. Native lifecycle, composer, tier and delivery checks
 are shared with legacy rounds. Legacy task/fix bookkeeping is intentionally
 absent from the transport call: the schema-2 task owner enforces those bounds.
@@ -13,6 +15,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+from contextlib import nullcontext
 
 from . import assign, config, lifecycle, members, recovery, report_delivery, report_gates, supervision, workflow_dispatch, workflow_planning
 from .errors import HerdrError, StateError, UsageError
@@ -22,13 +25,15 @@ from .workflow_workspace import REPORT_LIMIT, capture
 
 
 class NativeWorkflowAdapter:
-    def __init__(self, capability, client, state, changed, clock, *, sleeper=time.sleep, run=subprocess.run):
+    def __init__(self, capability, client, state, changed, clock, *, sleeper=time.sleep, run=subprocess.run,
+                 owner_transaction=nullcontext):
         from .progression_owner import ServiceCapability
         if not isinstance(capability, ServiceCapability) or client.context.mode != "native":
             raise UsageError("Use the actual admitted native task owner for workflow transport.", {})
         self.capability, self.client = capability, client
         self.state = state
         self.changed, self.clock, self.sleeper, self.run = changed, clock, sleeper, run
+        self.transaction = owner_transaction
 
     def _identity(self, job, worker, *, adopt=False):
         live = self.client.agent_get(job["agent"])
@@ -43,10 +48,45 @@ class NativeWorkflowAdapter:
             if not isinstance(prior, dict) or prior.get("pid") != actual.get("pid"):
                 raise UsageError("A later native session lacks this assignment's original launch process proof; do not adopt another worker's report.", {})
             if adopt:
-                job["native_session"] = native
-                supervision.refine(self.capability.state_path, job["id"], job["pane_id"], native, self.clock())
-                self.changed()
+                with self.transaction():
+                    job["native_session"] = native
+                    supervision.refine(self.capability.state_path, job["id"], job["pane_id"], native, self.clock())
+                    self.changed()
         return native
+
+    def adopt(self, document):
+        """Transfer authenticated delivery supervision; never accept source."""
+        from . import workflow_adoption
+        source = workflow_adoption.require_current(self.capability.state_path, self.state,
+            supervision.load(self.capability.state_path), document, self.client)
+        prepared = self.capability._prepared
+        if prepared is None or prepared.get("operation") != "adopt":
+            raise UsageError("Transfer the original enrollment only through its durable adoption intent.", {})
+        dispatch = next(row for row in self.state["recovery"]["dispatches"] if row["id"] == source["dispatch"])
+        member = next(row for row in supervision.load(self.capability.state_path)["members"] if row["id"] == source["dispatch"])
+        expected = supervision.expected_assignment(member)
+        with report_gates.holding(self.capability.state_path):
+            report_gates.require_clear(self.capability.state_path, source["report"]["path"], True)
+            prepared["before_effect"]()
+            def same_native():
+                live = self.client.agent_get(expected["agent"])
+                if (live.get("pane_id") != expected["pane_id"]
+                        or report_delivery.native_identity(live) != source["native_session"]):
+                    raise UsageError("The original source session changed during transfer; preserve the pending close and replacement.", {})
+            same_native()
+            result = dispatch["result"] or {}
+            if isinstance(dispatch.get("worker_kind"), str) or result.get("assignment_scoped") is True:
+                lifecycle.close(self.client, expected["agent"], expected["pane_id"],
+                                before_close=same_native, sleep=self.sleeper)
+            outcome = workflow_adoption.transfer_outcome(document)
+            drained = supervision.drain(self.capability.state_path)
+            events = [row for row in drained["events"] if row["member"] == source["dispatch"]]
+            evidence = [source["report"], source["native_source"]]
+            if events:
+                supervision.acknowledge(self.capability.state_path, {"through": drained["through"], "outcomes": [
+                    {"event": row["id"], "outcome": outcome, "evidence": [item["path"] for item in evidence]} for row in events]}, self.clock())
+            supervision.resolve(self.capability.state_path, {"id": source["dispatch"], "outcome": outcome,
+                "evidence": [item["path"] for item in evidence]}, self.clock(), expected_evidence=evidence)
 
     def launch(self, job, template, paths, history, *, worktree):
         """One fresh native assignment; retries must reconcile its durable job."""
@@ -69,40 +109,47 @@ class NativeWorkflowAdapter:
             raise UsageError("Reconcile this job's original native effect; it cannot be spawned again from a later state.", {})
         workflow_planning.require_headroom(self.state, job["worker_kind"], self.clock())
         worker = config.assignment_worker(template, job["agent"])
-        job["status"] = "starting"
-        self.changed()
-        def before_start(pane):
-            job["pane_id"] = pane
+        with self.transaction():
+            job["status"] = "starting"
             self.changed()
+        def before_start(pane):
+            with self.transaction():
+                job["pane_id"] = pane
+                self.changed()
         from .role_context import startup_environment
         pane = lifecycle.spawn(self.client, worker, job["tier"], cwd=worktree,
                                history=history, before_start=before_start, sleep=self.sleeper,
                                workspace_env=startup_environment(self.capability.state_path))
-        job["pane_id"] = pane
-        job["status"] = "ready"
         live = self.client.agent_get(worker.name)
         if live.get("pane_id") != pane:
             raise UsageError("The newly launched job lost its exact pane; preserve the startup outcome before another dispatch.", {})
-        job["native_session"] = report_delivery.native_identity(live)
-        job["tier"] = {**job["tier"], "verified": verify_running(self.client, worker, pane, job["tier"])}
-        self.changed()
+        verified = verify_running(self.client, worker, pane, job["tier"])
+        with self.transaction():
+            job["pane_id"] = pane
+            job["status"] = "ready"
+            job["native_session"] = report_delivery.native_identity(live)
+            job["tier"] = {**job["tier"], "verified": verified}
+            self.changed()
         supervision.enroll(self.capability.state_path, {"id": job["id"], "agent": worker.name,
             "task": self.capability.task, "report": job["report"], "pane_id": pane,
             "native_session": job["native_session"]}, self.clock())
         def observed(_step, observation):
-            recovery.observe_reserved(self.state["recovery"], job["id"], observation)
-            self.changed()
+            with self.transaction():
+                recovery.observe_reserved(self.state["recovery"], job["id"], observation)
+                self.changed()
         def before_send(_step, observation):
-            workflow_dispatch.sending(self.state, job["id"], observation, self.clock())
-            job["status"] = "sending"
-            job["transport"] = {"before_send": observation}
-            self.changed()
+            with self.transaction():
+                workflow_dispatch.sending(self.state, job["id"], observation, self.clock())
+                job["status"] = "sending"
+                job["transport"] = {"before_send": observation}
+                self.changed()
         def recorded(raw):
-            normalized = workflow_dispatch.finish(self.state, job["id"], raw)
-            job["transport"] = normalized
-            job["tier"] = raw["tier"]
-            job["status"] = "running" if raw["status"] == "applied" else "not_sent" if raw["status"] == "not_sent" else "uncertain"
-            self.changed()
+            with self.transaction():
+                normalized = workflow_dispatch.finish(self.state, job["id"], raw)
+                job["transport"] = normalized
+                job["tier"] = raw["tier"]
+                job["status"] = "running" if raw["status"] == "applied" else "not_sent" if raw["status"] == "not_sent" else "uncertain"
+                self.changed()
         # The parent task owns its correction number, independence and scope.
         # task=None disables only the legacy round journal; native proof and
         # composer checks below execute unchanged under the owner's capability.
@@ -186,6 +233,7 @@ class NativeWorkflowAdapter:
                     {"event": event["id"], "outcome": outcome, "evidence": [job["report"]]} for event in events]}, self.clock())
             supervision.resolve(self.capability.state_path, {"id": job["id"], "outcome": outcome,
                 "evidence": [row["path"] for row in expected]}, self.clock(), expected_evidence=expected)
-        job["status"] = "closed"
-        self.changed()
+        with self.transaction():
+            job["status"] = "closed"
+            self.changed()
         return closure

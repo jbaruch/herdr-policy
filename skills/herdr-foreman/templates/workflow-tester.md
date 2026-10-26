@@ -1,5 +1,9 @@
 # Independent testing responsibility
 
+For adopted legacy source, read the original delivered report in full and
+verify its relevant claims against the supplied source and current criteria.
+Source adoption supplies no passing test or implementation approval.
+
 Independently test the current full implementation against the admitted
 criteria and affected behavior. Remain read-only. Inspect actual outcomes,
 including relevant failure paths; report the commands/checks and evidence.

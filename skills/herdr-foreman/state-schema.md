@@ -901,6 +901,31 @@ and each capability check verify the
 captured contract type. This explicit discriminator lets Stop ignore legacy
 historical contracts instead of opening them to infer an execution mode.
 
+An adopted source uses grant schema 3 with the same exact fields and
+`contract_schema: 3`. Its immutable contract is schema 3: the schema-2 task
+declaration plus `adoption`. That receipt is schema 1; its exact bounded fields
+and native evidence interpretation are owned by `FIELDS` and `validate` in
+`skills/herdr-foreman/foreman/workflow_adoption.py`. It references the original
+dispatch, enrollment identity, byte-bound report/native source, exact pushed
+head and cumulative correction. No copied report or fabricated worker claim is
+stored. Native reported source keeps one schema-3 pending `adopt` intent, using
+the existing intent fields with null `job`, empty `argv`, the original single
+dispatch and report/native-source inputs. Its resolution is delivery transfer
+for verification; it is not an accepted implementation assessment. Progression
+keeps schema 2 and enters `verify` at the actual cumulative correction.
+
+The owner dual-reads grants 1/2/3 and contracts 1/2/3. Its schema-1 grant
+migration still derives prepared-chain authority only. No old record migrates
+into adoption. Admission 3 stays disabled by the source-controlled reader-first
+gate until compatible Tessl and ACR publications are verified; existing
+schema-3 recovery remains readable while the gate is false. Older readers must
+refuse the unsupported grant/contract/intent before effects. Task metadata,
+assignment, recovery and supervision schemas are unchanged. Reported delivery
+transfer uses existing observation/acknowledgment/resolution owners, without an
+extra event kind or second ledger. Native waits run outside the primary lock;
+each short transport checkpoint reloads the whole canonical owner and retains
+another task's appended assignments and actual indexes.
+
 An optional schema-1 `progression` record starts at the first dispatch intent. Its
 schema-1 fields are `schema_version`, `generation`, `cursor` and `pending`.
 `pending` is null or a schema-1 record with `step` and stable `intent` identity.

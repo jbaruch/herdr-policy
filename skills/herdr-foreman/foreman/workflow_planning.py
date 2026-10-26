@@ -5,7 +5,7 @@ Legacy correction-plan metadata is not fabricated to satisfy another loop.
 No native worker is contacted and no source or owner record is written here.
 """
 
-from . import capabilities, composition, lifecycle, planner, selection
+from . import capabilities, composition, lifecycle, planner, selection, recovery
 from . import cli
 from .chronology import timestamp
 from .errors import PlanError, UsageError
@@ -40,6 +40,42 @@ def require_headroom(state, worker_kind, at):
     if remaining is not None and remaining <= 0:
         raise UsageError("This workflow worker has no measured headroom; preserve its current account evidence before launching it.",
                          {"reason": "quota_exhausted", "worker_kind": worker_kind})
+
+
+def correction_authority(state, task, round_number, role):
+    """Use the actual cumulative allowance and its existing bounded work owner."""
+    store = state["recovery"]
+    progress = store["tasks"][task].get("progression", {})
+    plan = None
+    work = None
+    if round_number and round_number > recovery.ceiling_at(store, task, round_number):
+        plans = [row for row in recovery.active_plans(store) if row["task"] == task
+                 and row["first_fix"] <= round_number <= row["last_fix"]]
+        if len(plans) != 1:
+            raise UsageError("Restore the unique existing correction authorization for this cumulative attempt.", {})
+        plan = plans[0]["id"]
+        from . import report_contract, workflow_workspace
+        findings = []
+        for expected in progress.get("blockers", []):
+            receipt, body = workflow_workspace.capture(expected["path"])
+            if receipt != expected:
+                raise UsageError("Restore the exact blocking report before spending its approved correction allowance.", {})
+            claim = report_contract.workflow_claim(body.decode("utf-8"))
+            findings.extend(item["id"] for item in claim["findings"] if item["severity"] == "blocking" and item["status"] != "resolved")
+        # Verifiers and release preserve the actual implementation plan/work
+        # already recorded on the current developer dispatch.
+        if role != "developer":
+            source = next((row for row in store["dispatches"] if row["id"] == progress.get("jobs", {}).get("developer")), None)
+            if source is None:
+                raise UsageError("Restore the current developer's actual correction-work authorization before verification.", {})
+            plan, work = source["plan"], source["work"]
+        else:
+            head = progress.get("head")
+            work = {"base_revision": store["tasks"][task]["base_revision"], "scope": plans[0]["scope"],
+                    "paths": head["paths"] if head is not None else [], "findings": sorted(set(findings))}
+    recovery.validate_work(store, state["assignments"], task, round_number or None, plan, work,
+                           implementation=role == "developer")
+    return plan, work
 
 
 def plan(state, state_path, document, progress, roles, agents, at):

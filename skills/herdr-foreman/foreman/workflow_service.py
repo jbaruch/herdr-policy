@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import time
+from contextlib import contextmanager
 from typing import Callable
 
 from . import cli, engagement, load_set, progression_owner as authority
@@ -38,6 +39,7 @@ class WorkflowService:
             from .workflow_release import WorkflowReleaseAdapter
             release = WorkflowReleaseAdapter()
         self.native, self.planner, self.release = native, planner, release
+        self._effect_lock_held = False
         state = authority._load(capability.state_path)
         capability.require_current(capability.state_path, state, capability.task)
         authority.verify_foreman(capability.state_path, client, native_only=True)
@@ -118,12 +120,42 @@ class WorkflowService:
             intent["effects_started"] = True
             self._save(state)
 
+    @contextmanager
+    def _effect_transaction(self, state, identifier, job):
+        """Refresh canonical state for one short transport checkpoint.
+
+        Native startup/waits run outside this transaction. Another task's
+        assignments may append between callbacks, so never save a stale
+        whole-owner snapshot or reuse its earlier assignment indexes.
+        """
+        if self._effect_lock_held:
+            yield
+            return
+        with state_lock(self.path):
+            current, _task, progress = self._current()
+            if progress["pending"] is None or progress["pending"]["id"] != identifier:
+                raise UsageError("The task's pending native intent changed; preserve the original effect for its owner.", {})
+            if job is not None:
+                canonical = progress["pending"]["job"]
+                if canonical is None or canonical["id"] != job["id"]:
+                    raise UsageError("Preserve the original pending native job before saving another transport checkpoint.", {})
+                job.clear()
+                job.update(canonical)
+                progress["pending"]["job"] = job
+            state.clear()
+            state.update(current)
+            self._effect_lock_held = True
+            try:
+                yield
+            finally:
+                self._effect_lock_held = False
+
     def _roles(self, progress):
         return workflow_readiness.roles(self.profile, progress)
 
     def _brief(self, state, task, progress, role, report, identifier):
         template = self.inputs[self.document["briefs"][role]["path"]].decode("utf-8")
-        reports, dependencies = workflow_readiness.dependencies(state, supervision.load(self.path), self.document, progress, role)
+        reports, dependencies = workflow_readiness.dependencies(state, supervision.load(self.path), self.document, progress, role, state_path=self.path)
         context = {"schema_version": 1, "task": task["task"], "scope": task["scope"],
             "authorization": task["authorization"], "base_revision": task["base_revision"],
             "allowed_paths": task["allowed_paths"], "repository": self.document["repository"],
@@ -132,6 +164,7 @@ class WorkflowService:
             "responsibilities": schema.responsibilities(self.profile, role),
             "acceptance": self.document["acceptance"], "blocking_reports": progress["blockers"],
             "current_reports": reports,
+            "source_adoption": self.document.get("adoption"),
             "publication": self.document["publication"], "effects": self.document["effects"],
             "review_evidence": str(Path(self.document["artifact_directory"]) / "reviews-{}.json".format(identifier.replace(":", "-"))) if role == "release" else None,
             "report": report}
@@ -173,48 +206,70 @@ class WorkflowService:
             "status": "prepared", "pane_id": None, "native_session": None, "report": report,
             "brief": brief["path"], "at": self.clock(), "transport": None, "report_evidence": None, "claim": None}
         schema.validate_job(job)
-        dispatch.reserve(state, task["task"], progress["generation"], progress["round"], job,
-                         self.by_kind[job["worker_kind"]], common["path"], self.clock())
-        self._intent(progress, "apply", job=job, inputs=[common, brief, progress["plan"], *dependencies], dispatches=[job["id"]])
-        self._save(state)
+        return job, common, [common, brief, progress["plan"], *dependencies]
 
-    def _resume(self, state, task, progress):
-        intent = progress["pending"]
-        operation, job = intent["operation"], intent["job"]
-        if operation == "cleanup":
-            try:
-                return self.release.resume_cleanup(self, state, task, progress)
-            except ForemanError as exc:
-                return self._exception(state, "cleanup_owner_refused", [intent["id"], exc.message],
+    def _resume(self):
+        with state_lock(self.path):
+            state, task, progress = self._current()
+            if progress["pending"] is None:
+                return self._view(progress, "waiting", "pending_intent_superseded")
+            intent = progress["pending"]
+            operation, job = intent["operation"], intent["job"]
+            if operation == "adopt":
+                from . import workflow_adoption
+                member = next((row for row in supervision.load(self.path)["members"]
+                               if row["id"] == self.document["adoption"]["dispatch"]), None)
+                if member is not None and not member["active"]:
+                    workflow_adoption.dependencies(self.path, state, supervision.load(self.path), self.document)
+                    progress.update(pending=None, at=self.clock())
+                    self._save(state)
+                    return self._view(progress, "advanced")
+                if intent["effects_started"]:
+                    return self._exception(state, "pending_effect_requires_reconciliation", [intent["id"]],
+                                           ("reconcile_original_effect", "return_authority"))
+                workflow_adoption.require_current(self.path, state, supervision.load(self.path), self.document, self.client)
+            if operation == "cleanup":
+                try:
+                    return self.release.resume_cleanup(self, state, task, progress)
+                except ForemanError as exc:
+                    return self._exception(state, "cleanup_owner_refused", [intent["id"], exc.message],
+                                           ("reconcile_original_effect", "return_authority"))
+            if operation == "apply":
+                row = next((row for row in state["recovery"]["dispatches"] if row["id"] == job["id"]), None)
+                if row is not None and row["status"] == "applied":
+                    # Canonical readback wins over an interrupted launcher return.
+                    current = dispatch.current_job(state, supervision.load(self.path), job["id"])
+                    if any(current[key] != job[key] for key in ("id", "role", "agent", "report", "brief", "worker_kind")):
+                        return self._exception(state, "dispatch_readback_conflict", [job["id"]])
+                    progress["jobs"][job["role"]] = job["id"]
+                    progress.update(pending=None, at=self.clock())
+                    self._save(state)
+                    return self._view(progress, "advanced")
+            elif operation == "close":
+                member = next((row for row in supervision.load(self.path)["members"] if row["id"] == job["id"]), None)
+                if (member is not None and not member["active"] and member["resolution"] is not None
+                        and job["report_evidence"] is not None
+                        and all(any(row["path"] == expected["path"] and row["sha256"] == expected["sha256"]
+                                    for row in member["resolution"]["evidence"]) for expected in intent["inputs"])):
+                    progress.update(pending=None, at=self.clock())
+                    self._save(state)
+                    return self._view(progress, "advanced")
+            if intent["effects_started"]:
+                return self._exception(state, "pending_effect_requires_reconciliation", [intent["id"]],
                                        ("reconcile_original_effect", "return_authority"))
-        if operation == "apply":
-            row = next((row for row in state["recovery"]["dispatches"] if row["id"] == job["id"]), None)
-            if row is not None and row["status"] == "applied":
-                # Canonical readback wins over an interrupted launcher return.
-                current = dispatch.current_job(state, supervision.load(self.path), job["id"])
-                if any(current[key] != job[key] for key in ("id", "role", "agent", "report", "brief", "worker_kind")):
-                    return self._exception(state, "dispatch_readback_conflict", [job["id"]])
-                progress["jobs"][job["role"]] = job["id"]
-                progress.update(pending=None, at=self.clock())
-                self._save(state)
-                return self._view(progress, "advanced")
-        elif operation == "close":
-            member = next((row for row in supervision.load(self.path)["members"] if row["id"] == job["id"]), None)
-            if (member is not None and not member["active"] and member["resolution"] is not None
-                    and job["report_evidence"] is not None
-                    and all(any(row["path"] == expected["path"] and row["sha256"] == expected["sha256"]
-                                for row in member["resolution"]["evidence"]) for expected in intent["inputs"])):
-                progress.update(pending=None, at=self.clock())
-                self._save(state)
-                return self._view(progress, "advanced")
-        if intent["effects_started"]:
-            return self._exception(state, "pending_effect_requires_reconciliation", [intent["id"]],
-                                   ("reconcile_original_effect", "return_authority"))
+        def transaction():
+            return self._effect_transaction(state, intent["id"], job)
+        def before_effect():
+            with transaction():
+                self._before_effect(state)
         try:
-            with self.capability.workflow_operation(state, operation, before_effect=lambda: self._before_effect(state)):
+            with self.capability.workflow_operation(state, operation, before_effect=before_effect):
                 client = self.capability.authorized_client(self.client)
                 adapter = self.native(self.capability, client, state, lambda: self._save(state),
-                                      self.clock, sleeper=self.sleeper)
+                                      self.clock, sleeper=self.sleeper, owner_transaction=transaction)
+                if operation == "adopt":
+                    adapter.adopt(self.document)
+                    return self._view(progress, "effect_recorded")
                 if operation == "apply":
                     common = str(Path(self.document["artifact_directory"]) / "common.md")
                     adapter.launch(job, self.by_kind[job["worker_kind"]], {"common": common}, state["assignments"],
@@ -231,17 +286,20 @@ class WorkflowService:
                                                         "--state", str(self.path), *intent["argv"]])
                     _result, error = cli.cmd_measure(args, client=client)
                     # The existing measurement owner saved its own fresh state.
-                    state, task, progress = self._current()
-                    if error is not None:
-                        return self._exception(state, "measurement_incomplete", [str(self.path)])
-                    progress.update(pending=None, at=self.clock())
-                    self._save(state)
-                    return self._view(progress, "advanced")
+                    with state_lock(self.path):
+                        state, task, progress = self._current()
+                        if error is not None:
+                            return self._exception(state, "measurement_incomplete", [str(self.path)])
+                        progress.update(pending=None, at=self.clock())
+                        self._save(state)
+                        return self._view(progress, "advanced")
                 raise UsageError("Restore the supported original task effect before resuming progression.", {})
         except ForemanError as exc:
             # Preserve every callback checkpoint and uncertain native effect.
-            return self._exception(state, "native_owner_refused", [intent["id"], exc.message],
-                                   ("reconcile_original_effect", "return_authority"))
+            with state_lock(self.path):
+                state, task, progress = self._current()
+                return self._exception(state, "native_owner_refused", [intent["id"], exc.message],
+                                       ("reconcile_original_effect", "return_authority"))
 
     @staticmethod
     def _stamp(member):
@@ -347,7 +405,8 @@ class WorkflowService:
                 return self._exception(state, "verification_decision_required", [job["report"] for job in jobs if job["role"] in claims],
                                        ("resolve_task_decision", "return_authority"))
             if any(claim["outcome"] == "blocking" for claim in claims.values()):
-                if progress["round"] >= recovery.DEFAULT_FIX_LIMIT:
+                budget = recovery.task_statuses(state["recovery"], state["assignments"])[task["task"]]
+                if budget["remaining_fixes"] <= 0 or budget["status"] == "diagnosed_stop":
                     return self._exception(state, "correction_allowance_exhausted", [job["report"] for job in jobs if job["role"] in claims],
                                            ("diagnose_task", "return_authority"))
                 blockers = [receipts[job["role"]]
@@ -409,9 +468,8 @@ class WorkflowService:
             state, task, progress = self._current()
             if progress["phase"] in ("exception", "complete"):
                 return self._view(progress, progress["phase"])
-            if progress["pending"] is not None:
-                return self._resume(state, task, progress)
-            if self.profile["specialist_domains"]:
+            pending = progress["pending"] is not None
+            if not pending and self.profile["specialist_domains"]:
                 return self._exception(state, "specialist_evidence_required", self.profile["specialist_domains"],
                                        ("admit_specialist_evidence", "return_authority"))
             roles = self._roles(progress)
@@ -420,6 +478,8 @@ class WorkflowService:
                 release_observation = True
             else:
                 release_observation = False
+        if pending:
+            return self._resume()
         if release_observation:
             # Review/publication helpers own their waits. Their potentially
             # long reads cannot retain another task's primary transaction.
@@ -443,27 +503,64 @@ class WorkflowService:
             state, task, progress = self._current()
             roles = self._roles(progress)
             missing = [role for role in roles if role not in progress["jobs"]]
-            if missing:
-                decision = workflow_readiness.preparation(state, supervision.load(self.path), self.path,
-                    self.document, progress, roles, self.agents, self.backpressure, self.clock(), planner=self.planner)
-                capacity = decision["capacity"]
-                if decision["state"] == "capacity_wait":
-                    assert capacity is not None
-                    return self._view(progress, "waiting", capacity["reason"], capacity=capacity)
-                if decision["state"] == "measurement_required":
+            preparation_stamp = supervision.digest(progress)
+            supervised = supervision.load(self.path)
+        if missing:
+            # Git, planning and artifact rendering are task-local preparation.
+            # Another task can prepare concurrently; the task's kernel lease
+            # provides the single writer, and only its reservation is global.
+            decision = workflow_readiness.preparation(state, supervised, self.path,
+                self.document, progress, roles, self.agents, self.backpressure, self.clock(), planner=self.planner)
+            capacity = decision["capacity"]
+            if decision["state"] == "capacity_wait":
+                assert capacity is not None
+                return self._view(progress, "waiting", capacity["reason"], capacity=capacity)
+            if decision["state"] == "measurement_required":
+                with state_lock(self.path):
+                    state, task, progress = self._current()
+                    if supervision.digest(progress) != preparation_stamp:
+                        return self._view(progress, "waiting", "preparation_superseded")
                     self._intent(progress, "measure", inputs=[self.document["config"]])
                     self._save(state)
                     return self._view(progress, "prepared", capacity=capacity)
-                if decision["state"] == "plan_ready":
-                    progress["plan"], _ = workspace.write_current(self.document["artifact_directory"], "plan.json", encoded(decision["plan"]))
+            if decision["state"] == "plan_ready":
+                prepared_plan, _ = workspace.write_current(self.document["artifact_directory"], "plan.json", encoded(decision["plan"]))
+                with state_lock(self.path):
+                    state, task, progress = self._current()
+                    if supervision.digest(progress) != preparation_stamp:
+                        return self._view(progress, "waiting", "preparation_superseded")
+                    progress["plan"] = prepared_plan
                     self._save(state)
-                try:
-                    plan = workflow_readiness.read_plan(progress["plan"], missing, self.by_kind)
-                except ForemanError as exc:
-                    return self._exception(state, "current_plan_changed", [progress["plan"]["path"], exc.message])
+                    preparation_stamp = supervision.digest(progress)
+            try:
+                plan = workflow_readiness.read_plan(progress["plan"], missing, self.by_kind)
+            except ForemanError as exc:
+                with state_lock(self.path):
+                    state, task, progress = self._current()
+                    return self._exception(state, "current_plan_changed", [exc.message])
+            job, common, inputs = self._make_job(state, task, progress, missing[0], plan)
+            prepared_plan = progress["plan"]
+            with state_lock(self.path):
+                state, task, progress = self._current()
+                if supervision.digest(progress) != preparation_stamp:
+                    return self._view(progress, "waiting", "preparation_superseded")
                 workflow_planning.require_headroom(state, plan["worker_kinds"][missing[0]], self.clock())
-                self._make_job(state, task, progress, missing[0], plan)
+                if self.backpressure is not None:
+                    from .workflow_capacity import evaluate
+                    current_capacity = evaluate(state, supervision.load(self.path), self.capability.task,
+                        self.document["repository"]["github"], self.backpressure, self.clock(),
+                        family=lambda name: workflow_readiness.capacity_family(state, name))
+                    if not current_capacity["allowed"]:
+                        return self._view(progress, "waiting", current_capacity["reason"], capacity=current_capacity)
+                progress["plan"] = prepared_plan
+                dispatch.reserve(state, task["task"], progress["generation"], progress["round"], job,
+                    self.by_kind[job["worker_kind"]], common["path"], self.clock())
+                self._intent(progress, "apply", job=job, inputs=inputs, dispatches=[job["id"]])
+                self._save(state)
                 return self._view(progress, "prepared", capacity=capacity)
+        with state_lock(self.path):
+            state, task, progress = self._current()
+            roles = self._roles(progress)
             supervised = supervision.load(self.path)
             jobs = [dispatch.current_job(state, supervised, identifier) for identifier in progress["jobs"].values()]
             for job in jobs:

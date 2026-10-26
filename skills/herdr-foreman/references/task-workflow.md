@@ -1,12 +1,12 @@
 # Admitted Task Workflows
 
-This contract governs only an explicitly admitted schema-2 task executed by
-`progression-run` from the current verified native foreman environment. The
+This contract governs explicitly admitted schema-2 fresh tasks and schema-3
+adopted tasks executed by `progression-run` or `progression-batch` from the current verified native foreman environment. The
 task's recovery record must name its current service generation, unchanged
 contract and Herdr policy identity. A label in prose, an issue, a saved
 heartbeat or a claimed environment value grants none of that authority.
 
-Ordinary standalone work remains standalone. Legacy rounds retain their
+Ordinary standalone work remains standalone. Unadopted legacy rounds retain their
 existing team-operation contract. This contract changes neither delegated
 work's Herdr requirement nor generic coding-policy review/release gates.
 
@@ -19,7 +19,7 @@ and one pending effect. Existing recovery, assignment, engagement,
 report-gate and supervision owners retain their provenance and authority.
 There is no second board, Markdown assessment ledger or local history archive.
 
-Admission requires a new task at its exact registered clean base, an isolated
+Fresh admission requires a new task at its exact registered clean base, an isolated
 writer worktree, explicit risk facts and authorized effects, frozen config and
 brief templates, an owner-controlled artifact directory outside the writer,
 compatible general policy, and a verified authority handoff. Existing work is
@@ -27,6 +27,22 @@ finished or migrated through its actual owner; history is never reset to make
 it look new. Native remote/attested execution is not enabled by this adapter.
 Admission exclusively creates its fresh private artifact directory; an
 existing directory cannot be reused by this or another task.
+
+Schema 3 adopts the actual latest applied source assignment at its clean pushed
+head. Its immutable receipt binds the original dispatch, enrollment, native
+prompt/final source, report bytes, source head and cumulative corrections.
+Neither source adoption nor enrollment transfer claims the implementation was
+built, tested or approved. An authenticated reported source enters `verify`;
+its still-active delivery enrollment closes through one durable `adopt` intent
+as `transferred_for_verification`. The native responsible verifier reads the
+original report in full, assesses the supplied source and returns the existing
+structured verification claim. An already accepted closed source keeps its
+original assessment. Existing classifier/verdict gates remain with their owners.
+
+New schema-3 admission is disabled until both registry reader publications are
+verified. The source-controlled activation flag affects new admission only;
+installed readers retain recovery of already admitted schema-3 tasks. See
+`skills/herdr-foreman/references/progression.md` for preparation and rollout.
 
 The compiled common brief names the actual general policy entrypoint, the
 scoped worker/report contract and the complete selected release skill. Workers
@@ -91,8 +107,11 @@ review or follow-up obligation. External review gates follow the selected
 coding-policy release contract. Disputed material
 findings, unsettled causes, changed scope/effect plans, repeated defects,
 contradictions and non-convergence require a task-local decision. Reaching a
-correction limit never authorizes self-approval. The initial executor uses the
-existing five-fix allowance and returns exhaustion to the diagnosis owner.
+correction limit never authorizes self-approval. The executor uses the task's
+actual cumulative allowance, current approach and bounded correction plan.
+It preserves the original base, findings and authorized paths when spending a
+recorded extra attempt, and returns exhaustion or missing authorization to the
+existing diagnosis owner.
 
 Blocking verdicts hold task release. Only the same responsibility's delivered,
 approved current-tip re-check or an actual resolved operator decision clears

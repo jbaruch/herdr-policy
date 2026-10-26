@@ -31,7 +31,7 @@ from .assign import APPLY_SCHEMA_VERSION, dry_run, freeze_decision, freeze_paths
 from . import no_work_recovery, bootstrap_recovery, context_evidence, model_unavailability, probe_recovery, renderable
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
 from . import progression_owner
-from . import progression_service
+from . import progression_service, workflow_adoption, delivery_collection
 from . import config as config_owner
 from .config import FOREMAN_CONFIG_VERSION, default_config_path, load_config, load_foreman, load_judge, load_role_costs, select_agents
 from .errors import AgentBusyError, IDENTIFIER_UNAVAILABLE_KIND, IDENTIFIER_UNAVAILABLE_RECOVERY, TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND, PlanError, StateError, ForemanError, HerdrError, UsageError, owner_recovery
@@ -151,6 +151,10 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
     progression_owner.register_commands(sub, common)
     progression_service.register_commands(sub, common)
+    workflow_adoption.register_commands(sub, common)
+    delivery_collection.register_commands(sub, common)
+    from . import workflow_batch
+    workflow_batch.register_commands(sub, common)
 
     judge_parser = sub.add_parser("start-judge", parents=[common],
                                   help="Start the plan's judge in a shell pane and verify its launch argv.")
@@ -3465,6 +3469,23 @@ def cmd_progression_run(args, client=None, warn=None, trace=None):
                                            client if client is not None else _client(args, trace=trace), sleeper=time.sleep)
 
 
+def cmd_progression_adoption(args, client=None, warn=None, trace=None):
+    return workflow_adoption.run_command(args, _state_path(args),
+        client if client is not None else _client(args, trace=trace)), None
+
+
+def cmd_collect_deliveries(args, client=None, warn=None, trace=None):
+    return delivery_collection.collect(_state_path(args),
+        client if client is not None else _client(args, trace=trace), args.now or now_iso(),
+        task=args.task, limit=args.limit, offset=args.offset), None
+
+
+def cmd_progression_batch(args, client=None, warn=None, trace=None):
+    from . import workflow_batch
+    return workflow_batch.run_command(args, _state_path(args),
+        client if client is not None else _client(args, trace=trace), clock=now_iso)
+
+
 def cmd_supervision_gate(args, client=None, warn=None, trace=None):
     """Which pending supervision events need the foreman; see supervision_gate.py."""
     return supervision_gate.view(supervision.load(_state_path(args)), limit=args.limit, after=args.after), None
@@ -3503,6 +3524,9 @@ COMMANDS = {
     "load-set": cmd_load_set,
     **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return", "progression-reconcile", "progression-resume")},
     "progression-run": cmd_progression_run,
+    "progression-prepare-adoption": cmd_progression_adoption,
+    "collect-deliveries": cmd_collect_deliveries,
+    "progression-batch": cmd_progression_batch,
     **{command: cmd_recovery for command in ("task", "checkpoint", "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report", "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work", "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review", "recover-report", "assess-specialist", "close-task")},
     "detect-triggers": cmd_detect_triggers,
     "finding-churn": cmd_finding_churn,
@@ -3617,7 +3641,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run"}
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run", "progression-batch", "progression-prepare-adoption", "collect-deliveries"}
             authority_transaction = service_capability is not None
             lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:

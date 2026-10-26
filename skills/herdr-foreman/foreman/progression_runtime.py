@@ -70,7 +70,7 @@ def pulse(capability, at, *, stopped=False, reason=None, probe=supervision_runti
         capability.require_current(capability.state_path, state, capability.task)
         grant = authority.current_grant(state, capability.task)
         assert grant is not None
-        if grant.get("contract_schema") == 2:
+        if grant.get("contract_schema") in (2, 3):
             from .workflow_service import WorkflowService
             executor = capability._workflow_executor
             if not isinstance(executor, WorkflowService) or executor.capability is not capability:
@@ -193,13 +193,13 @@ def continuation(state_path, data, at, plugin_root, *, probe=supervision_runtime
     if not isinstance(rows, dict) or not any(
             isinstance(row, dict) and isinstance(row.get("authority"), dict)
             and row["authority"].get("mode") == "service"
-            and (row["authority"].get("schema_version") != 1 or row["authority"].get("contract_schema") == 2)
+            and (row["authority"].get("schema_version") != 1 or row["authority"].get("contract_schema") in (2, 3))
             for row in rows.values()):
         return {"members": set(), "tasks": {}}
     state = authority._load(state_path)
     candidates = {task: metadata for task, metadata in state["recovery"]["tasks"].items()
                   if metadata.get("authority", {}).get("mode") == "service"
-                  and metadata["authority"].get("contract_schema") == 2}
+                  and metadata["authority"].get("contract_schema") in (2, 3)}
     if not candidates:
         return {"members": set(), "tasks": {}}
     version, digest = authority.loaded_policy(plugin_root)
@@ -226,7 +226,7 @@ def continuation(state_path, data, at, plugin_root, *, probe=supervision_runtime
         if tasks[task] != "live":
             continue
         captured, contract = capture_contract(grant["contract"]["path"])
-        if captured != grant["contract"] or not isinstance(contract, dict) or contract.get("schema_version") != 2:
+        if captured != grant["contract"] or not isinstance(contract, dict) or contract.get("schema_version") not in (2, 3):
             tasks[task] = "contract_changed"
             continue
         workflow_contract.contract(contract, metadata)
@@ -252,6 +252,11 @@ def continuation(state_path, data, at, plugin_root, *, probe=supervision_runtime
             elif pending["operation"] == "measure":
                 tasks[task] = "measurement_unsettled"
                 continue
+            elif pending["operation"] == "adopt":
+                member = next((row for row in data["members"] if row["id"] == contract["adoption"]["dispatch"]), None)
+                if member is None or member["active"] or member["resolution"] is None:
+                    tasks[task] = "native_effect_unsettled"
+                    continue
         dispatches = {row["id"] for row in state["recovery"]["dispatches"]
                       if row["task"] == task and row["status"] != "not_sent" and row["id"] in identifiers}
         covered.update(row["id"] for row in data["members"]

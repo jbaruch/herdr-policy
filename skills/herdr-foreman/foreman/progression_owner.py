@@ -60,7 +60,7 @@ def validate_policy_binding(policy, binding):
 
 def validate_grant(grant):
     if (not isinstance(grant, dict) or type(grant.get("schema_version")) is not int
-            or grant["schema_version"] not in (1, GRANT_VERSION)
+            or grant["schema_version"] not in (1, 2, 3)
             or set(grant) != (LEGACY_GRANT_FIELDS if grant["schema_version"] == 1 else GRANT_FIELDS)
             or type(grant["generation"]) is not int or grant["generation"] < 1
             or grant["mode"] not in ("legacy", "service")):
@@ -74,7 +74,7 @@ def validate_grant(grant):
         if any(grant[name] is not None for name in fields) or grant.get("contract_schema") is not None:
             raise UsageError("A returned task must clear service capabilities while retaining its generation.", {})
         return
-    if grant["schema_version"] == 2 and (type(grant["contract_schema"]) is not int or grant["contract_schema"] not in (1, 2)):
+    if grant["schema_version"] in (2, 3) and (type(grant["contract_schema"]) is not int or grant["contract_schema"] not in ((3,) if grant["schema_version"] == 3 else (1, 2))):
         raise UsageError("Preserve the admitted prepared-chain or task-workflow contract type; labels cannot transfer continuation authority.", {})
     if (not isinstance(grant["service_id"], str) or IDENTIFIER.fullmatch(grant["service_id"]) is None
             or not isinstance(grant["lease_path"], str) or not Path(grant["lease_path"]).is_absolute()):
@@ -150,10 +150,10 @@ def verify_foreman(state_path, client, *, native_only=False, supervised=None):
     return data
 
 
-def _settled(state, supervised, task):
+def _settled(state, supervised, task, *, transferring=None):
     pending = [row["id"] for row in state["recovery"]["dispatches"]
                if row["task"] == task and row["status"] in recovery.PENDING_STATUSES]
-    active = [row["id"] for row in supervised["members"] if row["active"] and row["assignment"]["task"] == task]
+    active = [row["id"] for row in supervised["members"] if row["active"] and row["assignment"]["task"] == task and row["id"] != transferring]
     if pending or active:
         raise UsageError("Reconcile this task's pending sends and active enrollments through their existing owners before handoff; lease exit proves no delivery outcome.",
                          {"task": task, "pending_dispatch_count": len(pending), "active_enrollment_count": len(active)})
@@ -186,7 +186,16 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
             or not returning and old is not None and old["mode"] == "service"):
         raise UsageError("This task already belongs to the selected authority; use its existing owner instead of creating another dispatcher.", {})
     supervised = verify_foreman(state_path, client)
-    _settled(state, supervised, data["task"])
+    transferring = None
+    if not returning:
+        _receipt, preview = capture_contract(data["contract"])
+        if isinstance(preview, dict) and type(preview.get("schema_version")) is int and preview["schema_version"] == 3:
+            from . import workflow_adoption
+            if not workflow_adoption.LEGACY_ADOPTION_ENABLED:
+                raise UsageError("Legacy adoption readers are installed, but new admissions remain disabled until their Tessl and ACR reader publications are both verified.", {})
+            workflow_adoption.validate(preview.get("adoption"))
+            transferring = preview["adoption"]["dispatch"]
+    _settled(state, supervised, data["task"], transferring=transferring)
     if row.get("progression", {}).get("pending") is not None:
         raise UsageError("Reconcile the service's pending transition before returning or replacing its authority; process exit proves no effect outcome.", {})
     if not returning and _unresumed_hold(supervised):
@@ -200,25 +209,39 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         version, digest = loaded_policy(plugin_root)
         captured, _document = capture_contract(data["contract"])
         if (not isinstance(_document, dict) or type(_document.get("schema_version")) is not int
-                or _document["schema_version"] not in (1, 2)):
+                or _document["schema_version"] not in (1, 2, 3)):
             raise UsageError("Admit an explicitly supported prepared-chain or task-workflow contract; unknown types grant no continuation.", {})
         grant["contract_schema"] = _document["schema_version"]
-        if isinstance(_document, dict) and _document.get("schema_version") == 2:
+        if _document["schema_version"] == 3:
+            grant["schema_version"] = 3
+        if isinstance(_document, dict) and _document.get("schema_version") in (2, 3):
             if (getattr(getattr(client, "context", None), "mode", None) != "native"
                     or supervised["binding"]["schema_version"] != 1):
                 raise UsageError("Admit schema-2 tasks only through the exact verified native foreman; remote/attested task admission is not enabled.", {})
             from . import workflow_contract, workflow_workspace
             workflow_contract.contract(_document, row)
-            if any(item.get("task") == data["task"] and item.get("status") == "applied" for item in state["assignments"]):
+            adopted = _document["schema_version"] == 3
+            if not adopted and any(item.get("task") == data["task"] and item.get("status") == "applied" for item in state["assignments"]):
                 raise UsageError("Admit new coherent tasks to the outcome workflow; preserve and finish existing assignments through their current owner instead of resetting their history.", {})
             workflow_workspace.inputs(_document)
             initial = workflow_workspace.inspect(_document, row)
-            if initial["commit"] != row["base_revision"] or initial["paths"]:
+            if not adopted and (initial["commit"] != row["base_revision"] or initial["paths"]):
                 raise UsageError("A new outcome workflow starts at its registered clean base; existing implementation needs its recorded contributor and migration owner rather than assumed independence.", {})
             from . import policy_paths
             policy_paths.brief_inputs(Path(__file__).resolve().parents[1], workflow_workspace.base_checkout(_document),
                 Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None, workflow=True)
             workflow = workflow_contract.initial_progress(generation + 1, at)
+            if adopted:
+                from . import workflow_adoption
+                source = workflow_adoption.require_current(state_path, state, supervised, _document, client)
+                workflow.update(phase="verify", round=source["correction"], head=source["head"],
+                                jobs={"developer": source["dispatch"]})
+                if source["source_status"] == "reported":
+                    workflow["pending"] = {"schema_version": 3,
+                        "id": "adoption-" + supervision.digest([data["task"], generation + 1, source])[:48],
+                        "operation": "adopt", "argv": [], "inputs": [source["report"], source["native_source"]],
+                        "effects_started": False, "dispatches": [source["dispatch"]], "job": None}
+                workflow_contract.validate_current(workflow, _document)
             artifact_directory = _document["artifact_directory"]
         grant.update(service_id=data["service_id"], lease_path=data["lease_path"], contract=captured,
                      policy={"version": version, "digest": digest}, binding=_binding(supervised))
@@ -239,7 +262,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         # no new index or parallel authority store is needed.
         if _binding(current) != _binding(supervised):
             raise UsageError("The bound foreman changed during handoff; verify its current owner before retrying.", {})
-        _settled(state, current, data["task"])
+        _settled(state, current, data["task"], transferring=transferring)
         if not returning and _unresumed_hold(current):
             raise UsageError("An operator hold arrived during admission; preserve its resume conditions.", {})
         with process_lease(lease_path):
@@ -359,7 +382,7 @@ class ServiceCapability:
         captured, contract = capture_contract(grant["contract"]["path"])
         progress = state["recovery"]["tasks"][self.task].get("progression", {})
         pending = progress.get("pending")
-        if (captured != grant["contract"] or not isinstance(contract, dict) or contract.get("schema_version") != 2
+        if (captured != grant["contract"] or not isinstance(contract, dict) or contract.get("schema_version") not in (2, 3)
                 or progress.get("schema_version") != 2 or pending is None
                 or pending["operation"] != operation or self._prepared is not None or not callable(before_effect)):
             raise UsageError("Use the current admitted workflow intent before invoking native owner primitives.", {})
@@ -539,7 +562,7 @@ def reconcile_intent(state_path, data, at, client):
     captured, document = capture_contract(grant["contract"]["path"])
     if captured != grant["contract"]:
         raise UsageError("Restore the admitted contract before reconciling its expected dispatch set.", {})
-    if grant.get("contract_schema") == 2:
+    if grant.get("contract_schema") in (2, 3):
         from .workflow_recovery import reconcile_measurement, reconcile_not_sent
         pending = progress["pending"]
         measurement_replay = any(event["kind"] == "progression_measurement_reconciled" and event["task"] == data["task"]

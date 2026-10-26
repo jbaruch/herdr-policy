@@ -1,6 +1,10 @@
 # Independent verification responsibility
 
 Review the actual current implementation and its authorized diff in full.
+For adopted legacy source, also read the original delivered report in full
+and check its claims against the supplied source and current criteria.
+The adoption receipt proves delivery provenance and transfers supervision;
+it provides no built or approved implementation claim.
 Do not contribute source changes. Confirm the task's actual criteria and
 return the full reviewed head. If your selected responsibilities include
 `tests`, also perform independent testing and supply separate successful

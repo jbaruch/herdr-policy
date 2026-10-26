@@ -80,7 +80,7 @@ def current_measurement_readback(path, data):
     recovery.authorization(data["authorization"])
     state = authority._load(path)
     grant = authority.current_grant(state, data["task"])
-    if (grant is None or grant["mode"] != "service" or grant.get("contract_schema") != 2
+    if (grant is None or grant["mode"] != "service" or grant.get("contract_schema") not in (2, 3)
             or type(data["expected_generation"]) is not int or data["expected_generation"] != grant["generation"]):
         raise UsageError("Select the current schema-2 task service generation before deriving measurement evidence.", {})
     captured, document = capture_contract(grant["contract"]["path"])
@@ -226,7 +226,7 @@ def resume(path, data, at, client, plugin_root):
     supervision.timestamp(at)
     state = authority._load(path)
     grant = authority.current_grant(state, data["task"])
-    if (grant is None or grant["mode"] != "service" or grant.get("contract_schema") != 2
+    if (grant is None or grant["mode"] != "service" or grant.get("contract_schema") not in (2, 3)
             or type(data["expected_generation"]) is not int or data["expected_generation"] != grant["generation"]):
         raise UsageError("Resume only the current admitted task-workflow generation.", {})
     supervised = authority.verify_foreman(path, client)
@@ -259,6 +259,10 @@ def resume(path, data, at, client, plugin_root):
                 and job["report_evidence"] is not None and any(
                     item["path"] == job["report_evidence"]["path"] and item["sha256"] == job["report_evidence"]["sha256"]
                     for item in row["resolution"]["evidence"]) for row in supervised["members"])
+        elif intent["operation"] == "adopt":
+            from . import workflow_adoption
+            workflow_adoption.dependencies(path, state, supervised, document)
+            proved = True
         if not proved:
             raise UsageError("Preserve the unknown native effect; resume requires canonical applied/closed evidence or separate no-send reconciliation.", {})
     def change(current):
