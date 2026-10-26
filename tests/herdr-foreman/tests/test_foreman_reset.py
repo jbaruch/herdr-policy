@@ -1133,7 +1133,7 @@ class ResetCommandTest(CliCase):
     def codex_delivery_fixture(self):
         host = GoalHost({SESSION["value"]: goal(SESSION["value"])})
         host.active.add(SESSION["value"])
-        with patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 2):
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True):
             receipt = foreman_reset.host_goals.prepare("codex", SESSION, connect=host.connect,
                                                       discover=lambda: "/fixture/codex.sock")
         supervision.bind(self.state, supervision.identity(SESSION["value"], str(self.tmp), "1", pane_id=PANE),

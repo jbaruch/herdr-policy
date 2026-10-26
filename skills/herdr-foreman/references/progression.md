@@ -172,8 +172,8 @@ in full and supplies the substantive assessment. Already accepted closed source
 keeps its original resolution. Specialist/production boundaries remain explicit
 task-local exceptions and do not turn into bounded profiles.
 
-`LEGACY_ADOPTION_ENABLED` in
-`skills/herdr-foreman/foreman/workflow_adoption.py` remains false in the reader
+`NEW_OWNER_WRITES_ENABLED` in
+`skills/herdr-foreman/foreman/release_activation.py` remains false in the reader
 release. Publish and verify the compatible readers through Tessl and ACR first,
 then enable new admissions in the activation release. No waiting period or new
 operator approval is added. The reader release supports recovery of an existing

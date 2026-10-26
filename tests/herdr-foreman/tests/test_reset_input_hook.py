@@ -29,7 +29,7 @@ FOREGROUND = [{"pid": 4242, "identity": "started-once"}]
 
 class ResetHookTest(unittest.TestCase):
     def setUp(self, kind="codex", source=None, arm=True):
-        activated = patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 2)
+        activated = patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True)
         activated.start()
         self.addCleanup(activated.stop)
         temporary = tempfile.TemporaryDirectory()

@@ -17,7 +17,6 @@ from . import workflow_workspace as workspace
 from .errors import UsageError
 
 
-LEGACY_ADOPTION_ENABLED = False
 
 FIELDS = {"schema_version", "dispatch", "report", "native_source", "native_session",
           "dispatch_digest", "enrollment_digest", "head", "correction", "source_status"}
@@ -59,6 +58,8 @@ def source_evidence(state_path, state, member, dispatch, *, check_gates=True):
     if native is None:
         raise UsageError("Restore this source enrollment's exact native session before adoption.", {})
     report, _body = workspace.capture(expected["report"], limit=workspace.REPORT_LIMIT)
+    report_delivery.require_primary_delivery(dispatch, state["assignments"][dispatch["assignment_index"]],
+                                            expected, expected["report"])
     contents = brief_evidence(dispatch, expected)
     source_path = report_delivery.source_path(native)
     if source_path is None:

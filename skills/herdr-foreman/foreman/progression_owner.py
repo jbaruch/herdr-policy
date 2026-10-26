@@ -193,8 +193,8 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         _receipt, preview = capture_contract(data["contract"])
         if isinstance(preview, dict) and type(preview.get("schema_version")) is int and preview["schema_version"] == 3:
             from . import workflow_adoption
-            if not workflow_adoption.LEGACY_ADOPTION_ENABLED:
-                raise UsageError("Legacy adoption readers are installed, but new admissions remain disabled until their Tessl and ACR reader publications are both verified.", {})
+            from . import release_activation
+            release_activation.require("legacy task adoption")
             workflow_adoption.validate(preview.get("adoption"))
             transferring = preview["adoption"]["dispatch"]
     _settled(state, supervised, data["task"], transferring=transferring)

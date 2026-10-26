@@ -38,7 +38,7 @@ def observe(path, state, member, client, *, check=members.check):
         if (not isinstance(waited, dict) or type(waited.get("found")) is not bool
                 or waited.get("agent") != assigned["agent"] or waited.get("report_path") != assigned["report"]):
             raise StateError("The native completion check differs from its enrolled report and worker.", {})
-        if code == 1 and not waited["found"] and waited.get("reason") in {"checkpoint_pending", "checkpoint_timeout", "report_pending"}:
+        if code == 1 and not waited["found"] and waited.get("reason") == "checkpoint_pending" and waited.get("stall") is None:
             return result
         if code != 0 or not waited["found"]:
             return {**result, "status": "decision", "reason": "native_delivery_exception"}

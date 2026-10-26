@@ -16,7 +16,7 @@ from tests.goal_fakes import GoalHost, goal
 
 class HostGoalTest(unittest.TestCase):
     def setUp(self):
-        activated = patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 2)
+        activated = patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True)
         activated.start()
         self.addCleanup(activated.stop)
         self.host = GoalHost({"old": goal()})
@@ -28,7 +28,7 @@ class HostGoalTest(unittest.TestCase):
         self.saved.append(copy.deepcopy(self.receipt))
 
     def test_reader_first_release_writes_one_and_can_read_and_recover_two(self):
-        with patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 1):
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", False):
             legacy = transfer.prepare("codex", {"kind": "id", "value": "old"},
                                       connect=self.host.connect, discover=lambda: "/fixture/codex.sock")
             self.assertEqual(legacy["schema_version"], 1)

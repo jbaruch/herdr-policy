@@ -21,7 +21,7 @@ from tests import test_workflow_service as workflow_fixture
 from foreman import assign, cli, delivery_collection, progression_owner as authority, recovery, supervision
 from foreman import workflow_adoption as adoption, workflow_batch, workflow_contract, workflow_workspace as workspace
 from foreman.errors import UsageError
-from foreman.state import add_assignment, save_state, state_lock
+from foreman.state import add_assignment, load_state_checked, save_state, state_lock
 
 
 class WorkflowAdoptionTest(unittest.TestCase):
@@ -46,6 +46,8 @@ class WorkflowAdoptionTest(unittest.TestCase):
         row.pop("progression")
         row["schema_version"] = 1
         save_state(self.fx.path, state)
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True):
+            load_state_checked(self.fx.path)
         self.fx.document["artifact_directory"] = str(self.fx.root / "adopted-current")
         self.source = self.write_source()
         native_root = patch.dict(os.environ, {"CODEX_HOME": str(self.fx.root / "codex")})
@@ -88,19 +90,32 @@ class WorkflowAdoptionTest(unittest.TestCase):
         return receipt
 
     def admit(self):
-        with patch.object(adoption, "LEGACY_ADOPTION_ENABLED", True), state_lock(self.fx.path):
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True), state_lock(self.fx.path):
+            # Activation performs the existing normal owner migration once;
+            # a read-only capability cannot invent or silently persist it.
+            load_state_checked(self.fx.path)
             return authority.handoff(self.fx.path, self.fx.owner.data, self.fx.now(), self.fx.native,
                                      Path(__file__).resolve().parents[3])
 
     def test_reader_release_refuses_new_admission_without_owner_mutation(self):
         self.prepare()
         before = self.fx.path.read_bytes()
-        with self.assertRaisesRegex(UsageError, "reader publications"):
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", False), self.assertRaisesRegex(UsageError, "reader|publication|staged"):
             with state_lock(self.fx.path):
                 authority.handoff(self.fx.path, self.fx.owner.data, self.fx.now(), self.fx.owner.client,
                                   Path(__file__).resolve().parents[3])
         self.assertEqual(self.fx.path.read_bytes(), before)
         self.assertFalse(Path(self.fx.document["artifact_directory"]).exists())
+
+    def test_existing_adopted_task_recovers_with_new_admissions_disabled(self):
+        self.prepare()
+        self.admit()
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", False), self.fx.owner.session() as cap:
+            runner = self.fx.runner(cap)
+            self.assertEqual(runner.tick()["data"]["status"], "effect_recorded")
+            self.assertEqual(runner.tick()["data"]["status"], "advanced")
+            self.fx.advance(runner, lambda: bool(self.fx.progress()["jobs"].get("reviewer")))
+            self.assertEqual(self.fx.active()[0]["role"], "reviewer")
 
     def test_reported_legacy_source_transfers_and_verifies_without_a_built_claim(self):
         receipt = self.prepare()
