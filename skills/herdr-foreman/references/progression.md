@@ -264,6 +264,10 @@ no report exists. It retires the intent and current plan, preserving the task,
 generation, original base and correction counter. Subsequent execution selects
 a fresh native identity; the old no-send row remains canonical evidence.
 
+New measurement reconciliation requires [Shared Writer Activation](../state-schema.md#shared-writer-activation);
+it is disabled in the 0.19.0 compatibility release. Existing reconciliation
+receipts remain readable and replayable without that activation.
+
 A schema-2 measurement uses `intent_not_started`, `snapshot_completed` or
 `probes_closed_incomplete`. The first hashes the durable intent and requires
 `effects_started: false`. A completed snapshot must hash to exactly one state-owner
