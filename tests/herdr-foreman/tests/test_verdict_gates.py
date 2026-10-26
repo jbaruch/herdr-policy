@@ -48,7 +48,8 @@ class VerdictCase(gate_fixture.LedgerCase):
 
     def parsed(self, path, dispatch, verdict="approved"):
         """An owner-parsed verdict, as a report-sourced assessment of `dispatch` records it."""
-        self.assessments.append({"source": "report", "verdict": verdict, "report": str(path), "dispatch": dispatch, "at": AFTER,
+        self.assessments.append({"id": "assessment-{}".format(len(self.assessments) + 1),
+                                 "source": "report", "verdict": verdict, "report": str(path), "dispatch": dispatch, "at": AFTER,
                                  "report_evidence": {"path": str(path), "sha256": digest(path)}})
 
     def open_sources(self):
