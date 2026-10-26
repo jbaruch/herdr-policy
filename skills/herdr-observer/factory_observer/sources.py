@@ -184,12 +184,27 @@ def owner_paths(root, explicit):
         # projection reader still refuses a symlinked owner file.
         return str(path.parent.resolve(strict=True) / path.name)
 
-    paths, gaps = set(), []
-    for value in explicit:
+    paths, prioritized, gaps = set(), [], []
+
+    def select(value):
         try:
-            paths.add(owner_path(value))
+            owner = owner_path(value)
         except (OSError, RuntimeError, ValueError):
             gaps.extend(["owner_evidence_unavailable", "factory_owner:source_unreadable"])
+            return
+        if owner in paths:
+            return
+        if len(paths) >= MAX_FACTORIES:
+            gaps.append("factory_sources_truncated")
+            return
+        paths.add(owner)
+        prioritized.append(owner)
+
+    for value in explicit:
+        select(value)
+    if (root / "state.json").exists():
+        select(root / "state.json")
+    reserved = set(paths)
     receipts = root / "supervision-bindings"
     if receipts.is_dir():
         def candidates():
@@ -214,7 +229,7 @@ def owner_paths(root, explicit):
                     continue
                 owner = owner_path(receipt["state_path"])
                 if owner not in verified:
-                    if len(verified) >= MAX_FACTORIES and owner not in paths:
+                    if len(reserved | verified.keys()) >= MAX_FACTORIES and owner not in reserved:
                         gaps.append("factory_sources_truncated")
                         continue
                     # Retain a failed probe too: aliases cannot spend a new
@@ -234,14 +249,7 @@ def owner_paths(root, explicit):
                 gaps.extend(["factory_receipt_unreadable", "factory_receipt:source_unreadable"])
             except (ValueError, TypeError, AttributeError, KeyError):
                 gaps.extend(["factory_receipt_unreadable", "factory_receipt:source_invalid"])
-    if (root / "state.json").exists():
-        try:
-            paths.add(owner_path(root / "state.json"))
-        except (OSError, RuntimeError, ValueError):
-            gaps.extend(["owner_evidence_unavailable", "factory_owner:source_unreadable"])
-    if len(paths) > MAX_FACTORIES:
-        gaps.append("factory_sources_truncated")
-    return sorted(paths)[:MAX_FACTORIES], gaps
+    return prioritized + sorted(paths - reserved), gaps
 
 
 def owners(paths, live):
