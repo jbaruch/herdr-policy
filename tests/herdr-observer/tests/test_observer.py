@@ -11,8 +11,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "skills/herdr-observer"))
@@ -109,6 +110,10 @@ class ObserverTest(unittest.TestCase):
         value = self.store.get("meta", key)
         assert value is not None
         return value
+
+    def clock(self, sleeper=None):
+        return SimpleNamespace(time=lambda: self.now, monotonic=lambda: 0.0,
+                               sleep=Mock(side_effect=sleeper))
 
     def save_owner(self):
         self.owner.write_text(json.dumps(self.data))
@@ -589,8 +594,7 @@ class ObserverTest(unittest.TestCase):
             config["binary"] = "fixture"
             self.store.put("meta", "config", config)
         with patch("factory_observer.cli.native.Native", return_value=self.client), \
-                patch("factory_observer.cli.time.time", return_value=self.now), \
-                patch("factory_observer.cli.time.sleep", side_effect=stop_after_sample), \
+                patch("factory_observer.cli.time", self.clock(stop_after_sample)), \
                 patch("factory_observer.collect.sources.locate", return_value=None):
             result = cli.serve(self.store)
         self.assertTrue(result["stopped"])
@@ -668,9 +672,10 @@ class ObserverTest(unittest.TestCase):
             config = self.record("config")
             config["enabled"] = False
             self.store.put("meta", "config", config)
-        with patch("factory_observer.cli.lock", side_effect=[None, guard]), patch("factory_observer.cli.time.sleep") as sleep:
+        clock = self.clock()
+        with patch("factory_observer.cli.lock", side_effect=[None, guard]), patch("factory_observer.cli.time", clock):
             self.assertTrue(cli.serve(self.store)["stopped"])
-        sleep.assert_called_once_with(cli.SERVICE_LOCK_RETRY_SECONDS)
+        clock.sleep.assert_called_once_with(cli.SERVICE_LOCK_RETRY_SECONDS)
 
     def test_collector_records_recoverable_io_failures_and_keeps_its_loop(self):
         def stop_after_tick(_seconds):
@@ -686,8 +691,7 @@ class ObserverTest(unittest.TestCase):
                     self.store.put("meta", "config", config)
                 with patch("factory_observer.cli.native.Native", return_value=self.client), \
                         patch("factory_observer.cli.collect.tick", side_effect=error), \
-                        patch("factory_observer.cli.time.time", return_value=self.now), \
-                        patch("factory_observer.cli.time.sleep", side_effect=stop_after_tick):
+                        patch("factory_observer.cli.time", self.clock(stop_after_tick)):
                     result = cli.serve(self.store)
                 self.assertTrue(result["stopped"])
                 self.assertIn("collection_or_wake_failed", self.record("heartbeat")["error"])
