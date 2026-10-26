@@ -16,6 +16,7 @@ from contextlib import ExitStack, contextmanager
 import io
 import json
 import os
+import subprocess
 from threading import Event
 import unittest
 from unittest.mock import patch
@@ -409,6 +410,75 @@ class WorkflowAdoptionTest(unittest.TestCase):
         self.assertEqual(len([event for event in self.fx.native.events if event[0] == "prompt"]), before + 1)
         self.assertTrue(result["context_complete"])
         self.assertEqual(self.fx.progress()["round"], 0)
+
+    def assert_batch_failure_stays_local(self, failure):
+        self.prepare()
+        self.admit()
+        state = self.fx.owner.state()
+        document = copy.deepcopy(self.fx.document)
+        document.pop("adoption")
+        document.update(schema_version=2, task="two", artifact_directory=str(self.fx.root / "batch-two"))
+        path = self.fx.root / "batch-two.json"
+        path.write_text(json.dumps(document))
+        grant = copy.deepcopy(state["recovery"]["tasks"]["one"]["authority"])
+        grant.update(schema_version=2, contract_schema=2, contract=workspace.capture(path)[0],
+                     lease_path=str(self.fx.root / "batch-two.lease"), service_id="service-two")
+        progress = workflow_contract.initial_progress(1, self.fx.now())
+        # This owned fixture already has an uncertain measurement. A read
+        # failure must not clear it or manufacture proof of no native effect.
+        progress["pending"] = {"schema_version": 2, "id": "workflow-unknown-measurement",
+            "operation": "measure", "argv": [], "inputs": [document["config"]],
+            "effects_started": True, "dispatches": [], "job": None}
+        state["recovery"]["tasks"]["two"].update(base_revision=self.fx.base, schema_version=2,
+                                                   authority=grant, progression=progress)
+        original = copy.deepcopy(state["recovery"]["tasks"]["two"])
+        save_state(self.fx.path, state)
+        actual_cycle = workflow_batch.cycle
+        def factory(capability, client):
+            if capability.task == "two":
+                raise failure
+            return self.fx.runner(capability)
+        def cycle(*args, **kwargs):
+            return actual_cycle(*args, **kwargs, root=Path(__file__).resolve().parents[3], factory=factory)
+        before = len([event for event in self.fx.native.events if event[0] == "prompt"])
+        for attempt in range(2):
+            out, err = io.StringIO(), io.StringIO()
+            with patch.object(workflow_batch, "cycle", side_effect=cycle), patch.object(cli, "now_iso", side_effect=self.fx.now):
+                code = cli.main(["progression-batch", "--state", str(self.fx.path), "--once"],
+                                client=self.fx.native, stdout=out, stderr=err)
+            self.assertEqual(code, 0, err.getvalue())
+            result = json.loads(out.getvalue())
+            items = {row["task"]: row for row in result["items"]}
+            self.assertEqual(items["two"]["status"], "decision")
+            self.assertEqual(items["two"]["reason"], "task_executor_evidence_unavailable")
+            self.assertFalse(items["two"]["authorizes_acceptance"])
+            self.assertFalse(items["two"]["authorizes_release"])
+            self.assertNotIn("private fixture failure", out.getvalue() + err.getvalue())
+            self.assertIn("reviewer", items["one"]["jobs"])
+            self.assertEqual(result["counts"]["started"], 1 if attempt == 0 else 0)
+            expected = [items["one"]["jobs"]["reviewer"]] if attempt == 0 else []
+            self.assertEqual(items["one"]["started_dispatches"], expected)
+            self.assertEqual(items["two"]["started_dispatches"], [])
+            self.assertEqual(self.fx.owner.state()["recovery"]["tasks"]["two"], original)
+            self.assertEqual(len([event for event in self.fx.native.events if event[0] == "prompt"]), before + 1)
+
+    def test_batch_io_failure_preserves_unknown_effects_and_the_started_peer(self):
+        self.assert_batch_failure_stays_local(OSError("private fixture failure"))
+
+    def test_batch_invalid_readback_preserves_unknown_effects_and_the_started_peer(self):
+        self.assert_batch_failure_stays_local(ValueError("private fixture failure"))
+
+    def test_batch_timeout_preserves_unknown_effects_and_the_started_peer(self):
+        self.assert_batch_failure_stays_local(subprocess.TimeoutExpired(["private fixture failure"], 1))
+
+    def test_batch_unexpected_programming_error_propagates(self):
+        self.prepare()
+        self.admit()
+        def broken(capability, client):
+            raise RuntimeError("Unexpected fixture programming error")
+        with self.assertRaisesRegex(RuntimeError, "Unexpected fixture programming error"):
+            workflow_batch.cycle(self.fx.path, self.fx.native, self.fx.now(),
+                                 root=Path(__file__).resolve().parents[3], factory=broken)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ board or replacement assignment history.
 """
 
 from concurrent.futures import ThreadPoolExecutor
+import subprocess
 import time
 from typing import Callable
 
@@ -40,6 +41,11 @@ def _drive(path, client, grant, task, root, *, session=authority.service_session
         return {"task": task, "generation": grant["generation"], "status": "decision",
                 "reason": exc.details.get("reason", "task_executor_unavailable"), "error": exc.code,
                 "diagnostic": exc.message[:1024],
+                "authorizes_acceptance": False, "authorizes_release": False}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {"task": task, "generation": grant["generation"], "status": "decision",
+                "reason": "task_executor_evidence_unavailable",
+                "diagnostic": "Restore this task's readable inputs and native transport through their original owners; preserve pending intents and unknown outcomes before retrying.",
                 "authorizes_acceptance": False, "authorizes_release": False}
 
 
