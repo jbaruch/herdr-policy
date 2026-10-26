@@ -1909,10 +1909,11 @@ base must agree. The source remains detached at its original head in the same
 common repository; the clean successor matches current accepted task Git facts.
 Original transfer closure continues citing its original contract receipt.
 A copied branch, caller-supplied path, changed receipt or missing source proves
-no bridge. Earlier schema-3 readers refuse the changed source scope. All new
-checkout handoff intents/locators therefore follow the shared false activation flag;
-already recorded handoffs remain readable/replayable. No contract/adoption
-field is added under an older header.
+no bridge. Earlier schema-3 readers refuse the changed source scope. The 0.19.0
+compatibility release therefore ships these bridge readers with new checkout
+writes disabled; the shared activation enables them only after both reader
+publications. Already recorded handoffs remain readable/replayable. No
+contract/adoption field is added under an older header.
 
 Native workflow release launches after a handoff use the exact retained source
 from the current owner-proved Git intent as startup cwd. Project-local
