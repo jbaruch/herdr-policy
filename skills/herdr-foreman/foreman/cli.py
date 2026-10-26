@@ -2262,6 +2262,7 @@ def _validate_context_selector(value):
 
 
 def cmd_status(args, client=None, warn=None, trace=None):
+    from . import task_evidence
     _validate_context_selector(args.task)
     state, usable = load_state_checked(_state_path(args), warn=warn)
     if not usable:
@@ -2273,7 +2274,8 @@ def cmd_status(args, client=None, warn=None, trace=None):
             raise UsageError("The selected task has no recorded implementation status. Keep its outcome unresolved and select its canonical identity from the task's owning GitHub issue or dispatch receipt.", {})
         tasks = {args.task: tasks[args.task]}
     return context_output.enforce_budget(
-        {"schema_version": recovery.RECOVERY_SCHEMA_VERSION, "tasks": tasks},
+        {"schema_version": recovery.RECOVERY_SCHEMA_VERSION, "tasks": tasks,
+         **({"task_evidence": task_evidence.view(state, args.task)} if task_evidence.faults(state) else {})},
         "Status exceeds its printed output budget. Select one known canonical task with `{}`; every unexamined task remains unresolved.".format(
             runnable.command("status --task <task>"))), None
 

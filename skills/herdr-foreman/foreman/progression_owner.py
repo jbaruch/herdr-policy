@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 import re
 
-from . import recovery, supervision
+from . import recovery, supervision, task_evidence
 from .errors import StateError, UsageError
 from .process_lease import _Lease, process_lease
 from .remote_owner import loaded_policy
@@ -41,6 +41,7 @@ TASK_MUTATIONS = frozenset({
     "foreman-reset", "foreman-reset-deliver", "foreman-reset-reconcile", "start-foreman",
 })
 SERVICE_COMMANDS = frozenset({"apply"})
+WORKER_EFFECT_COMMANDS = frozenset({"apply", "start-judge", "relaunch-worker"})
 JUDGMENT_COMMANDS = frozenset({"record-report", "close-member", "supervision-ack", "supervision-resolve",
                               "assess-specialist", "record-refusal", "checkpoint", "diagnose", "authorize-corrections",
                               "authorize-approach", "reconcile", "recover-no-work", "reconcile-bootstrap",
@@ -175,6 +176,7 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     recovery.authorization(data["authorization"])
     supervision.timestamp(at)
     state = _load(state_path)
+    task_evidence.require_clear(state, {data["task"]})
     row = recovery.task_record(state["recovery"], data["task"])
     if not returning and recovery.task_closure(state["recovery"], state["assignments"], data["task"]) is not None:
         raise UsageError("This task is closed; register the newly authorized scope under its own task identity before admission.", {})
@@ -287,6 +289,7 @@ class ServiceCapability:
     def require_current(self, state_path, state, task):
         from .progression_service import capture_contract
         self.lease.require_current()
+        task_evidence.require_clear(state, {task})
         if Path(state_path).resolve() != self.state_path or task != self.task:
             raise UsageError("The progression capability covers only its admitted state and task.", {})
         grant = current_grant(state, task)
@@ -442,6 +445,17 @@ def command_tasks(args, state_path, state):
             for outcome in outcomes:
                 if isinstance(outcome, dict) and isinstance(outcome.get("event"), str) and events.get(outcome["event"]) in members:
                     tasks.add(members[events[outcome["event"]]])
+    historical_attempt = record.get("historical_attempt")
+    if isinstance(historical_attempt, str):
+        tasks.update(row["task"] for row in state["recovery"]["historical_attempts"] if row["id"] == historical_attempt)
+    if args.command == "relaunch-worker":
+        worker = getattr(args, "name", None)
+        supervised = supervision.load(state_path)
+        tasks.update(row["assignment"]["task"] for row in supervised["members"]
+                     if row["active"] and row["assignment"]["agent"] == worker)
+        latest = next((row for row in reversed(state["assignments"]) if row.get("agent") == worker), None)
+        if latest is not None and latest.get("task"):
+            tasks.add(latest["task"])
     return tasks
 
 
@@ -455,6 +469,9 @@ def require_command(state_path, args, capability=None, client=None, client_facto
         if capability is not None:
             raise UsageError("Restore the admitted state before service work.", {})
         return
+    if args.command in WORKER_EFFECT_COMMANDS and _unresumed_hold(supervision.load(state_path)):
+        raise UsageError("An existing global operator hold prevents worker effects. Preserve its recorded dispositions and explicit resume conditions before continuing any task.",
+                         {"reason": "operator_hold", "authorizes_progression": False})
     if capability is None:
         # Legacy stores cannot own grants. Leave their migration to the
         # selected existing owner; a read-only fence must not demand a second
@@ -477,9 +494,14 @@ def require_command(state_path, args, capability=None, client=None, client_facto
     state = _load(state_path)
     active = {task for task, row in state["recovery"]["tasks"].items()
               if row.get("authority", {}).get("mode") == "service"}
+    isolated = task_evidence.faults(state)
+    tasks = command_tasks(args, state_path, state) if active or isolated else set()
+    task_evidence.require_clear(state, tasks)
+    if isolated and args.command in WORKER_EFFECT_COMMANDS and not tasks:
+        raise UsageError("Select the actual independent task before worker effects while assignment evidence is held; an unknown task scope cannot bypass its hold.",
+                         {"reason": "task_evidence_scope_unknown", "authorizes_progression": False})
     if not active and capability is None:
         return
-    tasks = command_tasks(args, state_path, state)
     if capability is not None:
         if not isinstance(capability, ServiceCapability):
             raise UsageError("Use an owner-minted in-process service capability; command input cannot grant authority.", {})

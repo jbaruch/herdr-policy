@@ -252,6 +252,8 @@ def close(state_path, enrollment, ledger, at, client=None):
     state, usable = load_state_checked(state_path, persist_migration=False)
     if not usable:
         raise StateError("The dispatch state at {} is unusable, so assignment lifecycle evidence cannot be read; restore it before closing.".format(state_path), {})
+    from .task_evidence import require_clear
+    require_clear(state, {assignment["task"]})
     dispatch = next((row for row in state["recovery"]["dispatches"] if row.get("id") == enrollment), None)
     result = dispatch.get("result") if isinstance(dispatch, dict) else None
     result_record = result if isinstance(result, dict) else {}
