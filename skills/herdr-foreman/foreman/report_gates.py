@@ -58,6 +58,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import os
+import threading
 from datetime import timezone
 from pathlib import Path
 from typing import NoReturn
@@ -201,15 +202,15 @@ def _text(value, label):
     return value
 
 
-#: Sidecar paths this process holds the lock on, so an owner call inside a
+#: Sidecar paths this thread holds the lock on, so an owner call inside a
 #: held transaction neither re-locks (the lock is not reentrant) nor skips a write.
 _HELD = set()
 
 
 @contextmanager
 def _locked(path):
-    """The sidecar lock, reentrant within this process."""
-    target = str(storage_path(path))
+    """Reentrant only for the actual holding thread, never another batch task."""
+    target = (os.getpid(), threading.get_ident(), str(storage_path(path)))
     if target in _HELD:
         yield
         return

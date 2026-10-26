@@ -18,7 +18,7 @@ sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-fore
 
 from foreman import attention, cli, members, report_gates as gates, supervision  # noqa: E402 -- the skill dir is on sys.path only from here
 from foreman.errors import StateError, UsageError  # noqa: E402 -- the skill dir is on sys.path only from here
-from foreman.state import save_state
+from foreman.state import save_state, TransactionBusy
 from tests.test_members import LATER, MembersCase, seed_contract  # noqa: E402 -- the skill dir is on sys.path only from here
 from foreman import supervision as store  # noqa: E402 -- the skill dir is on sys.path only from here
 
@@ -92,6 +92,18 @@ class RecordTest(GateCase):
         self.assertEqual([gate["level"] for gate in first["recorded"]], ["block"])
         again = self.record(label(self.report, HIGH))
         self.assertEqual((again["recorded"], len(again["replayed"])), ([], 1))
+
+    def test_parallel_task_cannot_reenter_another_threads_gate_transaction(self):
+        from concurrent.futures import ThreadPoolExecutor
+        self.record(label(self.report, HIGH))
+        before = gates.storage_path(self.state).read_bytes()
+        with gates.holding(self.state), ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(self.record, label(self.report, MEDIUM))
+            with self.assertRaises(TransactionBusy):
+                future.result()
+            # Calls made by the actual holder remain reentrant.
+            self.assertEqual(len(gates.open_gates(self.state, str(self.report))), 1)
+        self.assertEqual(gates.storage_path(self.state).read_bytes(), before)
 
     def test_an_ungated_label_is_reported_not_recorded(self):
         result = self.record(label(self.report, HIGH, agent="claude"))
