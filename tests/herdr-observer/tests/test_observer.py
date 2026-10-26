@@ -187,6 +187,46 @@ class ObserverTest(unittest.TestCase):
             return iter(sorted(values)) if path == registry else values
         return patch.object(Path, "iterdir", entries)
 
+    def test_explicit_owner_reserves_a_slot_before_full_registry_discovery(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        discovered = []
+        for index in range(sources.MAX_FACTORIES):
+            owner = self.root / "a-owners" / "{:03d}".format(index) / "state.json"
+            owner.parent.mkdir(parents=True)
+            owner.write_text(json.dumps(state.empty_state()))
+            supervision.bind(owner, supervision.identity(
+                "00000000-0000-4000-8000-{:012d}".format(index), "/factory", "1",
+                pane_id="discovered-{}".format(index)), stamp(self.now), root=registry)
+            discovered.append(str(owner.resolve()))
+        alias = self.root / "selected-alias"
+        alias.symlink_to(self.owner.parent, target_is_directory=True)
+        explicit = [str(alias / self.owner.name), str(self.owner)]
+        originals = [self.owner, Path(str(self.owner) + ".supervision.json"),
+                     *registry.iterdir()]
+        before = {path: path.read_bytes() for path in originals}
+        with self.ordered_registry(registry), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, explicit)
+        self.assertEqual(len(paths), sources.MAX_FACTORIES)
+        self.assertEqual(paths[0], str(self.owner.resolve()))
+        self.assertEqual(len(set(paths)), len(paths))
+        self.assertEqual(len(set(paths) & set(discovered)), sources.MAX_FACTORIES - 1)
+        self.assertEqual(probes.call_count, sources.MAX_FACTORIES - 1)
+        self.assertIn("factory_sources_truncated", gaps)
+        self.assertEqual({path: path.read_bytes() for path in originals}, before)
+
+    def test_explicit_owners_take_priority_over_the_default_with_bounded_coverage(self):
+        selected = self.root / "a-registry"
+        selected.mkdir()
+        default = selected / "state.json"
+        default.write_text(json.dumps(state.empty_state()))
+        with patch.object(sources, "MAX_FACTORIES", 1):
+            paths, gaps = sources.owner_paths(selected, [str(self.owner), str(default)])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_sources_truncated", gaps)
+
     def test_binding_locks_do_not_spend_the_receipt_scan_allowance(self):
         selected = self.root / "registry"
         registry = selected / "supervision-bindings"
