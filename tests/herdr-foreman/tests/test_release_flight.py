@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 from copy import deepcopy
 import hashlib
 import json
+import os
+import subprocess
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -183,6 +185,29 @@ class ReleaseFlightTest(unittest.TestCase):
         with self.assertRaises(ForemanError):
             release_flight.require_clear(self.path, self.state, {"one"})
         self.assertTrue(self.location.is_symlink())
+
+    def test_actual_fifo_refuses_without_blocking_the_owner(self):
+        self.seed()
+        self.location.unlink()
+        os.mkfifo(self.location, 0o600)
+        code = """import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from foreman import release_flight
+from foreman.errors import ForemanError
+path = Path(sys.argv[2])
+try:
+    release_flight.require_clear(path, json.loads(path.read_text()), {'one'})
+except ForemanError as exc:
+    assert exc.details['reason'] == 'release_checkout_evidence_unsafe'
+    raise SystemExit(0)
+raise AssertionError('A FIFO cleared the selected checkout fence')
+"""
+        result = subprocess.run([sys.executable, "-B", "-c", code,
+            str(fixture.ROOT / "skills/herdr-foreman"), str(self.path)],
+            capture_output=True, text=True, timeout=3, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.location.is_fifo())
 
 
 if __name__ == "__main__":
