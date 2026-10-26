@@ -184,6 +184,7 @@ def status(store, now):
             "reporter_present": current.get("reporter_present"),
             "sample_age_seconds": now - current["at"] if "at" in current else None,
             "coverage": current.get("coverage", []),
+            "coverage_diagnostics": sources.coverage_diagnostics(current.get("coverage", [])),
             "pending": {**{k: pending.get(k) for k in ("id", "reasons", "created_at", "send_status", "recovery", "attention")}, "age_seconds": age},
             "retention": store.get("meta", "retention", {}), "diagnostic_path": str(store.home / "collector.stderr"),
             "reports": store.rows("reports")[-8:]}

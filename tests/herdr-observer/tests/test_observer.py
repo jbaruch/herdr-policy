@@ -152,6 +152,73 @@ class ObserverTest(unittest.TestCase):
         _roles, _quota, _closures, _contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
         self.assertIn("owner_projection_row_exceeds_budget", gaps)
 
+    def test_receipt_discovery_ignores_locks_and_deduplicates_owners_before_factory_cap(self):
+        registry = self.owner.parent / "supervision-bindings"
+        registry.mkdir()
+        binding = self.supervised["binding"]
+        for index in range(40):
+            (registry / ("{:03d}.json.lock".format(index))).touch()
+            receipt = {**binding, "identity": {**binding["identity"], "value": "old-{}".format(index)}}
+            (registry / ("{:03d}.json".format(index))).write_text(json.dumps(receipt))
+        (registry / "zzz-current.json").write_text(json.dumps(binding))
+        before = {path: path.read_bytes() for path in registry.iterdir()}
+        paths, gaps = sources.owner_paths(self.owner.parent, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(gaps, [])
+        self.assertEqual(before, {path: path.read_bytes() for path in registry.iterdir()})
+        self.tick()
+        view = collect.evidence(self.store, self.now)
+        foreman = next(row for row in view["current"]["agents"] if row["name"] == "coordinator")
+        self.assertEqual(foreman["role"], "foreman")
+        self.assertNotIn("factory_discovery_truncated", view["current"]["coverage"])
+
+    def test_real_receipt_and_projection_refusals_keep_actionable_private_sections(self):
+        registry = self.owner.parent / "supervision-bindings"
+        registry.mkdir()
+        (registry / "invalid.json").write_text("not JSON")
+        (registry / "current.json").write_text(json.dumps(self.supervised["binding"]))
+        self.supervised["schema_version"] = 99
+        self.save_owner()
+        _paths, gaps = sources.owner_paths(self.owner.parent, [])
+        diagnostics = sources.coverage_diagnostics(gaps)
+        self.assertIn({"source": "factory_receipt", "section": "discovery", "refusal": "source_invalid",
+                       "recovery": "Inspect the selected owner's JSON binding receipts; restore unreadable original receipts without replacing the owner."}, diagnostics)
+        refusal = next(row for row in diagnostics if row["source"] == "owner_projection")
+        self.assertEqual((refusal["section"], refusal["refusal"]), ("binding", "owner_schema_unsupported"))
+        self.assertIn("Update", refusal["recovery"])
+
+    def test_failed_closures_keep_current_attribution_and_unknown_outcomes(self):
+        self.data["recovery"]["events"] = [{"kind": "task_closed", "task": "large" * sources.OWNER_PAGE_BYTES,
+                                              "at": stamp(self.now), "sequence": 1,
+                                              "details": {"outcome": "merged"}}]
+        self.save_owner()
+        self.tick()
+        view = collect.evidence(self.store, self.now)
+        self.assertEqual(next(row for row in view["current"]["agents"] if row["name"] == "coordinator")["role"], "foreman")
+        self.assertFalse(view["current"]["factories"][0]["section_coverage"]["closures"])
+        self.assertNotIn("merged_task_closures", view["total_metrics"])
+        diagnostic = view["coverage_diagnostics"][0]
+        self.assertEqual((diagnostic["section"], diagnostic["refusal"]), ("closures", "owner_projection_row_exceeds_budget"))
+        self.assertEqual(cli.status(self.store, self.now)["coverage_diagnostics"], view["coverage_diagnostics"])
+
+    def test_failed_current_metadata_keeps_binding_and_counts_unknown(self):
+        self.data["snapshots"][0]["agents"]["grok"]["windows"]["weekly"]["resets"] = "large" * sources.OWNER_PAGE_BYTES
+        self.save_owner()
+        roles, quota, _closures, contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
+        self.assertEqual(roles[native.fingerprint(native.identity(self.foreman))]["role"], "foreman")
+        self.assertEqual(quota, [])
+        self.assertIsNone(contexts[0]["active_assignments"])
+        self.assertIsNone(contexts[0]["holds"])
+        self.assertEqual(sources.coverage_diagnostics(gaps)[0]["section"], "current")
+
+    def test_projection_reads_recovery_twenty_without_migrating_owner(self):
+        self.data["recovery"]["schema_version"] = 20
+        self.save_owner()
+        before = self.owner.read_bytes()
+        result = owner_projection(self.owner)
+        self.assertTrue(result["context_complete"])
+        self.assertEqual(before, self.owner.read_bytes())
+
     def test_projection_cli_reports_bad_pagination_as_usage_without_reading_owners(self):
         for options in (("--limit", "0"), ("--limit", "101"), ("--offset", "-1")):
             with self.subTest(options=options):
