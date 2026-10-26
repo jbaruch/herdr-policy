@@ -11,10 +11,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, contextmanager
 import json
 import os
 import subprocess
 from types import SimpleNamespace
+from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -27,7 +30,7 @@ from foreman.errors import ForemanError, HerdrError
 from foreman.herdr import HerdrClient
 from foreman.workflow_workspace import inspect as inspect_workspace
 from foreman.errors import UsageError
-from foreman.state import add_snapshot, save_state, state_lock
+from foreman.state import TransactionBusy, add_assignment, add_snapshot, save_state, state_lock
 from foreman.workflow_native import NativeWorkflowAdapter
 
 ROOT = owner_fixture.ROOT
@@ -325,6 +328,66 @@ class WorkflowServiceTest(unittest.TestCase):
             runner.tick()
             runner.tick()
         self.assertEqual(len(self.owner.state()["assignments"]), 1)
+
+    def test_completed_measurement_waits_for_bookkeeping_without_repeating_effect(self):
+        self.admit()
+        state = self.owner.state()
+        measured = state["snapshots"][-1]
+        state["snapshots"] = []
+        save_state(self.path, state)
+        held, contended = Event(), Event()
+        futures = []
+
+        def hold_independent_write():
+            with state_lock(self.path):
+                current = self.owner.state()
+                add_assignment(current, self.now(), "developer", "independent-contributor", task="two",
+                               cleared=True, clear_reason="automatic")
+                save_state(self.path, current)
+                held.set()
+                self.assertTrue(contended.wait(3))
+
+        @contextmanager
+        def checkpoint_lock(path):
+            with ExitStack() as stack:
+                try:
+                    stack.enter_context(state_lock(path))
+                except TransactionBusy:
+                    contended.set()
+                    raise
+                yield
+
+        with ThreadPoolExecutor(max_workers=1) as pool, self.owner.session() as capability:
+            runner = self.runner(capability)
+            runner.tick()
+            self.assertEqual(self.progress()["pending"]["operation"], "measure")
+            def measure(args, **kwargs):
+                prepared = capability._prepared
+                assert prepared is not None
+                prepared["before_effect"]()
+                with state_lock(self.path):
+                    current = self.owner.state()
+                    add_snapshot(current, {**measured, "measured_at": args.now})
+                    save_state(self.path, current)
+                futures.append(pool.submit(hold_independent_write))
+                self.assertTrue(held.wait(3))
+                return {}, None
+            try:
+                with patch.object(workflow_service.cli, "cmd_measure", side_effect=measure) as command, \
+                        patch.object(workflow_service, "state_lock", side_effect=checkpoint_lock):
+                    result = runner.tick()
+                    self.assertEqual(result["data"]["status"], "advanced", result)
+                    self.assertIsNone(self.progress()["pending"])
+                    self.assertIsNone(self.progress()["exception"])
+                    runner.tick()
+                    self.assertEqual(command.call_count, 1)
+            finally:
+                contended.set()
+                for future in futures:
+                    future.result(timeout=3)
+        self.assertTrue(contended.is_set())
+        self.assertEqual(self.owner.state()["assignments"][0]["agent"], "independent-contributor")
+        self.assertFalse(any(event[0] == "prompt" for event in self.native.events))
 
     def test_admission_preserves_existing_artifact_directory_contents(self):
         root = Path(self.document["artifact_directory"])

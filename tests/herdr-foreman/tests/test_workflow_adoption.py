@@ -11,11 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 import io
 import json
 import os
-from threading import Event, Thread
+from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -118,6 +119,20 @@ class WorkflowAdoptionTest(unittest.TestCase):
             self.assertEqual(runner.tick()["data"]["status"], "advanced")
             self.fx.advance(runner, lambda: bool(self.fx.progress()["jobs"].get("reviewer")))
             self.assertEqual(self.fx.active()[0]["role"], "reviewer")
+
+    def test_original_native_and_git_verification_runs_outside_primary_transaction(self):
+        self.prepare()
+        self.admit()
+        original = adoption.require_current
+        def verify(*args, **kwargs):
+            with state_lock(self.fx.path):
+                pass
+            return original(*args, **kwargs)
+        with self.fx.owner.session() as cap, patch.object(adoption, "require_current", side_effect=verify):
+            runner = self.fx.runner(cap)
+            self.assertEqual(runner.tick()["data"]["status"], "effect_recorded")
+            self.assertEqual(runner.tick()["data"]["status"], "advanced")
+        self.assertFalse(supervision.load(self.fx.path)["members"][0]["active"])
 
     def test_reported_legacy_source_transfers_and_verifies_without_a_built_claim(self):
         receipt = self.prepare()
@@ -295,7 +310,7 @@ class WorkflowAdoptionTest(unittest.TestCase):
         self.prepare()
         self.admit()
         held, contended, finished = Event(), Event(), Event()
-        failures, threads = [], []
+        futures = []
         native_create = self.fx.native.workspace_create
 
         def hold_other_task_write():
@@ -306,18 +321,13 @@ class WorkflowAdoptionTest(unittest.TestCase):
                                    cleared=True, clear_reason="automatic")
                     save_state(self.fx.path, state)
                     held.set()
-                    if not contended.wait(3):
-                        failures.append("native startup never attempted its checkpoint")
-            except Exception as exc:
-                failures.append(str(exc))
+                    self.assertTrue(contended.wait(3), "native startup never attempted its checkpoint")
             finally:
                 finished.set()
 
         def create(**options):
             result = native_create(**options)
-            thread = Thread(target=hold_other_task_write)
-            threads.append(thread)
-            thread.start()
+            futures.append(pool.submit(hold_other_task_write))
             self.assertTrue(held.wait(3))
             return result
 
@@ -332,19 +342,19 @@ class WorkflowAdoptionTest(unittest.TestCase):
                 yield
 
         before = len([row for row in self.fx.native.events if row[0] == "prompt"])
-        try:
-            with self.fx.owner.session() as cap:
-                runner = self.fx.runner(cap)
-                with patch.object(self.fx.native, "workspace_create", side_effect=create), \
-                        patch("foreman.workflow_service.state_lock", side_effect=checkpoint_lock):
-                    self.fx.advance(runner, lambda: bool(self.fx.progress()["jobs"].get("reviewer")))
-                    self.assertTrue(contended.is_set())
-        finally:
-            contended.set()
-            for thread in threads:
-                thread.join(3)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            try:
+                with self.fx.owner.session() as cap:
+                    runner = self.fx.runner(cap)
+                    with patch.object(self.fx.native, "workspace_create", side_effect=create), \
+                            patch("foreman.workflow_service.state_lock", side_effect=checkpoint_lock):
+                        self.fx.advance(runner, lambda: bool(self.fx.progress()["jobs"].get("reviewer")))
+                        self.assertTrue(contended.is_set())
+            finally:
+                contended.set()
+                for future in futures:
+                    future.result(timeout=3)
         self.assertTrue(finished.is_set())
-        self.assertEqual(failures, [])
         state = self.fx.owner.state()
         self.assertEqual([row["task"] for row in state["assignments"]], ["one", "two", "one"])
         reviewer = next(row for row in state["recovery"]["dispatches"] if row["role"] == "reviewer")
