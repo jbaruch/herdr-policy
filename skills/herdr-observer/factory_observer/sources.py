@@ -3,7 +3,7 @@
 Native JSONL adapters: Codex rollout records and Claude project transcripts.
 Other runtimes remain visible in Herdr samples but their log costs are unknown.
 Sources are selected by live native identities, never by recursively reading .hr.
-Owner readers accept state 11/recovery 19, snapshot 5/6, supervision 1 and binding
+Owner readers accept state 11/recovery 19/20, snapshot 5/6, supervision 1 and binding
 receipts 1 (their in-tree owners define migrations). They never migrate them.
 """
 
@@ -105,7 +105,7 @@ def projected_owner(path):
     closed, omissions = owner_view(path, "closures")
     gaps.extend(omissions)
     data = {"schema_version": 11, "assignments": [], "snapshots": [],
-            "recovery": {"schema_version": 19, "events": []}}
+            "recovery": {"schema_version": 20, "events": []}}
     supervised = {"schema_version": 1, "binding": None, "members": [], "holds": []}
     snapshot = {"schema_version": 6, "agents": {}}
     for row in current:
@@ -165,7 +165,8 @@ def owners(paths, live):
             data, supervised, omissions = projected_owner(path)
             gaps.extend(omissions)
             if (data.get("schema_version") != 11 or supervised.get("schema_version") != 1
-                    or data.get("recovery", {}).get("schema_version") != 19):
+                    or type(data.get("recovery", {}).get("schema_version")) is not int
+                    or data["recovery"]["schema_version"] not in (19, 20)):
                 gaps.append("owner_schema_unsupported")
                 continue
             bound = (supervised.get("binding") or {}).get("identity") or {}
