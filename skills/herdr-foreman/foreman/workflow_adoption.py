@@ -39,6 +39,14 @@ def validate(value):
         raise UsageError("Retain the original source assignment's exact native identity before adoption.", {})
 
 
+def brief_evidence(dispatch, expected):
+    paths = {"common": dispatch["common"], dispatch["role"]: dispatch["brief"]}
+    contents = {path: workspace.capture(path)[1] for path in paths.values()}
+    if recovery.brief_identity(paths, dispatch["role"], expected["report"], contents) != dispatch["brief_identity"]:
+        raise UsageError("Restore the original dispatched brief bytes and report identity before adoption.", {})
+    return contents
+
+
 def source_evidence(state_path, state, member, dispatch, *, check_gates=True):
     """Authenticate the actual dispatched turn, independently of report assessment."""
     from .assign import assignment_text, tiered_prompt
@@ -51,10 +59,7 @@ def source_evidence(state_path, state, member, dispatch, *, check_gates=True):
     if native is None:
         raise UsageError("Restore this source enrollment's exact native session before adoption.", {})
     report, _body = workspace.capture(expected["report"], limit=workspace.REPORT_LIMIT)
-    paths = {"common": dispatch["common"], dispatch["role"]: dispatch["brief"]}
-    contents = {path: workspace.capture(path)[1] for path in paths.values()}
-    if recovery.brief_identity(paths, dispatch["role"], expected["report"], contents) != dispatch["brief_identity"]:
-        raise UsageError("Restore the original dispatched brief bytes and report identity before adoption.", {})
+    contents = brief_evidence(dispatch, expected)
     source_path = report_delivery.source_path(native)
     if source_path is None:
         raise UsageError("Restore the original native final-source proof before adopting this delivery.", {})
@@ -162,17 +167,30 @@ def dependencies(state_path, state, supervised, document):
             or supervision.digest({key: value for key, value in dispatch.items() if key != "report"}) != recorded["dispatch_digest"]
             or supervision.digest(supervision.expected_assignment(member)) != recorded["enrollment_digest"]):
         raise UsageError("Restore the adopted source's original enrollment and dispatch provenance before continuing.", {})
-    report, source, native = source_evidence(state_path, state, member, dispatch)
+    expected = supervision.expected_assignment(member)
+    task_evidence.require_clear(state, {expected["task"]})
+    brief_evidence(dispatch, expected)
     source_scope(document, dispatch)
+    report, _body = workspace.capture(expected["report"], limit=workspace.REPORT_LIMIT)
+    native = report_delivery.native_identity({"agent_session": expected["native_session"]})
     resolution = member["resolution"]
-    if (member["active"] or resolution is None or report != recorded["report"] or source != recorded["native_source"]
+    if (member["active"] or resolution is None or report != recorded["report"]
             or native != recorded["native_session"]):
         raise UsageError("Preserve the adopted source's original closed native provenance before continuation.", {})
     if recorded["source_status"] == "reported":
+        grant = state["recovery"]["tasks"][document["task"]].get("authority")
+        if grant is None or grant["contract_schema"] != 3:
+            raise UsageError("Restore this source transfer's immutable admitted contract receipt before continuation.", {})
         if resolution["outcome"] != transfer_outcome(document) or not all(any(
                 row["path"] == expected["path"] and row["sha256"] == expected["sha256"]
-                for row in resolution["evidence"]) for expected in (report, source)):
+                for row in resolution["evidence"]) for expected in (report, grant["contract"])):
             raise UsageError("Restore the original source-transfer receipt; delivery transfer supplies no implementation approval.", {})
+    else:
+        from .progression_service import ProgressionService
+        refusal = ProgressionService.closed_dependency(state_path, state, member, native_source_required=False)
+        if refusal is not None:
+            raise UsageError(refusal["message"], {"reason": refusal["code"]})
+    report_gates.require_clear(state_path, report["path"], True)
     return report
 
 

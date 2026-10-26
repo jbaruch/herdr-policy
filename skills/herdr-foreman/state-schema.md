@@ -936,7 +936,11 @@ and native evidence interpretation are owned by `FIELDS` and `validate` in
 `skills/herdr-foreman/foreman/workflow_adoption.py`. It references the original
 dispatch, enrollment identity, byte-bound report/native source, exact pushed
 head and cumulative correction. No copied report or fabricated worker claim is
-stored. Native reported source keeps one schema-3 pending `adopt` intent, using
+stored. The transfer resolution binds the report and immutable admitted
+contract, which retains the authenticated native-source receipt. Closed native
+logs may append or retire; current transitions use that canonical closure,
+original brief/report bytes and current gates. Native reported source keeps
+one schema-3 pending `adopt` intent, using
 the existing intent fields with null `job`, empty `argv`, the original single
 dispatch and report/native-source inputs. Its resolution is delivery transfer
 for verification; it is not an accepted implementation assessment. Progression

@@ -81,7 +81,11 @@ class NativeWorkflowAdapter:
             outcome = workflow_adoption.transfer_outcome(document)
             drained = supervision.drain(self.capability.state_path)
             events = [row for row in drained["events"] if row["member"] == source["dispatch"]]
-            evidence = [source["report"], source["native_source"]]
+            # Native shutdown may append to its transcript. The immutable
+            # admitted contract retains the exact authenticated final-source
+            # receipt; never demand that a closed runtime freeze its log.
+            grant = self.state["recovery"]["tasks"][self.capability.task]["authority"]
+            evidence = [source["report"], grant["contract"]]
             if events:
                 supervision.acknowledge(self.capability.state_path, {"through": drained["through"], "outcomes": [
                     {"event": row["id"], "outcome": outcome, "evidence": [item["path"] for item in evidence]} for row in events]}, self.clock())

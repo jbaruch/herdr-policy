@@ -165,6 +165,28 @@ class WorkflowAdoptionTest(unittest.TestCase):
         self.assertTrue(observed["members"][0]["active"])
         self.assertIsNone(observed["members"][0]["resolution"])
 
+    def test_transferred_source_reuses_its_bound_receipt_after_native_shutdown(self):
+        self.prepare()
+        self.admit()
+        close = self.fx.native.pane_close
+        def close_and_append(pane):
+            result = close(pane)
+            with self.source.open("a") as stream:
+                stream.write(json.dumps({"type": "event_msg", "payload": {"type": "session_shutdown"}}) + "\n")
+            return result
+        with self.fx.owner.session() as cap:
+            runner = self.fx.runner(cap)
+            with patch.object(self.fx.native, "pane_close", side_effect=close_and_append):
+                self.assertEqual(runner.tick()["data"]["status"], "effect_recorded")
+            # The actual source receipt is in the immutable admitted contract,
+            # and the canonical transfer resolution binds that contract/report.
+            # A runtime need not preserve a closed transcript as another archive.
+            self.source.unlink()
+            self.assertEqual(runner.tick()["data"]["status"], "advanced")
+            self.fx.advance(runner, lambda: bool(self.fx.progress()["jobs"].get("reviewer")))
+            self.assertEqual(len(self.fx.active()), 1)
+            self.assertEqual(self.fx.active()[0]["role"], "reviewer")
+
     def test_interrupted_adopted_launch_reads_back_without_a_duplicate_native_send(self):
         self.prepare()
         self.admit()

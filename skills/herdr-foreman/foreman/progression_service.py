@@ -207,7 +207,7 @@ class ProgressionService:
                                    "active": member["active"], "resolution": member["resolution"]})
 
     @staticmethod
-    def closed_dependency(state_path, state, member):
+    def closed_dependency(state_path, state, member, *, native_source_required=True):
         """Verify canonical accepted evidence after the scoped pane has closed."""
         def refuse(stage, message):
             return ProgressionService._refusal(json.dumps({"error": "closed_dependency_" + stage, "message": message}))
@@ -241,6 +241,8 @@ class ProgressionService:
             members._require_contract(state_path, member["id"], expected["report"])
             stage = "classifier_gate"
             report_gates.require_clear(state_path, expected["report"], True)
+            if not native_source_required:
+                return None
             stage = "native_source"
             path = report_delivery.source_path(identity)
             source = report_delivery.read_native_source(path) if path is not None else None
