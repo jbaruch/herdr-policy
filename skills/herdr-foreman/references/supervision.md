@@ -144,6 +144,10 @@ paths. It ends that enrollment's observation obligation only. Pending events
 for the enrollment must already have handled outcomes. A missing worker can be
 resolved as unavailable only after recording the concrete recovery/handoff;
 resolution is never a substitute for the task's acceptance and release gates.
+An owner-parsed specialist assessment already binds its successful wait or
+recovery receipt to the dispatch and exact report bytes. Report gates reuse
+that evidence after closure even if no watcher sampled the file. A changed
+report or foreign dispatch still cannot clear a gate.
 Use the existing successful report-delivery receipt as evidence and explicitly
 retain any unassessed report/task obligation; no second report or acceptance is
 needed to stop observing a completed delivery. Pending or unknown delivery cannot

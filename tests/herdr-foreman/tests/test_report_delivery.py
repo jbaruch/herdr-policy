@@ -516,6 +516,7 @@ class NativeDeliveryTests(unittest.TestCase):
         native = {"source": antigravity_native.SOURCE, "agent": "agy", "kind": "id", "value": session}
         document["assignments"][0]["context_session"] = {"pane_id": PANE, **native}
         dispatch = document["recovery"]["dispatches"][0]
+        dispatch["worker_kind"] = "agy"
         dispatch["result"]["context_session"] = {"pane_id": PANE, **native}
         pane = {**self.pane, "agent_session": native}
         Path(data["pane"]).write_text(json.dumps({"result": {"pane": pane}}))
@@ -525,6 +526,7 @@ class NativeDeliveryTests(unittest.TestCase):
                                             tier, dispatch["common"], dispatch["brief"])
         dispatch["result"]["tier"] = {**tier, "prompt_hash": prompt_hash}
         rows = agy_rows(prompt, self.marker)
+        enrolled = {"native_session": native, "report": data["report"]}
         with patch.object(antigravity_native, "sessions_root", return_value=self.tmp.resolve() / "native"):
             source = antigravity_native.transcript_path(session)
             assert source is not None
@@ -534,6 +536,8 @@ class NativeDeliveryTests(unittest.TestCase):
             bare[0]["content"] = prompt
             for altered in (bare, agy_rows(prompt + " ", self.marker), agy_rows("Quoted: " + prompt, self.marker)):
                 source.write_text(encode(altered))
+                with self.assertRaises(UsageError):
+                    delivery.require_primary_delivery(dispatch, document["assignments"][0], enrolled, data["report"])
                 with self.assertRaisesRegex(UsageError, "do not prove this report"):
                     delivery.recover(document["recovery"], document["assignments"], dict(data, source=str(source)), AT)
             # The captured fallback selected Gemini for a Sonnet request. An
@@ -551,10 +555,13 @@ class NativeDeliveryTests(unittest.TestCase):
                 source.write_text(encode(altered))
                 changed = copy.deepcopy(document)
                 changed["recovery"]["dispatches"][0]["result"]["tier"] = saved
+                with self.subTest(primary=name), self.assertRaises(UsageError):
+                    delivery.require_primary_delivery(changed["recovery"]["dispatches"][0], changed["assignments"][0], enrolled, data["report"])
                 with self.subTest(name=name), self.assertRaisesRegex(UsageError, "native model selection"):
                     delivery.recover(changed["recovery"], changed["assignments"], dict(data, source=str(source)), AT)
             self.assertEqual(document["recovery"]["delivery_recoveries"], [])
             source.write_text(encode(rows))
+            delivery.require_primary_delivery(dispatch, document["assignments"][0], enrolled, data["report"])
             data["source"] = str(source)
             prior = copy.deepcopy(document["assignments"])
             result = delivery.recover(document["recovery"], document["assignments"], data, AT)

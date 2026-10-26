@@ -589,8 +589,9 @@ def _approves(row, path, digest, dispatch):
 def ledger_view(state_path, judge_agent):
     """What the owners already record about who delivered which report, and when.
 
-    Deliveries are supervision's `report_observed` events and the recovery
-    store's `delivery_recoveries`; roles and tasks are the recovery store's
+    Deliveries are the report-contract assessments, supervision's
+    `report_observed` events and the recovery store's `delivery_recoveries`;
+    roles and tasks are the recovery store's
     dispatches; operator decisions are the attention sidecar's entries;
     owner-parsed verdicts are the assessments and `record-report` receipts.
     `judge_agent` is the legacy pinned agent or schema-7 pinned worker kind
@@ -600,6 +601,14 @@ def ledger_view(state_path, judge_agent):
     data = supervision.load(state_path)
     _document, entries, _progress = attention.load(state_path)
     deliveries = []
+    # Assessment already validated the positive wait/recovery receipt and
+    # bound it to this dispatch and these report bytes. It survives pane
+    # closure even when the background watcher never sampled the report.
+    for row in assessments:
+        if row["source"] == "report":
+            saved = row["report_evidence"]
+            deliveries.append({"dispatch": row["dispatch"], "path": _report_key(saved["path"]),
+                               "sha256": saved["sha256"], "at": row["at"]})
     for event in data["events"]:
         detail = event.get("data")
         if (event.get("kind") == "report_observed" and isinstance(detail, dict) and detail.get("present") is True

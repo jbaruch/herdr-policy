@@ -473,6 +473,25 @@ class InterleavingTest(GateCase):
 
 
 class CloseMemberGateTest(MembersCase):
+    def test_positive_assessment_remains_delivery_after_close_without_watcher_observation(self):
+        Path(self.report).write_text("VERDICT: approved\n")
+        seed_contract(self)
+        self.write_ledger("accepted")
+        self.assertEqual(store.load(self.path)["members"][0]["observed"], {})
+        members.close(self.path, "dispatch-a", self.ledger, LATER)
+        view = gates.ledger_view(self.path, JUDGE)
+        owner = {"task": "task-a", "role": "reviewer", "specialty": None}
+        since = gates.timestamp("2026-09-01T11:00:00+00:00", "gate")
+        held = str(self.root / "old-review.md")
+        receipt = gates._rechecked(view, owner, held, since, self.report, {"gates": []})
+        self.assertEqual(receipt["dispatch"], "dispatch-a")
+        Path(self.report).write_text("Changed report.\nVERDICT: approved\n")
+        with self.assertRaises(UsageError):
+            gates._rechecked(gates.ledger_view(self.path, JUDGE), owner, held, since, self.report, {"gates": []})
+        Path(self.report).write_text("VERDICT: approved\n")
+        with self.assertRaises(UsageError):
+            gates._rechecked(view, {**owner, "task": "foreign"}, held, since, self.report, {"gates": []})
+
     def gate(self, probabilities):
         # The report's recorded VERDICT is what an `accepted` closure reads first (#625).
         Path(self.report).write_text("B1 blocking: the parser accepts a quoted marker.\nVERDICT: approved\n")

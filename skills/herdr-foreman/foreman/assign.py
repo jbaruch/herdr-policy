@@ -1268,9 +1268,7 @@ def apply(client, assignments, agents_by_name, paths, at, no_clear=False, settle
             if fresh and assignment_scoped:
                 startup_observe()
             if tier_record is not None:
-                native_model = verify_native_model(client, agent, step["pane_id"], tier)
-                if native_model is not None:
-                    tier_record["native_model"] = native_model
+                verify_native_model(client, agent, step["pane_id"], tier)
             if on_before_send is not None:
                 before = {"cleared": cleared, "clear_reason": clear_reason,
                       "context_session": context_session, "tier": tier_record,

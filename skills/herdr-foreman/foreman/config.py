@@ -372,6 +372,9 @@ def parse_config(payload, source="<memory>"):
                 ),
                 {"source": source, "index": index},
             )
+        if entry["kind"] == "agy" and not glyph:
+            raise ConfigError("Config at {}: agents[{}] needs Antigravity's captured composer_glyph \"> \" before measurement or dispatch; copy the shipped antigravity.example.json profile and verify the native composer.".format(source, index),
+                              {"source": source, "index": index})
         ignore_dim = entry.get("composer_ignore_dim", DEFAULT_COMPOSER_IGNORE_DIM)
         if not isinstance(ignore_dim, bool):
             raise ConfigError(

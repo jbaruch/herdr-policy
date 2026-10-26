@@ -8,6 +8,9 @@ https://antigravity.google/docs/install?tab=cli.
 ## Add Capacity
 
 1. Install native `agy` on the Herdr controller host and sign in using the CLI.
+   Keep the shipped `composer_glyph: "> "` setting; configuration validation
+   refuses an omitted glyph before measurement, reservation or launch. Startup,
+   clear and relaunch still require the existing ANSI and empty-composer proof.
 2. Read `agy models` and `agy -p /usage --output-format json` on that account.
    Missing access or subscription quota remains unavailable, not inferred.
 3. Copy only the `antigravity` worker kind from
@@ -31,8 +34,8 @@ A model appearing in a catalog does not prove access, qualification or
 successful delivery.
 
 Argv only requests a model. Before any task input, the worker's live footer
-must show the requested model's captured native label, and the assignment
-records that display proof with effort `unknown`. A substituted, missing or
+must show the requested model's captured native label. Effort remains unknown;
+the completed native turn must also name that model before acceptance. A substituted, missing or
 uncaptured label refuses with nothing sent. Captured labels live in
 `skills/herdr-foreman/foreman/antigravity_native.py`; a model or effort
 without one, including every Gemini row today, stays unadmitted until a

@@ -13,9 +13,9 @@ import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from foreman import antigravity_native as native, config, launch, measure, planner, report_delivery, session_start_hook, tiers
+from foreman import antigravity_native as native, composer, config, launch, measure, planner, report_delivery, session_start_hook, tiers
 from foreman.assign import native_context_session
 from foreman.errors import ConfigError, HerdrError, ParseError
 from tests import agy_capture as capture
@@ -112,6 +112,11 @@ class AntigravityTest(unittest.TestCase):
         raw["worker_kinds"].append(json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/antigravity.example.json").read_text()))
         agents = config.parse_config(raw)
         worker = next(agent for agent in agents if agent.kind == "agy")
+        self.assertEqual(worker.composer_glyph, "> ")
+        without_composer = json.loads(json.dumps(raw))
+        without_composer["worker_kinds"][-1].pop("composer_glyph")
+        with self.assertRaisesRegex(config.ConfigError, "composer_glyph"):
+            config.parse_config(without_composer)
         tier = tiers.select_tier(worker, "developer")
         self.assertIsNotNone(tier)
         assert tier is not None
@@ -129,6 +134,21 @@ class AntigravityTest(unittest.TestCase):
                                "codex": {"kind": "codex", "state": "idle", "headroom_pct": 10}}}
         result = planner.plan(["developer"], snapshot)
         self.assertEqual(result["assignments"]["developer"], worker.name)
+
+    def test_captured_native_composer_preserves_fresh_startup_occupancy_guards(self):
+        raw = json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/config.example.json").read_text())
+        raw["worker_kinds"].append(json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/antigravity.example.json").read_text()))
+        worker = next(agent for agent in config.parse_config(raw) if agent.kind == "agy")
+        for frame in (capture.SONNET_DISPLAY, capture.OPUS_DISPLAY):
+            with self.subTest(frame=frame), patch.object(composer, "read_pane", return_value=(frame, True)):
+                composer.ensure_ready(Mock(), worker, startup_observe=lambda: ("native-pane", 42), sleep=lambda _: None)
+            occupied = frame.replace("\n>\n", "\n> pending private input\n")
+            for view in ((occupied, True), (frame, False)):
+                client = Mock()
+                with self.subTest(view=view), patch.object(composer, "read_pane", return_value=view), self.assertRaises(HerdrError):
+                    composer.ensure_ready(client, worker, startup_observe=lambda: ("native-pane", 42), sleep=lambda _: None)
+                client.agent_prompt.assert_not_called()
+                client.pane_send_keys.assert_not_called()
 
     def test_native_display_proves_only_the_model_it_shows(self):
         opus, sonnet = ({"model": model, "effort": None} for model in ("claude-opus-4-6-thinking", "claude-sonnet-4-6"))

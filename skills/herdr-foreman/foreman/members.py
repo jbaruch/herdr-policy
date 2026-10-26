@@ -255,6 +255,9 @@ def close(state_path, enrollment, ledger, at, client=None):
     dispatch = next((row for row in state["recovery"]["dispatches"] if row.get("id") == enrollment), None)
     result = dispatch.get("result") if isinstance(dispatch, dict) else None
     result_record = result if isinstance(result, dict) else {}
+    if event["decision"] == "accepted" and member["active"] and dispatch is not None:
+        from .report_delivery import require_primary_delivery
+        require_primary_delivery(dispatch, state["assignments"][dispatch["assignment_index"]], assignment, assignment["report"])
     # A reconcile can reconstruct an older-shaped result from transport
     # evidence, but the owner-written dispatch version still durably marks the
     # assignment as short-lived through its worker kind.

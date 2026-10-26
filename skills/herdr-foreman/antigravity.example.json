@@ -5,6 +5,7 @@
   "usage_marker": "Weekly Limit Remaining",
   "usage_read_source": "visible",
   "clear_prompt": "/clear",
+  "composer_glyph": "> ",
   "close_keys": [],
   "window_group": "antigravity-google-subscription",
   "tiers": {

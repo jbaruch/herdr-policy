@@ -301,6 +301,9 @@ def record_assessment(state, state_path, data, at):
               and proof.get("agent") == dispatch["agent"] and proof.get("report_path") == data["report"])
     if not waited and recovered is None:
         raise UsageError("Delivery receipt must prove this worker's exact report arrived; a lifecycle status or pending checkpoint is insufficient.", {})
+    if recovered is None:
+        from .report_delivery import require_primary_delivery
+        require_primary_delivery(dispatch, state["assignments"][index], supervision.expected_assignment(member), data["report"])
     # The RESPONSIBILITY, never the seat: this record is independently
     # versioned, and widening its `role` to hold `reviewer#api` would repurpose
     # the field without versioning it (rules/stateful-artifacts.md Migration

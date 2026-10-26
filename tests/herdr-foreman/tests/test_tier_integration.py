@@ -555,7 +555,8 @@ class TierIntegrationTest(CliCase):
         """Apply to a standing agy worker whose live argv requests the configured Opus row."""
         self.settings["agents"] = [{"name": "antigravity", "kind": "agy", "usage_prompt": "/usage",
                                     "usage_marker": "Weekly Limit Remaining", "usage_read_source": "visible",
-                                    "clear_prompt": "/clear", "tiers": {"build": {"model": "claude-opus-4-6-thinking"}}}]
+                                    "clear_prompt": "/clear", "composer_glyph": "> ",
+                                    "tiers": {"build": {"model": "claude-opus-4-6-thinking"}}}]
         self.write_config()
         runner = FakeRunner()
         info = {"agent": "agy", "name": "antigravity", "agent_status": "idle", "pane_id": "w1:p2",
@@ -564,6 +565,7 @@ class TierIntegrationTest(CliCase):
         runner.set("pane process-info", json.dumps({"result": {"process_info": {"pane_id": "w1:p2",
             "foreground_processes": [{"name": "agy", "pid": 300, "argv": agy_capture.OPUS_ARGV}]}}}))
         runner.set("pane read w1:p2", display)
+        runner.set("agent read antigravity", display)
         for prefix in ("agent prompt", "agent wait", "pane rename"):
             runner.set(prefix, ok_json())
         code, output, error = self.run_cli(self.apply_args({"developer": "antigravity"}) + ["--no-clear"],
@@ -576,8 +578,7 @@ class TierIntegrationTest(CliCase):
         tier = json.loads(output)["applied"][0]["tier"]
         self.assertEqual((tier["model"], tier["effort"], tier["verified"]["argv"]),
                          ("claude-opus-4-6-thinking", None, agy_capture.OPUS_ARGV))
-        self.assertEqual(tier["native_model"], {"source": "native_display", "label": "Claude Opus 4.6 (Thinking)",
-                                                "effort": "unknown"})
+        self.assertNotIn("native_model", tier)
         self.assertIn("effort=none", runner.pasted_prompts()[0])
         self.assertLess(runner.commands().index("pane read w1:p2 --source visible --lines 40"),
                         next(index for index, command in enumerate(runner.commands()) if command.startswith("agent prompt")))

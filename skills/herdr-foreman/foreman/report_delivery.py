@@ -357,6 +357,40 @@ def native_model_matches(body, session, path, tier):
             and antigravity_native.model_selection(rows, session, path) == expected)
 
 
+def require_primary_delivery(dispatch, assignment, enrolled, report):
+    """Bind Antigravity acceptance to the actual completed model and request."""
+    tier = (dispatch.get("result") or {}).get("tier")
+    if dispatch.get("worker_kind") != "agy" and (not isinstance(tier, dict) or tier.get("kind") != "agy"):
+        return
+    identity = native_identity({"agent_session": enrolled.get("native_session")})
+    original = native_identity({"agent_session": assignment.get("context_session")})
+    if (identity is None or identity["agent"] != "agy" or original is not None and identity != original
+            or enrolled.get("report") != report):
+        raise UsageError("Antigravity acceptance needs the original dispatch's enrolled native session and report; preserve unknown evidence.", {})
+    path = source_path(identity)
+    source = read_native_source(path) if path is not None else None
+    if source is None:
+        raise UsageError("Restore this Antigravity conversation's readable canonical transcript before accepting its report.", {})
+    from .assign import assignment_text, tiered_prompt
+    contents = {}
+    for key in ("common", "brief"):
+        _saved, body = ledger.receipt(dispatch[key])
+        contents[dispatch[key]] = body.encode("utf-8")
+    prompt = assignment_text(dispatch["role"], dispatch["common"], dispatch["brief"])
+    if not isinstance(tier, dict):
+        raise UsageError("This Antigravity dispatch has no proven requested model; preserve its report without accepting it.", {})
+    prompt, digest = tiered_prompt(prompt, tier, dispatch["common"], dispatch["brief"], contents)
+    if (tier.get("prompt_hash") != digest
+            or "REPORT: " + report not in contents[dispatch["brief"]].decode("utf-8").splitlines()
+            or not prompt_matches(source_prompt(source[1], "agy", identity["value"], path=path), prompt, "agy")
+            or not bare_final(source_final(source[1], "agy", identity["value"], path=path), report)
+            or not native_model_matches(source[1], identity["value"], path, tier)):
+        raise UsageError("Antigravity's completed native turn does not prove this dispatch, report and requested model; preserve the report without accepting it.", {})
+    current = read_native_source(path)
+    if current is None or current[0] != source[0]:
+        raise UsageError("Antigravity's canonical transcript changed during acceptance; retry the read without resending work.", {})
+
+
 def native_identity(info):
     ref = info.get("agent_session")
     if (not isinstance(ref, dict) or not isinstance(ref.get("agent"), str) or ref["agent"] not in DISPLAY_PREFIXES
