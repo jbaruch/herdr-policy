@@ -11,7 +11,7 @@ the generation. Lease death alone cannot return a task or classify a send.
 """
 
 from copy import deepcopy
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -177,6 +177,7 @@ def _handoff_request(data, at, returning):
 
 def admit(state_path, data, at, client, plugin_root):
     """Own admission's short commit after any legacy native/Git verification."""
+    from . import report_gates
     from .progression_service import capture_contract
     _handoff_request(data, at, False)
     _captured, document = capture_contract(data["contract"])
@@ -184,7 +185,10 @@ def admit(state_path, data, at, client, plugin_root):
     if isinstance(document, dict) and document.get("schema_version") == 3:
         from .workflow_adoption import prepare_admission
         prepared = prepare_admission(state_path, data, at, client, plugin_root)
-    with state_lock(state_path):
+    # The report-gate owner precedes the primary owner in the shared lock order.
+    # Native/Git preflight above holds neither; only adopted source needs this gate.
+    gate = report_gates.holding(state_path) if prepared is not None else nullcontext()
+    with gate, state_lock(state_path):
         return handoff(state_path, data, at, client, plugin_root, adoption_prepared=prepared)
 
 

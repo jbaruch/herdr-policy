@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import io
 import json
 import shutil
@@ -14,10 +15,11 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_workflow_adoption as fixture
-from foreman import cli, progression_owner as authority, supervision, workflow_adoption as adoption
+from tests import test_report_gates as gate_fixture
+from foreman import cli, progression_owner as authority, report_gates, supervision, workflow_adoption as adoption
 from foreman import workflow_workspace as workspace
 from foreman.errors import UsageError
-from foreman.state import add_assignment, save_state, state_lock
+from foreman.state import TransactionBusy, add_assignment, save_state, state_lock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -42,7 +44,7 @@ class AdmissionLockTest(unittest.TestCase):
         return authority.admit(self.fx.path, self.fx.owner.data, self.fx.now(), self.fx.native, ROOT)
 
     def peer_checkpoint(self, label):
-        with state_lock(self.fx.path):
+        with report_gates.holding(self.fx.path), state_lock(self.fx.path):
             state = self.fx.owner.state()
             add_assignment(state, self.fx.now(), "developer", "peer-" + label, task="two",
                            cleared=True, clear_reason="automatic")
@@ -81,6 +83,46 @@ class AdmissionLockTest(unittest.TestCase):
         self.assertEqual(state["recovery"]["tasks"]["one"]["authority"]["schema_version"], 3)
         self.assertEqual(self.fx.progress()["phase"], "verify")
         self.assertEqual(self.fx.progress()["pending"]["operation"], "adopt")
+
+    def gate_record(self):
+        return report_gates.record(self.fx.path, gate_fixture.label(self.source.report, gate_fixture.HIGH), self.fx.now())
+
+    def test_classifier_gate_writer_is_fenced_before_primary_lock_through_save(self):
+        original_save = authority.save_state
+        path = report_gates.storage_path(self.fx.path)
+        prior = path.read_bytes() if path.exists() else None
+        source = self.fx.owner.state()
+        members = supervision.load(self.fx.path)["members"]
+        checked = []
+        def writer_is_busy(stage):
+            with self.assertRaises(TransactionBusy):
+                pool.submit(self.gate_record).result(timeout=3)
+            self.assertEqual(path.read_bytes() if path.exists() else None, prior)
+            checked.append(stage)
+        @contextmanager
+        def primary(path):
+            writer_is_busy("before_primary")
+            with state_lock(path):
+                yield
+        def save(path, state):
+            writer_is_busy("before_save")
+            return original_save(path, state)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with patch.object(authority, "state_lock", primary), patch.object(authority, "save_state", side_effect=save):
+                self.admit()
+            self.assertEqual(checked, ["before_primary", "before_save"])
+            recorded = pool.submit(self.gate_record).result(timeout=3)
+        self.assertEqual(len(recorded["recorded"]), 1)
+        current = self.fx.owner.state()
+        self.assertEqual(current["assignments"], source["assignments"])
+        self.assertEqual(current["recovery"]["dispatches"], source["recovery"]["dispatches"])
+        self.assertEqual(supervision.load(self.fx.path)["members"], members)
+        self.assertEqual(self.fx.progress()["pending"]["operation"], "adopt")
+        self.assertFalse(self.fx.progress()["pending"]["effects_started"])
+
+    def test_classifier_gate_recorded_before_commit_refuses_without_owner_changes(self):
+        self.race(self.gate_record)
+        self.assertEqual(len(report_gates.open_gates(self.fx.path, str(self.source.report))), 1)
 
     def race(self, change):
         original = adoption.prepare_admission
