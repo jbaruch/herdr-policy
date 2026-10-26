@@ -45,7 +45,27 @@ def _owned(path, *, directory=False):
         raise StateError("Keep release checkout metadata in its original owned regular paths; preserve linked or foreign paths.", {})
 
 
-def _publish(path, value):
+def _contract_bytes(path):
+    """Bound ordinary contract readback without requiring metadata permissions."""
+    descriptor = None
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_size > MAX_BYTES:
+            raise StateError("Restore the original bounded owned regular successor contract; preserve its bytes and access mode.", {})
+        body = os.read(descriptor, MAX_BYTES + 1)
+        current = path.lstat()
+        if len(body) > MAX_BYTES or (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+            raise StateError("The successor contract changed during readback; preserve both owners' evidence before retrying.", {})
+        return body
+    except OSError:
+        raise StateError("Cannot safely read the existing successor contract; restore its owned regular path without replacing local work.", {}) from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _publish(path, value, *, metadata=True):
     body = (json.dumps(value, indent=2) + "\n").encode()
     if len(body) > MAX_BYTES:
         raise UsageError("Keep the release checkout intent within its private metadata budget; preserve the source instead of copying histories.", {})
@@ -60,8 +80,14 @@ def _publish(path, value):
         try:
             os.link(temporary, path)
         except FileExistsError:
-            _owned(path)
-            if path.stat().st_size > MAX_BYTES or path.read_bytes() != body:
+            if metadata:
+                existing = release_flight._read(path, value.get("task", "selected release checkout"), MAX_BYTES)
+                saved = existing[1] if existing is not None else None
+            else:
+                # Only ordinary successor-contract publication selects this
+                # mode-compatible reader. Flight/intent/receipt reads stay private.
+                saved = _contract_bytes(path)
+            if saved != body:
                 raise UsageError("The release checkout receipt already names different evidence; preserve it and retry only its original task/head.", {}) from None
     except OSError:
         raise StateError("Cannot preserve private release-checkout metadata; restore Git-directory access and free space, retaining both checkouts.", {}) from None
@@ -186,13 +212,10 @@ def _prefix(expected):
 
 
 def _read(location):
-    _owned(location)
-    try:
-        if location.stat().st_size > MAX_BYTES:
-            raise ValueError()
-        value = json.loads(location.read_text())
-    except (OSError, ValueError):
-        raise StateError("Restore this release checkout's original bounded private Git intent/receipt before dispatch.", {}) from None
+    captured = release_flight._read(location, "selected release checkout", MAX_BYTES)
+    if captured is None:
+        raise StateError("Restore this release checkout's original bounded private Git intent/receipt before dispatch.", {})
+    value, _body = captured
     if (not isinstance(value, dict) or set(value) != FIELDS
             or type(value["schema_version"]) is not int or value["schema_version"] != SCHEMA_VERSION
             or value["authorizes_release"] is not False or not isinstance(value["evidence"], dict)
@@ -323,7 +346,7 @@ def prepare(state_path, task, source, target, head, ledger, at, client, plugin_r
             evidence = {"kind": "ledger", "receipt": _ready_ledger(ledger, state_path, task, registered["base_revision"], head)}
         else:
             contract_path = Path(evidence["grant"]["contract"]["path"]).with_name("release-contract-" + hashlib.sha256(str(target).encode()).hexdigest()[:24] + ".json")
-            _publish(contract_path, replacement)
+            _publish(contract_path, replacement, metadata=False)
             evidence["successor"] = workspace.capture(contract_path)[0]
         intent = {"schema_version": SCHEMA_VERSION, "state_path": str(Path(state_path).resolve()), "task": task,
                   "source": str(source), "path": str(target), "branch": branch, "head": head,
