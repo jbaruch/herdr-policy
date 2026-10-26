@@ -440,7 +440,7 @@ class WorkflowService:
                         gated_dispatch = next(row for row in state["recovery"]["dispatches"] if row["id"] == gate["dispatch"])
                         if gated_dispatch["role"] == job["role"]:
                             report_gates.resolve(self.path, gate["report"], "clear", "Independent current-tip workflow re-check.",
-                                self.clock(), report_gates.ledger_view(self.path, None), evidence=job["report"])
+                                self.clock(), report_gates.ledger_view(self.path, None, gate["report"]), evidence=job["report"])
                 report_gates.require_no_verdict_gate(self.path, task["task"], state["recovery"]["dispatches"])
                 progress.update(phase="release", plan=None, blockers=[], at=self.clock())
             elif claims["release"]["outcome"] == "ready":

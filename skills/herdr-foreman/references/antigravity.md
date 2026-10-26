@@ -71,15 +71,12 @@ Herdr's installed `antigravity-cli` integration reports `agent: agy` with source
 completed model response and the exact bare report marker. Stable current pane,
 session and source readback remain required. Arbitrary archived JSONL cannot
 prove an Antigravity session; unsupported source formats remain unconfirmed.
-Recovery compares the exact request inside the native `USER_REQUEST` envelope
-with the preserved dispatch, accepts only the known trailing metadata and model
-selection blocks. CLI 1.4.7 omits an unchanged selection on a second turn in
-the same conversation. The reader carries forward only a preceding valid native
-selection in that canonical conversation; a later change replaces it, and a
-malformed or unknown user-input envelope clears that proof. The current request
-still matches the preserved dispatch exactly. The effective selection must name
-the dispatched tier's captured label. Missing history, any other request text or
-a different selection refuses.
+Recovery requires the exact dispatched request and the dispatched tier's captured
+native model label. Missing, unsupported or contradictory native evidence stays
+unconfirmed, including follow-up turns. The envelope grammar and model-selection
+proof are owned by `TRAILING_BLOCKS`, `user_request` and `model_selection` in
+`skills/herdr-foreman/foreman/antigravity_native.py`; read those definitions when
+diagnosing a parser refusal instead of reconstructing its predicates here.
 
 Tessl packages include the native Antigravity SessionStart hook using Google's
 `conversationId`/`transcriptPath` input and `injectSteps` output. Both Tessl and

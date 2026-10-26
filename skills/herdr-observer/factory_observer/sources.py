@@ -25,6 +25,7 @@ LOG_CHUNK = 256 * 1024
 LOG_BUDGET = 4 * 1024 * 1024
 MAX_LOG_LINE = 1024 * 1024
 MAX_DISCOVERY_FILES = 4096
+MAX_BINDING_DIRECTORY_ENTRIES = 65_536
 MAX_FACTORIES = 32
 MAX_AGENTS = 128
 MAX_OWNER_ROWS = 10000
@@ -67,7 +68,10 @@ def coverage_diagnostics(gaps):
     """Actionable private read failures, without copying source diagnostics."""
     result = []
     for gap in sorted(set(gaps)):
-        if gap.startswith("owner_projection:"):
+        if gap in {"factory_directory_scan_truncated", "factory_receipt_scan_truncated"}:
+            result.append({"source": "factory_receipt", "section": "discovery", "refusal": gap,
+                           "recovery": "Select the actual omitted owner paths explicitly; preserve incomplete registry coverage and the original binding receipts."})
+        elif gap.startswith("owner_projection:"):
             _, section, reason = gap.split(":", 2)
             action = ("Update the observer's co-shipped owner reader to support the selected owner schema."
                       if reason == "owner_schema_unsupported" else
@@ -188,12 +192,19 @@ def owner_paths(root, explicit):
             gaps.extend(["owner_evidence_unavailable", "factory_owner:source_unreadable"])
     receipts = root / "supervision-bindings"
     if receipts.is_dir():
-        scanned = list(islice(receipts.iterdir(), MAX_DISCOVERY_FILES + 1))
+        def candidates():
+            for index, entry in enumerate(receipts.iterdir()):
+                if index >= MAX_BINDING_DIRECTORY_ENTRIES:
+                    gaps.append("factory_directory_scan_truncated")
+                    break
+                if entry.suffix == ".json":
+                    yield entry
+        # Lock sidecars consume no receipt allowance. A distinct physical
+        # directory bound still prevents an unbounded non-receipt scan.
+        scanned = list(islice(candidates(), MAX_DISCOVERY_FILES + 1))
         if len(scanned) > MAX_DISCOVERY_FILES:
-            gaps.append("factory_discovery_truncated")
-        # Owner locks are persistent sidecars, not receipts or factories.
-        # Bound candidate discovery before parsing; cap distinct owners later.
-        entries = sorted(entry for entry in scanned[:MAX_DISCOVERY_FILES] if entry.suffix == ".json")
+            gaps.append("factory_receipt_scan_truncated")
+        entries = sorted(scanned[:MAX_DISCOVERY_FILES])
         verified = {}
         for entry in entries:
             try:
@@ -206,9 +217,14 @@ def owner_paths(root, explicit):
                     if len(verified) >= MAX_FACTORIES and owner not in paths:
                         gaps.append("factory_sources_truncated")
                         continue
+                    # Retain a failed probe too: aliases cannot spend a new
+                    # owner slot or repeat an unavailable projection read.
+                    verified[owner] = None
                     rows, _coverage = owner_view(owner, "binding")
                     verified[owner] = rows[0]["value"] or {}
                 binding = verified[owner]
+                if binding is None:
+                    continue
                 if (binding.get("identity") == receipt.get("identity")
                         and binding.get("generation") == receipt.get("generation")):
                     paths.add(owner)

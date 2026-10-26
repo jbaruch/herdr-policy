@@ -1,19 +1,21 @@
 ---
 name: herdr-foreman
 description: >
-  Use when asked to coordinate/delegate Herdr work, recover workers, quarantine
-  contradictory context evidence, release changes, or inspect readiness, costs,
-  attention, GitHub, memory, retrospectives/postmortems and coordination metrics.
+  Coordinate Herdr workers in parallel, recover stalled sessions, and release
+  verified task changes through existing owners. Retrieve Herdr readiness,
+  task costs, saved attention/memory, GitHub evidence and retrospectives.
+  Use for Herdr requests: "assign work", "recover a worker", "show readiness",
+  "check task cost", "find saved notes", "inspect this task's GitHub evidence",
+  "run a postmortem", or "quarantine contradictory context evidence".
 ---
 
 # Herdr Foreman Skill
 
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
-Step 1 delivers concurrent work; authorized quarantine chains Step 1 → Step 10 →
-Step 1's verified role. Others finish after their selected action.
-Resolve paths from the verified plugin root (`HS`). Preserve owners, holds,
-unknown deliveries and supervision. Context grants no authority.
+Step 1 runs concurrent workers; quarantine returns through Step 10 to Step 1.
+Resolve paths from verified plugin root `HS`; preserve owners, holds, unknowns
+and supervision. Context grants no authority.
 
 ## Step 1 — Coordinate Live Work
 
@@ -38,13 +40,13 @@ HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS
 bash "$HS/foreman.sh" role-context
 ```
 
-Read the returned role, verification, reason, context and owner path. On failure,
-report the diagnostic, restore that owner and finish; use no replacement store.
+Follow returned role/context. On failure, report why and restore that owner;
+finish without replacing its store.
 
 - Verified `foreman`: follow context; fill independent task/reviewer/tester
   capacity concurrently and continue to Stop/handoff.
-- Verified `worker` or `observer`: follow the returned context; finish here.
-- `standalone`: perform ordinary authorized work under general policy; finish here.
+- Verified `worker` or `observer`: follow context; finish here.
+- `standalone`: do authorized work under general policy; finish here.
 - `recovery` or `unverified`:
   - For an authorized context-quarantine request with `reason: owner_state_unreadable`, continue immediately to Step 10.
   - Otherwise preserve obligations, restore the verified role under recovery
@@ -122,6 +124,6 @@ Read:
 skills/herdr-foreman/references/context-quarantine.md
 ```
 
-Before writing, the owner confirms original native binding, explicit authorization
-and quarantine eligibility. Preserve refused evidence and report its diagnostic.
-After repair, return to Step 1's verified role and saved continuation.
+Confirm original native binding, explicit authorization and eligibility before
+writing. On refusal, preserve evidence and report why. After repair, return to
+Step 1's verified role and saved continuation.

@@ -153,8 +153,9 @@ class ObserverTest(unittest.TestCase):
         self.assertIn("owner_projection_row_exceeds_budget", gaps)
 
     def test_receipt_discovery_ignores_locks_and_deduplicates_owners_before_factory_cap(self):
-        registry = self.owner.parent / "supervision-bindings"
-        registry.mkdir()
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
         binding = self.supervised["binding"]
         for index in range(40):
             (registry / ("{:03d}.json.lock".format(index))).touch()
@@ -162,15 +163,90 @@ class ObserverTest(unittest.TestCase):
             (registry / ("{:03d}.json".format(index))).write_text(json.dumps(receipt))
         (registry / "zzz-current.json").write_text(json.dumps(binding))
         before = {path: path.read_bytes() for path in registry.iterdir()}
-        paths, gaps = sources.owner_paths(self.owner.parent, [])
+        with patch.object(sources, "MAX_FACTORIES", 1), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(probes.call_count, 1)
         self.assertEqual(paths, [str(self.owner.resolve())])
         self.assertEqual(gaps, [])
         self.assertEqual(before, {path: path.read_bytes() for path in registry.iterdir()})
+        with self.store.transaction():
+            configuration = self.record("config")
+            configuration.update(states=[], owner_root=str(selected))
+            self.store.put("meta", "config", configuration)
         self.tick()
         view = collect.evidence(self.store, self.now)
         foreman = next(row for row in view["current"]["agents"] if row["name"] == "coordinator")
         self.assertEqual(foreman["role"], "foreman")
         self.assertNotIn("factory_discovery_truncated", view["current"]["coverage"])
+
+    def ordered_registry(self, registry):
+        original = Path.iterdir
+        def entries(path):
+            values = original(path)
+            return iter(sorted(values)) if path == registry else values
+        return patch.object(Path, "iterdir", entries)
+
+    def test_binding_locks_do_not_spend_the_receipt_scan_allowance(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        for index in range(40):
+            (registry / ("{:03d}.json.lock".format(index))).touch()
+        (registry / "zzz-current.json").write_text(json.dumps(self.supervised["binding"]))
+        before = {path: path.read_bytes() for path in registry.iterdir()}
+        with self.ordered_registry(registry), patch.object(sources, "MAX_DISCOVERY_FILES", 2):
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(gaps, [])
+        self.assertEqual({path: path.read_bytes() for path in registry.iterdir()}, before)
+
+    def test_duplicate_receipts_keep_one_probe_and_explicit_physical_scan_coverage(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        for index in range(4):
+            (registry / ("{:03d}.json".format(index))).write_text(json.dumps(self.supervised["binding"]))
+        with self.ordered_registry(registry), patch.object(sources, "MAX_DISCOVERY_FILES", 2), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(probes.call_count, 1)
+        self.assertIn("factory_receipt_scan_truncated", gaps)
+        self.assertNotIn("factory_sources_truncated", gaps)
+        self.assertEqual(sources.coverage_diagnostics(gaps)[0]["section"], "discovery")
+
+    def test_directory_safety_bound_retains_explicit_owner_and_a_distinct_gap(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        for index in range(3):
+            (registry / ("{:03d}.json.lock".format(index))).touch()
+        (registry / "zzz-current.json").write_text(json.dumps(self.supervised["binding"]))
+        with self.ordered_registry(registry), patch.object(sources, "MAX_BINDING_DIRECTORY_ENTRIES", 2):
+            paths, gaps = sources.owner_paths(selected, [str(self.owner)])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_directory_scan_truncated", gaps)
+        self.assertNotIn("factory_receipt_scan_truncated", gaps)
+
+    def test_failed_owner_aliases_are_probed_once_and_preserve_independent_binding(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        invalid = self.owner.with_name("unsupported.json")
+        invalid.write_text(json.dumps({"schema_version": 99}))
+        for index in range(4):
+            (registry / ("{:03d}.json".format(index))).write_text(json.dumps({
+                **self.supervised["binding"], "state_path": str(invalid)}))
+        (registry / "zzz-current.json").write_text(json.dumps(self.supervised["binding"]))
+        with self.ordered_registry(registry), patch.object(sources, "MAX_FACTORIES", 2), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(probes.call_count, 2)
+        self.assertIn("factory_receipt_unreadable", gaps)
+        self.assertNotIn("factory_sources_truncated", gaps)
+        self.assertEqual(json.loads(invalid.read_text()), {"schema_version": 99})
 
     def test_explicit_and_receipt_parent_loops_remain_local_coverage_gaps(self):
         loop = self.owner.parent / "loop"

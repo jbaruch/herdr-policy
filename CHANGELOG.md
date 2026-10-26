@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.19.0 — 2026-10-25
+## 0.19.0 — 2026-10-26
 
 - Derive legacy brief input fields, role/slice scope and specialist vocabulary from the selected owner plan (#49). Validate every role before requested writes; keep departed-worker warnings separate from preparation failure. Exercise the packaged developer-to-review/test/security render and native apply path without intermediate schema repairs.
 - Add bounded native completion collection and parallel current task cycles through the existing executor (#81, #50). Keep preparation and native startup/composer waits outside shared owner transactions, reload current state for each short transport checkpoint, and preserve other tasks' assignments and indexes. An invalid input or task-local decision leaves independent ready work eligible.
