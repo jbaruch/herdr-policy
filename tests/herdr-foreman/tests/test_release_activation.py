@@ -25,14 +25,19 @@ class ReleaseActivationTest(unittest.TestCase):
         self.addCleanup(case.doCleanups)
         return case
 
-    def test_default_flag_has_no_environment_or_record_activation_route(self):
-        self.assertFalse(release_activation.enabled())
-        with patch.dict(os.environ, {"HERDR_NEW_OWNER_WRITES_ENABLED": "1", "NEW_OWNER_WRITES_ENABLED": "true"}):
-            self.assertFalse(release_activation.enabled())
-            with self.assertRaises(UsageError) as failure:
-                release_activation.require("Fixture owner")
-        self.assertEqual(failure.exception.details["reason"], "owner_writes_staged")
+    def test_environment_cannot_change_either_release_activation_state(self):
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled), patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", enabled):
+                with patch.dict(os.environ, {"HERDR_NEW_OWNER_WRITES_ENABLED": "1", "NEW_OWNER_WRITES_ENABLED": "true"}):
+                    self.assertEqual(release_activation.enabled(), enabled)
+                    if enabled:
+                        release_activation.require("Fixture owner")
+                    else:
+                        with self.assertRaises(UsageError) as failure:
+                            release_activation.require("Fixture owner")
+                        self.assertEqual(failure.exception.details["reason"], "owner_writes_staged")
 
+    @patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", False)
     def test_legacy_recovery_writes_stay_nineteen_and_both_versions_read_without_downgrade(self):
         state = empty_state()
         self.assertEqual(state["recovery"]["schema_version"], 19)
@@ -119,7 +124,8 @@ class ReleaseActivationTest(unittest.TestCase):
         self.assertEqual(case.case.path.read_bytes(), before)
         self.assertEqual(state, original)
 
-    def test_default_measurement_intent_keeps_deployed_enclosing_shape(self):
+    @patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", False)
+    def test_compatibility_measurement_intent_keeps_deployed_enclosing_shape(self):
         case = service_fixture.WorkflowServiceTest()
         case.setUp()
         self.addCleanup(case.doCleanups)

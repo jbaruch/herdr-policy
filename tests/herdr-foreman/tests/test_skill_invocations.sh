@@ -102,7 +102,11 @@ from pathlib import Path
 root = Path(sys.argv[1])
 rule = (root.parent / "skills/herdr-foreman/references/team-scope.md").read_text()
 import os
-isolation = (Path(os.environ["HERDR_CODING_POLICY_ROOT"]) / "rules/agent-worktree-isolation.md").read_text()
+cp = Path(os.environ["HERDR_CODING_POLICY_ROOT"])
+isolation = (cp / "rules/agent-worktree-isolation.md").read_text()
+isolation_reference = "skills/coding-contracts/references/agent-worktree-isolation.md"
+if isolation_reference in isolation:
+    isolation += "\n" + (cp / isolation_reference).read_text()
 integration = (root.parent / "skills/herdr-foreman/references/coding-policy-integration.md").read_text()
 team = (root / "herdr-foreman/references/team-operation.md").read_text()
 skill = (root / "herdr-foreman/references/foreman-workflow.md").read_text()

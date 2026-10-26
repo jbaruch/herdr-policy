@@ -25,19 +25,20 @@ This interface writes no owner, gate or replacement store.
 ### Shared Writer Activation
 
 `skills/herdr-foreman/foreman/release_activation.py` owns the single release
-activation for pending owner formats. Compatibility readers accept recovery
-19/20 and assessment 2/3/4 while ordinary new writes retain recovery 19 and
-assessment 2. Existing newer records remain readable and are never downgraded.
-Legacy assessment writes omit `native_delivery`; no new field or event is
-silently written under a deployed version.
+activation for the owner formats. The 0.19.0 compatibility release accepts
+recovery 19/20 and assessment 2/3/4 while ordinary new writes retain recovery 19
+and assessment 2. The 0.19.1 activation release enables recovery 20, assessment
+4, Codex goal receipt 2 and legacy adoption 3 together. Older accepted history
+remains readable. Compatibility assessment writes omit `native_delivery`; no
+new field or event is silently written under a deployed version.
 
 The activation release changes the one shared release-owned constant only after
 both Tessl and ACR compatibility publication are confirmed. Environment, command
 input and owner records cannot activate it. A staged native-proof or measurement
 reconciliation write refuses with `owner_writes_staged`, preserving pending
 evidence and supported legacy work. No per-task approval, timer or extra
-migration command is introduced. Tests patch this same constant for the activated
-writer paths and separately exercise default compatibility behavior.
+migration command is introduced. Tests explicitly exercise both settings of the
+same constant, preserving compatibility behavior after activation.
 
 | Path | Owner | Purpose |
 | ---- | ----- | ------- |
