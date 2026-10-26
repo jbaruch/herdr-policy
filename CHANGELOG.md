@@ -4,6 +4,7 @@
 
 - Reuse the successful delivery receipt and exact report digest already bound by the specialist assessment when resolving report gates (#71). Closing an enrollment before a watcher sample no longer strands an approved report or requires a replacement review; changed report bytes and foreign dispatches still refuse.
 - Ship Antigravity's captured `> ` composer in the example and reject missing configuration before measurement or dispatch (#78). Existing ANSI, occupancy, identity and startup guards remain required.
+- Version measurement reconciliation in recovery store 20 and native delivery proof in assessment schema 3. Preserve schema-2 assessment history without granting unproven Antigravity rows new delivery/approval authority; reassess existing report bytes when native proof is recoverable.
 - Reconcile an interrupted task-workflow measurement only from its exact durable pre-effect intent, completed canonical snapshot, or closed retained-probe receipt (#70). Bind new measurements to a saved owner timestamp and captured configuration; refuse missing, ambiguous, changed-context, partial or live-probe outcomes without generalizing recovery to native business sends.
 - Permit the existing explicit return and re-admission handoff after measurement settlement. Preserve the original task/store/base/history/counters and monotonic authority generation while the new admission binds the actual loaded policy and a fresh artifact directory.
 

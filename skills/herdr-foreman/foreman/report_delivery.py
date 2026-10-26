@@ -389,6 +389,7 @@ def require_primary_delivery(dispatch, assignment, enrolled, report):
     current = read_native_source(path)
     if current is None or current[0] != source[0]:
         raise UsageError("Antigravity's canonical transcript changed during acceptance; retry the read without resending work.", {})
+    return {"path": str(path), "sha256": hashlib.sha256(source[0]).hexdigest()}
 
 
 def native_identity(info):

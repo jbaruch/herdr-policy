@@ -327,9 +327,26 @@ class EngagementTest(unittest.TestCase):
                 self.assertFalse(usable)
                 self.assertEqual(self.path.read_bytes(), before)
 
+    def test_schema_two_keeps_history_without_inventing_antigravity_delivery_proof(self):
+        self.assess()
+        record = self.state["specialist_assessments"][0]
+        record["schema_version"] = 2
+        record.pop("native_delivery")
+        before = json.dumps(record, sort_keys=True)
+        self.assertFalse(engagement.migrate_assessments(self.state))
+        engagement.validate_assessments(self.state)
+        dispatch = self.state["recovery"]["dispatches"][0]
+        self.assertTrue(engagement.native_delivery_proven(record, dispatch))
+        dispatch["worker_kind"] = "agy"
+        engagement.validate_assessments(self.state)
+        self.assertFalse(engagement.native_delivery_proven(record, dispatch))
+        with self.assertRaisesRegex(UsageError, "Reassess the existing report"):
+            engagement.require_accepted(self.state, record["dispatch"], record["report"])
+        self.assertEqual(json.dumps(record, sort_keys=True), before)
+
     def test_corrupt_assessment_preserves_owner_file_and_refuses_read(self):
         self.assess()
-        variants = ({"schema_version": 3}, {"assignment_index": 9}, {"assignment_index": False}, {"agent": "other-worker"},
+        variants = ({"schema_version": engagement.ASSESSMENT_SCHEMA_VERSION + 1}, {"assignment_index": 9}, {"assignment_index": False}, {"agent": "other-worker"},
                     {"task": "another-task"}, {"at": "2026-02-03T09:00:00Z"}, {"source": "operator"},
                     {"verdict": "approved"}, {"criteria": 3}, {"legacy": {"outcome": "x", "summary": "y"}},
                     {"gap": {"message": "x", "gaps": []}},
@@ -469,7 +486,7 @@ class EngagementTest(unittest.TestCase):
                                    json.dumps({**binding, "head_revision": head}) + "\n")
             record = self.assess({**self.data, "id": "legacy-" + head})
             self.assertEqual((record["schema_version"], record["source"], record["task"], record["contribution"]),
-                             (2, "report", "task-1", "design"))
+                             (engagement.ASSESSMENT_SCHEMA_VERSION, "report", "task-1", "design"))
             self.assertEqual(record["report_evidence"], recovery.receipt(str(self.report))[0])
             engagement.validate_assessments(self.state)
         for change in ({"head_revision": "HEAD"}, {"head_revision": "c" * 12}, {"head_revision": None},

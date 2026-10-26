@@ -6,6 +6,7 @@ _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[1]))
 _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -561,7 +562,8 @@ class NativeDeliveryTests(unittest.TestCase):
                     delivery.recover(changed["recovery"], changed["assignments"], dict(data, source=str(source)), AT)
             self.assertEqual(document["recovery"]["delivery_recoveries"], [])
             source.write_text(encode(rows))
-            delivery.require_primary_delivery(dispatch, document["assignments"][0], enrolled, data["report"])
+            proof = delivery.require_primary_delivery(dispatch, document["assignments"][0], enrolled, data["report"])
+            self.assertEqual(proof, {"path": str(source), "sha256": hashlib.sha256(source.read_bytes()).hexdigest()})
             data["source"] = str(source)
             prior = copy.deepcopy(document["assignments"])
             result = delivery.recover(document["recovery"], document["assignments"], data, AT)

@@ -62,7 +62,7 @@ from datetime import timezone
 from pathlib import Path
 from typing import NoReturn
 
-from . import attention, runnable, supervision
+from . import attention, engagement, runnable, supervision
 from .chronology import timestamp
 from .errors import StateError, UsageError
 from .report_contract import CONSULTATION_ROLES
@@ -563,13 +563,19 @@ def _verdicts(store, assessments):
     the reviewed developer dispatch's `task` and the `reviewer` agent.
     """
     found = []
+    dispatches = {row["id"]: row for row in store["dispatches"]}
     for row in assessments:
-        if row.get("source") == "report" and row.get("verdict") is not None:
+        dispatch = dispatches.get(row.get("dispatch"))
+        if (row.get("source") == "report" and row.get("verdict") is not None and dispatch is not None
+                and engagement.native_delivery_proven(row, dispatch)):
             found.append({"path": _report_key(row["report"]), "sha256": row["report_evidence"]["sha256"],
                           "verdict": row["verdict"], "dispatch": row.get("dispatch"), "task": None, "agent": None})
     for row in store["dispatches"]:
         receipt = row.get("report")
         if isinstance(receipt, dict) and isinstance(receipt.get("evidence"), dict):
+            if any(candidate.get("agent") == receipt.get("reviewer") and candidate.get("task") == row.get("task")
+                   and engagement.requires_native_delivery(candidate) for candidate in store["dispatches"]):
+                continue  # Only the native-proven assessment above can qualify it.
             found.append({"path": _report_key(receipt["report"]), "sha256": receipt["evidence"]["sha256"],
                           "verdict": receipt["verdict"], "dispatch": None, "task": row.get("task"),
                           "agent": receipt.get("reviewer")})
@@ -601,11 +607,13 @@ def ledger_view(state_path, judge_agent):
     data = supervision.load(state_path)
     _document, entries, _progress = attention.load(state_path)
     deliveries = []
+    dispatches = {row["id"]: row for row in store["dispatches"]}
     # Assessment already validated the positive wait/recovery receipt and
     # bound it to this dispatch and these report bytes. It survives pane
     # closure even when the background watcher never sampled the report.
     for row in assessments:
-        if row["source"] == "report":
+        dispatch = dispatches.get(row["dispatch"])
+        if row["source"] == "report" and dispatch is not None and engagement.native_delivery_proven(row, dispatch):
             saved = row["report_evidence"]
             deliveries.append({"dispatch": row["dispatch"], "path": _report_key(saved["path"]),
                                "sha256": saved["sha256"], "at": row["at"]})
@@ -619,7 +627,7 @@ def ledger_view(state_path, judge_agent):
         saved = row["receipts"]["report"]
         deliveries.append({"dispatch": row["dispatch"], "path": _report_key(saved["path"]),
                            "sha256": saved["sha256"], "at": row["at"]})
-    return {"dispatches": {row["id"]: row for row in store["dispatches"]},
+    return {"dispatches": dispatches,
             "enrolled": {row["id"]: _report_key(row["assignment"]["report"]) for row in data["members"]},
             "deliveries": deliveries, "decisions": entries, "judge": judge_agent,
             "verdicts": _verdicts(store, assessments)}

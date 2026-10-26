@@ -16,7 +16,7 @@ from tests import test_report_gates as gate_fixture
 from foreman import cli, config, measurement_retry, probe_recovery, process_lease, progression_owner as authority
 from foreman import recovery, supervision, workflow_recovery, workflow_service
 from foreman.errors import ForemanError, UsageError
-from foreman.state import add_snapshot, latest_snapshot, save_state, state_lock
+from foreman.state import add_snapshot, latest_snapshot, load_state_checked, save_state, state_lock
 
 
 class WorkflowRecoveryTest(unittest.TestCase):
@@ -208,6 +208,10 @@ class WorkflowRecoveryTest(unittest.TestCase):
         self.assertEqual(result["outcome"], "snapshot_completed")
         self.assertIsNone(self.case.progress()["pending"])
         saved = self.case.path.read_bytes()
+        with patch("foreman.recovery.RECOVERY_STORE_VERSION", 19):
+            _old_reader, usable = load_state_checked(self.case.path, warn=lambda _: None, persist_migration=False)
+        self.assertFalse(usable)
+        self.assertEqual(self.case.path.read_bytes(), saved)
         _data, replay = self.reconcile_measurement(intent, "snapshot_completed", snapshot, via_cli=True)
         self.assertTrue(replay["replayed"])
         self.assertEqual(self.case.path.read_bytes(), saved)

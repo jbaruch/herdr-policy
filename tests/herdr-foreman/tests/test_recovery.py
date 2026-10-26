@@ -1546,6 +1546,19 @@ class RecoveryTests(unittest.TestCase):
             refusal_move(self.store, TASK, "tester", None, "grok", self.BRIEF)
         validate_store(self.store, self.history)
 
+    def test_store_nineteen_migration_preserves_history_without_blessing_new_events(self):
+        old = copy.deepcopy(self.store)
+        old["schema_version"] = 19
+        before = copy.deepcopy(old)
+        self.assertTrue(migrate_store(old))
+        self.assertEqual(old, {**before, "schema_version": RECOVERY_STORE_VERSION})
+        unknown = copy.deepcopy(before)
+        unknown["events"].append({"kind": "progression_measurement_reconciled"})
+        saved = copy.deepcopy(unknown)
+        with self.assertRaisesRegex(UsageError, "unowned measurement reconciliation"):
+            migrate_store(unknown)
+        self.assertEqual(unknown, saved)
+
     def test_store_migration_stamps_a_clean_older_store_and_refuses_unowned_fields(self):
         first = self.dispatch_tester(1, "codex-a")
         identified = copy.deepcopy(self.store)

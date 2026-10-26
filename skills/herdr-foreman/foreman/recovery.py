@@ -61,7 +61,7 @@ RECOVERY_SCHEMA_VERSION = 1
 #: Version 18 owns closed no-work recovery receipts and their retry bindings.
 #: Version 19 owns version-2 task records with current service authority.
 #: Historical version-1 tasks stay legacy; migration never delegates a task.
-RECOVERY_STORE_VERSION = 19
+RECOVERY_STORE_VERSION = 20
 #: Three confirmed pre-input service/preflight failures buy no further identical start.
 #: Scope binds task/role/brief/account/template/model/effort, not pane, fresh
 #: identity or report destination. Exhaustion routes to causal diagnosis,
@@ -284,6 +284,8 @@ def _refuse_unowned_legacy(store, version):
         raise UsageError("Older recovery contains a task closure this version never wrote; preserve it for owner recovery.", {})
     if version < 17 and any(isinstance(row, dict) and row.get("kind") == "launch_transient_failure" for row in events):
         raise UsageError("Older recovery contains an unowned launch retry gate; preserve it for owner recovery.", {})
+    if version < 20 and any(isinstance(row, dict) and row.get("kind") == "progression_measurement_reconciled" for row in events):
+        raise UsageError("Older recovery contains an unowned measurement reconciliation; preserve it for owner recovery.", {})
     if version == 3:
         deliveries = store.get("delivery_recoveries")
         if not isinstance(deliveries, list):
