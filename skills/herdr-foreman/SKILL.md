@@ -43,14 +43,22 @@ bash "$HS/foreman.sh" role-context
 Follow returned role/context. On failure, report why and restore that owner;
 finish without replacing its store.
 
-- Verified `foreman`: follow context; fill independent task/reviewer/tester
-  capacity concurrently and continue to Stop/handoff.
-- Verified `worker` or `observer`: follow context; finish here.
-- `standalone`: do authorized work under general policy; finish here.
+- Verified `foreman`:
+  - Follow context.
+  - Fill eligible task and verification seats concurrently.
+  - Continue to Stop/handoff.
+- Verified `worker` or `observer`:
+  - Follow context.
+  - Finish here.
+- `standalone`:
+  - Do authorized work under general policy.
+  - Finish here.
 - `recovery` or `unverified`:
   - For an authorized context-quarantine request with `reason: owner_state_unreadable`, continue immediately to Step 10.
-  - Otherwise preserve obligations, restore the verified role under recovery
-    instructions, and finish here.
+  - Otherwise:
+    - Preserve obligations.
+    - Restore the verified role under recovery instructions.
+    - Finish here.
 
 ## Step 2 — Collect Coordination Evidence
 
@@ -70,7 +78,7 @@ skills/herdr-foreman/references/coordination-metrics.md
 
 ## Step 4 — Inspect Workflow Readiness
 
-Return task readiness, eligible capacity, unknowns and page coverage:
+Return readiness, capacity, unknowns and coverage:
 
 ```text
 skills/herdr-foreman/references/workflow-capacity.md
@@ -78,7 +86,7 @@ skills/herdr-foreman/references/workflow-capacity.md
 
 ## Step 5 — Retrieve Saved Attention
 
-Return the named obligation or attention page with lifecycle, sources and coverage:
+Return attention with lifecycle, sources and coverage:
 
 ```text
 skills/herdr-foreman/references/attention.md
@@ -110,7 +118,7 @@ skills/herdr-foreman/references/decision-context.md
 
 ## Step 9 — Retrieve GitHub Evidence
 
-Return GitHub identity, state, source link and evidence coverage:
+Return GitHub identity, state, link and coverage:
 
 ```text
 skills/herdr-foreman/references/decision-context.md

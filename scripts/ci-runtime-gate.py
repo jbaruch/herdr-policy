@@ -214,6 +214,9 @@ def reusable(api, current, identity, environ):
             and binding["head_repository_id"] == repository_id and binding["head_sha"] == head,
             "artifact is expired, oversized or belongs to another run")
     record = archive_record(api.read("actions/artifacts/{}/zip".format(artifact["id"]), MAX_ARCHIVE), artifact)
+    require(isinstance(record, dict), "artifact record must be a JSON object")
+    require(isinstance(record.get("provenance"), dict) and isinstance(record.get("result"), dict),
+            "artifact provenance and result must be JSON objects")
     require(type(record["schema_version"]) is int and record["schema_version"] == SCHEMA
             and record["fingerprint"] == current,
             "source tree, runner, tools, dependencies or runtime environment differ")

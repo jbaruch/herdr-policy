@@ -125,16 +125,8 @@ class WorkflowService:
             self._save(state)
 
     @contextmanager
-    def _effect_transaction(self, state, identifier, job):
-        """Refresh canonical state for one short transport checkpoint.
-
-        Native startup/waits run outside this transaction. Another task's
-        assignments may append between callbacks, so never save a stale
-        whole-owner snapshot or reuse its earlier assignment indexes.
-        """
-        if self._effect_lock_held:
-            yield
-            return
+    def _checkpoint_lock(self):
+        """Wait boundedly for a short save, without repeating its body."""
         with ExitStack() as transaction:
             deadline = time.monotonic() + CHECKPOINT_LOCK_BUDGET_SEC
             while True:
@@ -147,6 +139,20 @@ class WorkflowService:
                     # Retry only lock acquisition. The checkpoint body and
                     # native effect below this boundary execute at most once.
                     time.sleep(CHECKPOINT_LOCK_POLL_SEC)
+            yield
+
+    @contextmanager
+    def _effect_transaction(self, state, identifier, job):
+        """Refresh canonical state for one short transport checkpoint.
+
+        Native startup/waits run outside this transaction. Another task's
+        assignments may append between callbacks, so never save a stale
+        whole-owner snapshot or reuse its earlier assignment indexes.
+        """
+        if self._effect_lock_held:
+            yield
+            return
+        with self._checkpoint_lock():
             current, _task, progress = self._current()
             if progress["pending"] is None or progress["pending"]["id"] != identifier:
                 raise UsageError("The task's pending native intent changed; preserve the original effect for its owner.", {})
@@ -242,7 +248,9 @@ class WorkflowService:
                 if intent["effects_started"]:
                     return self._exception(state, "pending_effect_requires_reconciliation", [intent["id"]],
                                            ("reconcile_original_effect", "return_authority"))
-                workflow_adoption.require_current(self.path, state, supervision.load(self.path), self.document, self.client)
+                # The canonical native adapter verifies original source/Git
+                # evidence after this lock is released. Its before-effect
+                # checkpoint then rechecks captured inputs and current owner.
             if operation == "cleanup":
                 try:
                     return self.release.resume_cleanup(self, state, task, progress)
@@ -302,7 +310,7 @@ class WorkflowService:
                                                         "--state", str(self.path), *argv])
                     _result, error = cli.cmd_measure(args, client=client)
                     # The existing measurement owner saved its own fresh state.
-                    with state_lock(self.path):
+                    with self._checkpoint_lock():
                         state, task, progress = self._current()
                         if error is not None:
                             return self._exception(state, "measurement_incomplete", [str(self.path)])
@@ -312,7 +320,7 @@ class WorkflowService:
                 raise UsageError("Restore the supported original task effect before resuming progression.", {})
         except ForemanError as exc:
             # Preserve every callback checkpoint and uncertain native effect.
-            with state_lock(self.path):
+            with self._checkpoint_lock():
                 state, task, progress = self._current()
                 return self._exception(state, "native_owner_refused", [intent["id"], exc.message],
                                        ("reconcile_original_effect", "return_authority"))

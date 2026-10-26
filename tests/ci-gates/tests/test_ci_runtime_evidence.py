@@ -220,6 +220,24 @@ class RuntimeEvidenceTests(unittest.TestCase):
             with self.assertRaises(GATE.Unavailable):
                 self.verify()
 
+    def test_non_object_artifact_fields_are_unavailable_before_attribute_access(self):
+        malformed = (None, [], False, 42, 'not an object')
+        for field in ('provenance', 'result'):
+            for value in malformed:
+                with self.subTest(field=field, value=value):
+                    self.api = FixtureAPI()
+                    record = copy.deepcopy(self.api.record)
+                    record[field] = value
+                    self.api.repack([('runtime-evidence.json', json.dumps(record))])
+                    with self.assertRaises(GATE.Unavailable):
+                        self.verify()
+        for value in malformed:
+            with self.subTest(record=value):
+                self.api = FixtureAPI()
+                self.api.repack([('runtime-evidence.json', json.dumps(value))])
+                with self.assertRaises(GATE.Unavailable):
+                    self.verify()
+
     def test_rerun_started_during_lookup_refuses_reuse(self):
         self.api.metadata["actions/runs/17"] = {**self.api.run, "run_attempt": 3, "status": "in_progress"}
         with self.assertRaises(GATE.Unavailable):
