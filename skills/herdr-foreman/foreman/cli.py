@@ -153,6 +153,8 @@ def build_parser():
     progression_service.register_commands(sub, common)
     workflow_adoption.register_commands(sub, common)
     delivery_collection.register_commands(sub, common)
+    from . import plan_explanation
+    plan_explanation.register_commands(sub, common)
     from . import workflow_batch
     workflow_batch.register_commands(sub, common)
 
@@ -3491,6 +3493,11 @@ def cmd_progression_batch(args, client=None, warn=None, trace=None):
         client if client is not None else _client(args, trace=trace), clock=now_iso)
 
 
+def cmd_explain_plan(args, client=None, warn=None, trace=None):
+    from . import plan_explanation
+    return plan_explanation.run_command(args, _state_path(args), _config_path(args)), None
+
+
 def cmd_supervision_gate(args, client=None, warn=None, trace=None):
     """Which pending supervision events need the foreman; see supervision_gate.py."""
     return supervision_gate.view(supervision.load(_state_path(args)), limit=args.limit, after=args.after), None
@@ -3532,6 +3539,7 @@ COMMANDS = {
     "progression-prepare-adoption": cmd_progression_adoption,
     "collect-deliveries": cmd_collect_deliveries,
     "progression-batch": cmd_progression_batch,
+    "explain-plan": cmd_explain_plan,
     **{command: cmd_recovery for command in ("task", "checkpoint", "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report", "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work", "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review", "recover-report", "assess-specialist", "close-task")},
     "detect-triggers": cmd_detect_triggers,
     "finding-churn": cmd_finding_churn,
@@ -3642,7 +3650,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             home.require_current(defaults)
             # Commands that may migrate or write state share its canonical lock.
             # Dry runs, probes, and retrospective reads remain read-only.
-            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "github-context", "check-member", "verify-foreman", "report-gate-status"} or (getattr(args, "dry_run", False) and args.command != "quarantine-context-evidence")
+            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "github-context", "check-member", "verify-foreman", "report-gate-status", "explain-plan"} or (getattr(args, "dry_run", False) and args.command != "quarantine-context-evidence")
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
