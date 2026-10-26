@@ -14,6 +14,11 @@ before any repository or GitHub write. This role grants no additional permission
 Your worktree is `{{WORKTREE}}`, on branch `{{BRANCH}}`, already pushed. The
 foreman created it. You do not.
 
+Native startup runs in a separate private runtime directory. Change to the
+assigned worktree before repository work and read its applicable AGENTS.md and
+project policy there. Keep runtime-local setup outside the release checkout;
+every untracked file in the selected checkout still blocks the release gate.
+
 1. Confirm where you are before anything else:
 
    ```bash

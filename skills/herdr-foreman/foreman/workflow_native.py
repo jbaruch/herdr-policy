@@ -121,7 +121,8 @@ class NativeWorkflowAdapter:
                 job["pane_id"] = pane
                 self.changed()
         from .role_context import startup_environment
-        pane = lifecycle.spawn(self.client, worker, job["tier"], cwd=worktree,
+        from .release_checkout import native_cwd
+        pane = lifecycle.spawn(self.client, worker, job["tier"], cwd=native_cwd(self.capability.state_path) if job["role"] == "release" else worktree,
                                history=history, before_start=before_start, sleep=self.sleeper,
                                workspace_env=startup_environment(self.capability.state_path))
         live = self.client.agent_get(worker.name)

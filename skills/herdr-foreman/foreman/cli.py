@@ -32,6 +32,7 @@ from . import no_work_recovery, bootstrap_recovery, context_evidence, model_unav
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
 from . import progression_owner
 from . import progression_service, workflow_adoption, delivery_collection
+from . import release_checkout
 from . import config as config_owner
 from .config import FOREMAN_CONFIG_VERSION, default_config_path, load_config, load_foreman, load_judge, load_role_costs, select_agents
 from .errors import AgentBusyError, IDENTIFIER_UNAVAILABLE_KIND, IDENTIFIER_UNAVAILABLE_RECOVERY, TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND, PlanError, StateError, ForemanError, HerdrError, UsageError, owner_recovery
@@ -150,6 +151,7 @@ def build_parser():
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
     progression_owner.register_commands(sub, common)
+    release_checkout.register_commands(sub, common)
     progression_service.register_commands(sub, common)
     workflow_adoption.register_commands(sub, common)
     delivery_collection.register_commands(sub, common)
@@ -2138,6 +2140,8 @@ def _apply(args, client, warn, trace, hold_gates):
                     from .role_context import startup_environment
                     pane = lifecycle.spawn(
                         client, agents_by_name[name], tier,
+                        cwd=(release_checkout.native_cwd(state_path) if role == "release"
+                             and getattr(getattr(client, "context", None), "mode", "native") == "native" else None),
                         history=state["assignments"], before_start=preflight_start, owned=owned,
                         workspace_env=(startup_environment(state_path, _config_path(args))
                                        if getattr(getattr(client, "context", None), "mode", "native") == "native" else ()),
@@ -3494,6 +3498,13 @@ def cmd_progression_run(args, client=None, warn=None, trace=None):
                                            client if client is not None else _client(args, trace=trace), sleeper=time.sleep)
 
 
+def cmd_prepare_release_checkout(args, client=None, warn=None, trace=None):
+    from .native_policy import executing_policy_root
+    return release_checkout.prepare(_state_path(args), args.task, args.source, args.target, args.head,
+        args.ledger, args.now or now_iso(), client if client is not None else _client(args, trace=trace),
+        executing_policy_root()), None
+
+
 def cmd_progression_adoption(args, client=None, warn=None, trace=None):
     return workflow_adoption.run_command(args, _state_path(args),
         client if client is not None else _client(args, trace=trace)), None
@@ -3554,6 +3565,7 @@ COMMANDS = {
     "load-set": cmd_load_set,
     **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return", "progression-reconcile", "progression-resume")},
     "progression-run": cmd_progression_run,
+    "prepare-release-checkout": cmd_prepare_release_checkout,
     "progression-prepare-adoption": cmd_progression_adoption,
     "collect-deliveries": cmd_collect_deliveries,
     "progression-batch": cmd_progression_batch,
@@ -3672,7 +3684,7 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run", "progression-batch", "progression-prepare-adoption", "collect-deliveries"}
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run", "progression-batch", "progression-prepare-adoption", "collect-deliveries", "prepare-release-checkout", "progression-resume"}
             authority_transaction = service_capability is not None
             lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:

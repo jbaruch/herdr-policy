@@ -49,7 +49,7 @@ writer paths and separately exercise default compatibility behavior.
 | `<canonical-state-path>.bootstrap.json` | `skills/herdr-foreman/foreman/bootstrap_recovery.py` | Original Codex launch provenance and durable bootstrap transport/cleanup receipts |
 | `<state-path>.context-evidence/` | `skills/herdr-foreman/foreman/context_evidence.py` | Immutable original ledgers and schema-1 quarantine intent journals for the known fresh/no-clear contradiction |
 | `<state-path>.task-evidence/` | `skills/herdr-foreman/foreman/task_evidence.py` | Immutable original-owner backups and schema-1 preservation receipts for derived task-local evidence holds |
-| `<canonical-state>.release-<sha256(task)>.json` | `skills/herdr-foreman/foreman/release_flight.py` reader; staged checkout transaction owner is its sole future writer | Bounded task-local locator for an immutable Git-owned checkout intent; no file inventory or release approval |
+| `<canonical-state>.release-<sha256(task)>.json` | `skills/herdr-foreman/foreman/release_flight.py` reader; `release_checkout.py` is its sole gated transaction writer | Bounded task-local locator for an immutable Git-owned checkout intent; no file inventory or release approval |
 | Controller-configured private remote owner JSON | `skills/herdr-foreman/foreman/remote_owner.py` | Attested command context, current single-controller lease, indeterminate intent and task ingress; schema and writer/reader contract in `skills/herdr-foreman/references/remote-context.md` |
 
 ## Release checkout flight reader
@@ -84,11 +84,12 @@ absence of this in-flight fence; actual role, Git/head/branch/source, policy,
 holds, native effects and evidence checks still run. The transaction owner
 alone retires its exact settled locator; this reader never deletes it.
 
-The compatibility release ships these readers and both selected legacy-command
-and native-capability gates without a writer or bypass. Future locator/ready
-and Git handoff writes must remain behind the single false
-`release_activation.NEW_OWNER_WRITES_ENABLED` until both package channels
-publish these readers. Existing ordinary legacy work remains usable. Pending
+The 0.19.0 compatibility release ships these readers and both selected
+legacy-command and native-capability gates without a writer or bypass.
+`release_checkout.py` owns the subsequent transaction writer, which requires
+the one shared `release_activation.NEW_OWNER_WRITES_ENABLED` for every new
+locator/ready/Git handoff. Both package channels must publish the readers before
+the activation release enables that flag. Existing ordinary legacy work remains usable. Pending
 handoffs resume only through their exact verified owner intent, never a caller
 flag, empty-ledger reset or generic catch-and-drop.
 
@@ -1844,6 +1845,81 @@ PR" in `skills/herdr-foreman/references/specialists.md`; it adds no assessment
 record fields or separate approval artifact. Detection
 reads all-met, non-blocking consultation records and rechecks the report digest
 before relying on that binding. No operator-written approval or receipt is read.
+
+## Clean release checkout handoff
+
+Owner: `foreman/release_checkout.py` and `foreman/release_rebind.py`. The actual
+bound native foreman invokes `prepare-release-checkout`, using a task lease
+(the existing admitted lease, or an empty task-local lease for legacy work)
+and short canonical state/supervision transactions. All Git/native I/O runs
+outside those shared transactions. This is a handoff within release authority,
+never file-ownership evidence or permission to discard local content.
+
+The common Git directory retains immutable schema-1
+`foreman-release-<sha256 of absolute successor path>.json`. After creation the
+successor's private Git directory retains the identical
+`foreman-release-checkout.json`. Exact fields are `schema_version`,
+`state_path`, `task`, `source`, `path`, `branch`, `head`, `base_revision`,
+`source_provenance`, `evidence`, `binding`, `at`, and
+`authorizes_release: false`. The source's original provision schema-1 receipt
+is copied into `source_provenance` and remains unchanged at its original path.
+The clean successor receives an ordinary provision schema-1 receipt with the
+same original base/default provenance and its actual new path. Existing
+private metadata, links, unknown schemas and occupied targets are preserved;
+unsupported or conflicting receipts refuse rather than reset. Metadata is
+owned, regular, private, immutable and bounded to 64 KiB; no transcripts or
+source-tree copies are exported.
+
+For legacy tasks, `evidence` is `{kind: ledger, receipt: {path, sha256, bytes}}`
+over the bounded owner-bound task ledger ending in same-head
+`ready_for_release`. Its original prefix stays verifiable as history appends.
+For admitted tasks, `evidence` is `{kind: workflow, grant, progress, reports,
+successor}`: the original current grant/progress, byte-bound report receipts
+and successor immutable contract receipt. The original grant retains its
+original contract receipt. The successor contract changes only
+`repository.worktree`; admission type, adoption receipt, all inputs and effect
+scope stay exact. The current grant keeps its existing schema 2/3 fields and
+increments generation; current progress remains schema 2 with the same jobs,
+head, round, blockers and publication state, while its consumed plan clears.
+Historical assignments/assessments/dispatches/grants/counters remain untouched.
+An existing exact pre-launch `workflow_owner_refused` packet is retained in the
+intent and resumed through the existing exception owner after actual clean
+Git readback. No new recovery field or event kind is written under an old
+schema. An interrupted Git creation resumes only this exact intent; it never
+force-checks out or deletes an occupied path.
+
+Before the first Git effect, the short owner commit checks a fresh selected-task
+snapshot and current binding/holds, then preserves the immutable intent and
+task-local flight locator described above. Pending flight blocks only that
+task's ordinary commands/capability and direct re-admission. Independent task
+checkpoints remain writable during fetch and worktree effects. The final short
+commit reloads fresh primary/supervision data, rechecks current other writer
+scopes and selected task facts, saves only the intended current task rebind,
+publishes the exact ready receipt and retires only its matching settled locator.
+The immutable Git intent, ready receipt and retained source remain preserved.
+A pre-effect intent with neither its original locator nor a matching ready
+receipt proves no previous Git outcome; preserve it and choose a fresh target
+through normal preparation. It never supplies a generic replay waiver.
+
+Adopted task readers use the versioned Git-owner bridge only after original
+brief/repository scope differs: both immutable intent copies, current task
+grant generation/binding, original/successor contract receipts and registered
+base must agree. The source remains detached at its original head in the same
+common repository; the clean successor matches current accepted task Git facts.
+Original transfer closure continues citing its original contract receipt.
+A copied branch, caller-supplied path, changed receipt or missing source proves
+no bridge. Earlier schema-3 readers refuse the changed source scope. All new
+checkout handoff intents/locators therefore follow the shared false activation flag;
+already recorded handoffs remain readable/replayable. No contract/adoption
+field is added under an older header.
+
+Native release launches use a fresh private `native-*` cwd under
+`<canonical-state-path>.release-runtime/`, outside the selected Git checkout.
+The release brief names the worktree and requires its applicable project
+policy. Runtime-created local files are retained in their own cwd; no blanket
+ignore or cleanup classification is created. The original dirty source remains
+visible in ordinary worktree inspection. Any unrelated private/untracked file
+in the clean successor still blocks the unchanged generic release gate.
 
 ## Trigger classification output
 

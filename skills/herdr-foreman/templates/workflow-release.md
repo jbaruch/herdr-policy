@@ -1,5 +1,10 @@
 # Native release responsibility
 
+Native startup runs outside the repository in a private owner runtime directory.
+Change to the repository.worktree in the admitted task before repository work;
+read its applicable AGENTS.md and project policy. Keep runtime-local setup
+outside that checkout. Any untracked file there still blocks release cleanliness.
+
 Run the complete selected coding-policy release skill and all of its binding
 step references. This assignment owns the authorized release outcome, through
 actual merge and each selected publication. The executor owns local task
