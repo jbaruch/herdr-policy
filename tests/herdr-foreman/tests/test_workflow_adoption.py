@@ -21,7 +21,7 @@ from tests import test_workflow_service as workflow_fixture
 from foreman import assign, cli, delivery_collection, progression_owner as authority, recovery, supervision
 from foreman import workflow_adoption as adoption, workflow_batch, workflow_contract, workflow_workspace as workspace
 from foreman.errors import UsageError
-from foreman.state import save_state, state_lock
+from foreman.state import add_assignment, save_state, state_lock
 
 
 class WorkflowAdoptionTest(unittest.TestCase):
@@ -206,6 +206,51 @@ class WorkflowAdoptionTest(unittest.TestCase):
             self.fx.owner.state()["assignments"])["one"]["remaining_fixes"], 2)
         self.assertEqual(self.fx.owner.state()["assignments"], state["assignments"])
         self.assertEqual(self.fx.owner.state()["recovery"]["tasks"]["one"]["base_revision"], self.fx.base)
+
+    def test_attributable_task_fault_holds_adoption_and_collection_without_repair(self):
+        state = self.fx.owner.state()
+        state["assignments"][0].update(cleared=False, clear_reason="automatic")
+        self.fx.path.write_text(json.dumps(state))
+        original = self.fx.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "contradictory assignment evidence"):
+            self.prepare()
+        def check(*args, **kwargs):
+            return {"wait": json.dumps({"agent": self.source_job["agent"],
+                "report_path": str(self.report), "found": True, "reason": "completed"})}, 0
+        result = delivery_collection.collect(self.fx.path, self.fx.native, self.fx.now(), check=check)
+        self.assertEqual(result["items"][0]["status"], "decision")
+        self.assertEqual(result["items"][0]["reason"], "task_evidence_held")
+        self.assertEqual(self.fx.path.read_bytes(), original)
+        self.assertTrue(supervision.load(self.fx.path)["members"][0]["active"])
+
+    def test_native_startup_preserves_another_tasks_concurrent_assignment(self):
+        self.prepare()
+        self.admit()
+        native_create = self.fx.native.workspace_create
+        def create(**options):
+            # This owner transaction occurs during native startup. It must
+            # succeed and retain its row through all later send callbacks.
+            with state_lock(self.fx.path):
+                state = self.fx.owner.state()
+                add_assignment(state, self.fx.now(), "developer", "other-task-contributor", task="two",
+                               cleared=True, clear_reason="automatic")
+                save_state(self.fx.path, state)
+            return native_create(**options)
+        with self.fx.owner.session() as cap:
+            runner = self.fx.runner(cap)
+            actual_plan = runner.planner
+            def plan(*args, **kwargs):
+                with state_lock(self.fx.path):
+                    pass
+                return actual_plan(*args, **kwargs)
+            runner.planner = plan
+            with patch.object(self.fx.native, "workspace_create", side_effect=create):
+                self.fx.advance(runner, lambda: bool(self.fx.progress()["jobs"].get("reviewer")))
+        state = self.fx.owner.state()
+        self.assertEqual([row["task"] for row in state["assignments"]], ["one", "two", "one"])
+        reviewer = next(row for row in state["recovery"]["dispatches"] if row["role"] == "reviewer")
+        self.assertEqual(reviewer["assignment_index"], 2)
+        self.assertEqual(state["assignments"][1]["agent"], "other-task-contributor")
 
     def test_three_task_batch_starts_legacy_verification_despite_decision_and_invalid_input(self):
         self.prepare()

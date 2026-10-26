@@ -15,6 +15,11 @@ from .state import add_assignment
 
 def reserve(state, task, generation, round_number, job, template, common, at):
     from .workflow_planning import correction_authority
+    confirmed = recovery.confirmed_fix(state["assignments"], task)
+    expected = round_number - 1 if job["role"] == "developer" and round_number else round_number
+    if confirmed != expected:
+        raise UsageError("The task's cumulative correction history changed during preparation; preserve its actual counter and obtain a current task-local decision before dispatch.",
+                         {"reason": "task_correction_counter_changed", "confirmed_fixes": confirmed})
     plan, work = correction_authority(state, task, round_number, job["role"])
     paths = {"common": common, job["role"]: job["brief"]}
     identifier, fingerprint = recovery.dispatch_identity(task, job["role"], job["agent"], round_number or None,

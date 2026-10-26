@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from . import engagement, recovery, report_delivery, report_gates, supervision
+from . import engagement, recovery, report_delivery, report_gates, supervision, task_evidence
 from . import workflow_workspace as workspace
 from .errors import UsageError
 
@@ -43,6 +43,7 @@ def source_evidence(state_path, state, member, dispatch, *, check_gates=True):
     """Authenticate the actual dispatched turn, independently of report assessment."""
     from .assign import assignment_text, tiered_prompt
     expected = supervision.expected_assignment(member)
+    task_evidence.require_clear(state, {expected["task"]})
     if (dispatch["status"] != "applied" or dispatch["result"] is None
             or any(dispatch[key] != expected[key] for key in ("task", "agent"))):
         raise UsageError("Restore the original applied dispatch and enrolled source identity before adoption.", {})
