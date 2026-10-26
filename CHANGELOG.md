@@ -9,6 +9,10 @@
 - Admit Antigravity task input only after the worker's live footer shows the requested model's captured native label, and record that display proof. A substituted, missing or uncaptured label sends nothing; Gemini rows stay unadmitted until a native launch of their exact model/effort pair is captured. Report recovery also requires the dispatched turn's native model selection to name the same label.
 - Recover Antigravity reports from the exact request inside the native `USER_REQUEST` envelope (#74). The 0.16 recovery compared the whole envelope with the bare dispatch and could never accept an authentic completed turn. Unknown prefixes, nested or quoted wrappers, unknown, repeated or reordered blocks and trailing bytes refuse. Tests replay byte-exact captured transcripts, displays and the raw effort warning instead of synthetic bare prompts.
 
+## 0.16.2 — 2026-10-25
+
+- Update the Go setup action to the immutable v7.0.0 revision in tests and publication (#28). Preserve the pinned Go toolchain and ACR publisher. Both package manifests advance together for the reviewed publisher change.
+
 ## 0.16.1 — 2026-10-25
 
 - Keep fresh/no-clear dispatch context evidence canonical, and reject inconsistent pairs before appending assignment history (#75).
