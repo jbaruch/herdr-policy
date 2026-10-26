@@ -8,8 +8,9 @@ Ready proves only absence of this in-flight fence, never dispatch/rebind or
 release authority. Other live Git, report, source, role and hold checks remain.
 
 No writer, migration, scan, cleanup or caller bypass exists in these readers.
-Future writers must use the shared false release activation after both package
-channels publish these readers. Only that owner retires its settled locator.
+First checkout writes follow the shared release activation: 0.19.0 keeps it
+disabled until both package channels publish these readers. Only that owner
+retires its settled locator.
 Unknown/changed/foreign/unreadable records hold the selected task and preserve
 all bytes. Missing locator means no checkout fence, not accepted task evidence.
 """

@@ -74,7 +74,9 @@ def collect(path, client, at, *, task=None, limit=context_output.DEFAULT_LIMIT, 
             continue
         expected_report = row["report"]
         expected_source = row["native_source"]
-        assert expected_report is not None
+        if expected_report is None:
+            row.update(status="decision", reason="delivery_provenance_unavailable")
+            continue
         try:
             if (workspace.capture(expected_report["path"])[0] != expected_report
                     or workspace.capture(expected_source["path"])[0] != expected_source):

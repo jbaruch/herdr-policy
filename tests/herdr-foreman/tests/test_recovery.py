@@ -1571,7 +1571,8 @@ class RecoveryTests(unittest.TestCase):
         old = copy.deepcopy(self.store)
         old["schema_version"] = 19
         before = copy.deepcopy(old)
-        self.assertFalse(migrate_store(old))
+        with patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", False):
+            self.assertFalse(migrate_store(old))
         self.assertEqual(old, before)
         with patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", True):
             self.assertTrue(migrate_store(old))

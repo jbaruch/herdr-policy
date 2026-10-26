@@ -87,7 +87,7 @@ def inspect(contract, task, *, built=False):
         raise UsageError("The writer's origin differs from the admitted GitHub target; preserve both and reconcile repository authority.", {})
     if git(root, "merge-base", "--is-ancestor", task["base_revision"], "HEAD", allow_absent=True) is None:
         raise UsageError("The writer no longer contains the registered task base; recover its authorized base before progressing.", {})
-    if git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all"):
+    if git(root, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"):
         raise UsageError("The selected writer has uncommitted work; preserve it and obtain a complete built report before verification or release.", {})
     head = git(root, "rev-parse", "HEAD").strip()
     tree = git(root, "rev-parse", "HEAD^{tree}").strip()
