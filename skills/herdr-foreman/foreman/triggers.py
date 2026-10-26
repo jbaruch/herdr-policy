@@ -296,7 +296,7 @@ def accepted_bootstrap(repo, base, artifact, digest, state_path):
         raise UsageError("Bootstrap consultation history is unreadable; restore the existing owner ledger.", {})
     expected = {"repo": str(Path(repo).resolve()), "base_revision": base,
                 "path": str(Path(artifact).resolve()), "sha256": digest}
-    for record in reversed(state["specialist_assessments"]):
+    for record in reversed(engagement.eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])):
         if record["role"] not in engagement.CONSULTATION_ROLES or not engagement.investigated(record):
             continue
         try:
@@ -353,11 +353,15 @@ def accepted_legacy_review(expected, task, state_path):
     if not usable:
         raise UsageError("Legacy consultation history is unreadable; restore the existing owner ledger before classification.", {})
     mismatched = set()
+    eligible = {row["id"] for row in engagement.eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])}
     for record in reversed(state["specialist_assessments"]):
         if record["role"] not in engagement.CONSULTATION_ROLES:
             continue
         if record["task"] != task:
             mismatched.add("task")
+            continue
+        if record["id"] not in eligible:
+            mismatched.add("assessment acceptance" if record["source"] != "report" else "native request/model proof")
             continue
         if not engagement.investigated(record):
             mismatched.add("assessment acceptance")

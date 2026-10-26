@@ -86,7 +86,7 @@ def _validate(data, path, *, version=SCHEMA_VERSION):
             raise StateError("Malformed probe gate {}. Preserve it and restore the original owner record; do not discard its retained surfaces.".format(path), {})
         timestamp(row["at"])
         try:
-            parse_tiers({"coordination": row["tier"]}, row["kind"], no_effort_rows=frozenset({"coordination"}))
+            parse_tiers({"coordination": row["tier"]}, row["kind"], no_effort_rows=frozenset({"coordination"}), saved=True)
         except ConfigError as exc:
             raise StateError("Malformed original tier in probe gate {}. Preserve the retained pane and restore the original owner evidence before measuring or resolving.".format(path), {}) from exc
         native = row["native"]

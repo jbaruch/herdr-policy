@@ -310,7 +310,7 @@ class EngagementTest(unittest.TestCase):
         self.retire()
         with self.assertRaises(UsageError):
             engagement.require_followup(again, self.path, {"advisor": "worker"})
-        self.assertEqual(recovery.accepted(again["specialist_assessments"]), [])
+        self.assertEqual(recovery.accepted(again["specialist_assessments"], again["recovery"]["dispatches"]), [])
         with self.assertRaises(UsageError) as caught:
             engagement.record_assessment(again, self.path, self.data, LATER)
         self.assertIn("migrated foreman assessment", caught.exception.message)
@@ -327,9 +327,30 @@ class EngagementTest(unittest.TestCase):
                 self.assertFalse(usable)
                 self.assertEqual(self.path.read_bytes(), before)
 
+    def test_schema_two_keeps_history_without_inventing_antigravity_delivery_proof(self):
+        self.assess()
+        self.retire()
+        record = self.state["specialist_assessments"][0]
+        record["schema_version"] = 2
+        record.pop("native_delivery")
+        before = json.dumps(record, sort_keys=True)
+        self.assertFalse(engagement.migrate_assessments(self.state))
+        engagement.validate_assessments(self.state)
+        dispatch = self.state["recovery"]["dispatches"][0]
+        self.assertTrue(engagement.native_delivery_proven(record, dispatch))
+        dispatch.update(worker_kind="antigravity-template", provider="agy")
+        engagement.validate_assessments(self.state)
+        self.assertFalse(engagement.native_delivery_proven(record, dispatch))
+        self.assertEqual(engagement.eligible_assessments(self.state["specialist_assessments"], self.state["recovery"]["dispatches"]), [])
+        with self.assertRaisesRegex(UsageError, "eligible report-contract assessment"):
+            engagement.require_followup(self.state, self.path, {"advisor": "worker"})
+        with self.assertRaisesRegex(UsageError, "Reassess the existing report"):
+            engagement.require_accepted(self.state, record["dispatch"], record["report"])
+        self.assertEqual(json.dumps(record, sort_keys=True), before)
+
     def test_corrupt_assessment_preserves_owner_file_and_refuses_read(self):
         self.assess()
-        variants = ({"schema_version": 3}, {"assignment_index": 9}, {"assignment_index": False}, {"agent": "other-worker"},
+        variants = ({"schema_version": engagement.ASSESSMENT_SCHEMA_VERSION + 1}, {"assignment_index": 9}, {"assignment_index": False}, {"agent": "other-worker"},
                     {"task": "another-task"}, {"at": "2026-02-03T09:00:00Z"}, {"source": "operator"},
                     {"verdict": "approved"}, {"criteria": 3}, {"legacy": {"outcome": "x", "summary": "y"}},
                     {"gap": {"message": "x", "gaps": []}},
@@ -428,7 +449,7 @@ class EngagementTest(unittest.TestCase):
             self.assess(data)
         self.assertNotIsInstance(reused.exception, engagement.ContractGap)
         self.assertEqual(self.state["specialist_assessments"], before)
-        self.assertEqual(recovery.accepted(self.state["specialist_assessments"]), [])
+        self.assertEqual(recovery.accepted(self.state["specialist_assessments"], self.state["recovery"]["dispatches"]), [])
         save_state(self.path, self.state)
         self.assertTrue(load_state_checked(self.path)[1])
 
@@ -453,7 +474,7 @@ class EngagementTest(unittest.TestCase):
                 self.assertEqual(len(records), 1)
                 self.assertEqual((records[0]["source"], records[0]["contribution"]),
                                  ("contribution_only", contribution))
-                self.assertEqual(recovery.accepted(records), [])
+                self.assertEqual(recovery.accepted(records, persisted["recovery"]["dispatches"]), [])
                 with self.assertRaises(UsageError):
                     engagement.require_accepted(persisted, "consult-1", str(self.report))
 
@@ -469,7 +490,7 @@ class EngagementTest(unittest.TestCase):
                                    json.dumps({**binding, "head_revision": head}) + "\n")
             record = self.assess({**self.data, "id": "legacy-" + head})
             self.assertEqual((record["schema_version"], record["source"], record["task"], record["contribution"]),
-                             (2, "report", "task-1", "design"))
+                             (engagement.ASSESSMENT_SCHEMA_VERSION, "report", "task-1", "design"))
             self.assertEqual(record["report_evidence"], recovery.receipt(str(self.report))[0])
             engagement.validate_assessments(self.state)
         for change in ({"head_revision": "HEAD"}, {"head_revision": "c" * 12}, {"head_revision": None},
@@ -522,7 +543,7 @@ class EngagementTest(unittest.TestCase):
                     self.assertIsInstance(caught.exception, engagement.ContractGap)
                     record = self.state["specialist_assessments"][-1]
                     self.assertEqual((record["source"], record["contribution"]), ("contribution_only", "design"))
-                    self.assertEqual(recovery.accepted(self.state["specialist_assessments"]), [])
+                    self.assertEqual(recovery.accepted(self.state["specialist_assessments"], self.state["recovery"]["dispatches"]), [])
 
     def test_two_actual_trigger_declarations_are_refused_whatever_is_quoted(self):
         actual = "TRIGGER_DECLARATION: not-json"

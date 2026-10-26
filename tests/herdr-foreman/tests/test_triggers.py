@@ -1158,6 +1158,22 @@ class BootstrapDeclarationCommandTest(TempCase):
         self.assertEqual(code, 0, err.getvalue())
         self.assertEqual(json.loads(out.getvalue())["fired"], [])
 
+    def test_legacy_antigravity_consultation_establishes_no_bootstrap_authority(self):
+        self.write_plan()
+        self.assess_artifact()
+        state = self.owner.saved()
+        for record in state["specialist_assessments"]:
+            record["schema_version"] = 2
+            record.pop("native_delivery", None)
+        for dispatch in state["recovery"]["dispatches"]:
+            dispatch["provider"] = "agy"
+        save_state(self.owner.state, state)
+        before = self.owner.state.read_bytes()
+        code, out, err = self.run_cli()
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("no accepted consultation", err)
+        self.assertEqual(self.owner.state.read_bytes(), before)
+
     def test_unmet_consultation_establishes_no_bootstrap_authority(self):
         self.write_plan()
         self.assess_artifact(acceptance="unmet")
@@ -1440,6 +1456,19 @@ class LegacyReviewCommandTest(TempCase):
         self.head = new_head
         self.assess()
         self.assertEqual(self.run_cli()[0], 0)
+
+    def test_legacy_antigravity_report_cannot_authorize_legacy_review(self):
+        self.assess()
+        state = self.owner.saved()
+        for record in state["specialist_assessments"]:
+            record["schema_version"] = 2
+            record.pop("native_delivery", None)
+        for dispatch in state["recovery"]["dispatches"]:
+            dispatch["provider"] = "agy"
+        save_state(self.owner.state, state)
+        before = self.owner.state.read_bytes()
+        self.assertIn("native request/model proof", self.refused())
+        self.assertEqual(self.owner.state.read_bytes(), before)
 
     def test_four_key_bootstrap_binding_cannot_authorize_legacy_review(self):
         binding = self.binding()

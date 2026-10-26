@@ -7,7 +7,9 @@ takes the foreman's reading of the report, and it never accepts the whole task.
 Reading history validates stored relationships without reopening old sources.
 Warm follow-up revalidates those sources and the retired fleet enrollment.
 
-Record schema 2 (state-schema.md, Specialist Assessments). A schema-1 record
+Record schema 3 (state-schema.md, Specialist Assessments) adds the canonical
+native-source receipt for Antigravity's actual request/model proof. Schema 2
+remains readable history; its Antigravity rows gain no such authority. A schema-1 record
 held the foreman's own `outcome`, `summary` and `contribution`; the owner
 migration (`migrate_assessments`) moves that prose under `legacy` with
 `source: foreman_assessment`. A legacy record keeps a `design` or
@@ -32,7 +34,8 @@ from .tiers import canonical_role
 from . import supervision
 
 
-ASSESSMENT_SCHEMA_VERSION = 2
+ASSESSMENT_SCHEMA_VERSION = 3
+PREVIOUS_SCHEMA_VERSION = 2
 #: The one older record schema the owner migration upgrades.
 LEGACY_SCHEMA_VERSION = 1
 CONSULTATION_ROLES = report_contract.CONSULTATION_ROLES
@@ -50,9 +53,31 @@ _BOUND_FIELDS = frozenset({"schema_version", "at", "assignment_index", "task", "
                            "report_evidence", "delivery_evidence"})
 #: Exactly the fields a schema-1 record carries.
 LEGACY_FIELDS = INPUT_FIELDS | RETIRED_INPUT_FIELDS | _BOUND_FIELDS
-#: Exactly the fields a schema-2 record carries.
+#: Exactly the fields a schema-3 record carries.
 RECORD_FIELDS = INPUT_FIELDS | _BOUND_FIELDS | frozenset(
-    {"source", "brief_evidence", "criteria", "acceptance", "verdict", "contribution", "legacy", "gap"})
+    {"source", "brief_evidence", "criteria", "acceptance", "verdict", "contribution", "legacy", "gap", "native_delivery"})
+PREVIOUS_FIELDS = RECORD_FIELDS - {"native_delivery"}
+
+
+def requires_native_delivery(dispatch):
+    tier = (dispatch.get("result") or {}).get("tier")
+    return dispatch.get("provider") == "agy" or isinstance(tier, dict) and tier.get("kind") == "agy"
+
+
+def native_delivery_proven(record, dispatch):
+    """Legacy Antigravity assessments never imply the newer native-model proof."""
+    return (not requires_native_delivery(dispatch)
+            or record.get("schema_version") == ASSESSMENT_SCHEMA_VERSION and record.get("native_delivery") is not None)
+
+
+def eligible_assessments(assessments, dispatches):
+    """Positive evidence only; retain unfiltered history for contributor exclusions."""
+    by_id = {row["id"]: row for row in dispatches}
+    return [row for row in assessments if row.get("source") == "report"
+            and (dispatch := by_id.get(row.get("dispatch"))) is not None
+            and dispatch["status"] == "applied" and native_delivery_proven(row, dispatch)]
+
+
 #: Line fields a migrated or contribution-only record holds as null.
 _LINE_FIELDS = ("brief_evidence", "criteria", "acceptance", "verdict")
 
@@ -141,7 +166,7 @@ def migrate_assessments(payload):
         upgraded = {key: record[key] for key in INPUT_FIELDS | _BOUND_FIELDS}
         upgraded.update(schema_version=ASSESSMENT_SCHEMA_VERSION, source="foreman_assessment",
                         brief_evidence=None, criteria=None, acceptance=None, verdict=None,
-                        contribution=record["contribution"], gap=None,
+                        contribution=record["contribution"], gap=None, native_delivery=None,
                         legacy={"outcome": record["outcome"], "summary": record["summary"]})
         records[index] = upgraded
         changed = True
@@ -205,8 +230,10 @@ def validate_assessments(state):
         raise UsageError("State requires a specialist_assessments array; restore the owner-written history.", {})
     ids = set()
     for record in records:
-        if (not isinstance(record, dict) or set(record) != RECORD_FIELDS or type(record.get("schema_version")) is not int
-                or record["schema_version"] != ASSESSMENT_SCHEMA_VERSION or not _text_in(record.get("source"), SOURCES)):
+        if (not isinstance(record, dict) or type(record.get("schema_version")) is not int
+                or record["schema_version"] not in (PREVIOUS_SCHEMA_VERSION, ASSESSMENT_SCHEMA_VERSION)
+                or set(record) != (PREVIOUS_FIELDS if record["schema_version"] == PREVIOUS_SCHEMA_VERSION else RECORD_FIELDS)
+                or not _text_in(record.get("source"), SOURCES)):
             raise _corrupt()
         _input({key: record[key] for key in INPUT_FIELDS})
         text(record["at"], "assessment time")
@@ -226,6 +253,8 @@ def validate_assessments(state):
             if record[key]["path"] != record[source]:
                 raise UsageError("Specialist assessment receipt names a different artifact; preserve its original evidence.", {})
         _validate_lines(record, dispatch)
+        if record.get("native_delivery") is not None:
+            validate_receipt(record["native_delivery"])
 
 
 def _gap_refusal(record):
@@ -301,6 +330,8 @@ def record_assessment(state, state_path, data, at):
               and proof.get("agent") == dispatch["agent"] and proof.get("report_path") == data["report"])
     if not waited and recovered is None:
         raise UsageError("Delivery receipt must prove this worker's exact report arrived; a lifecycle status or pending checkpoint is insufficient.", {})
+    from .report_delivery import require_primary_delivery
+    native_delivery = require_primary_delivery(dispatch, state["assignments"][index], supervision.expected_assignment(member), data["report"])
     # The RESPONSIBILITY, never the seat: this record is independently
     # versioned, and widening its `role` to hold `reviewer#api` would repurpose
     # the field without versioning it (rules/stateful-artifacts.md Migration
@@ -309,7 +340,8 @@ def record_assessment(state, state_path, data, at):
     bound = {"schema_version": ASSESSMENT_SCHEMA_VERSION, "at": at, **data,
              "assignment_index": index, "task": dispatch["task"],
              "role": role, "agent": dispatch["agent"],
-             "report_evidence": report_evidence, "delivery_evidence": delivery_evidence}
+             "report_evidence": report_evidence, "delivery_evidence": delivery_evidence,
+             "native_delivery": native_delivery}
     try:
         brief_evidence, criteria = _brief_criteria(dispatch) if role in CONSULTATION_ROLES else (None, None)
         lines = report_contract.report_lines(body, role, specialty(dispatch), criteria)
@@ -354,7 +386,8 @@ def accepted_investigations(state):
     These gates rely on the investigation's outcome, not only its acceptance:
     an investigator seated with a verdict specialty can record `blocking`.
     """
-    return [row for row in state["specialist_assessments"] if row["role"] == "investigator" and investigated(row)]
+    return [row for row in eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])
+            if row["role"] == "investigator" and investigated(row)]
 
 
 def investigated(record):
@@ -385,6 +418,8 @@ def require_accepted(state, dispatch_id, report):
                          "record `needs_work` naming its gap.".format(dispatch_id, report, runnable.command("assess-specialist")),
                          {"dispatch": dispatch_id})
     record = records[-1]
+    if not native_delivery_proven(record, dispatch):
+        raise UsageError("This legacy Antigravity assessment has no native model/request proof. Reassess the existing report through the owner with a new assessment id; preserve the old record and do not dispatch replacement work.", {})
     current, _body = receipt(report)
     if current != record["report_evidence"]:
         raise UsageError("Report {} changed since its assessment; assess the current bytes before accepting.".format(report),
@@ -399,15 +434,16 @@ def require_accepted(state, dispatch_id, report):
 
 def require_followup(state, state_path, assignments):
     """Require report-assessed prior work and retired observation ownership, not idle."""
+    eligible = eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])
     for role, name in assignments.items():
         prior = latest_assignment(state["assignments"], agent=name)
         if prior is None:
             raise UsageError("No previous specialist assignment exists; dispatch a fresh consultation first.", {})
         index, row = prior
-        assessment = next((item for item in reversed(state["specialist_assessments"])
+        assessment = next((item for item in reversed(eligible)
                            if item["assignment_index"] == index and item["source"] == "report"), None)
         if assessment is None or row["role"] != canonical_role(role):
-            raise UsageError("Retained specialist needs the preceding assignment's report-contract assessment; a migrated foreman assessment never qualifies. Run `{}` before following up.".format(
+            raise UsageError("Retained specialist needs the preceding assignment's eligible report-contract assessment; migrated foreman and unproven native assessments never qualify. Reassess the existing report with `{}` under a new id before following up.".format(
                 runnable.command("assess-specialist")), {})
         for key in ("report_evidence", "delivery_evidence"):
             current, _body = receipt(assessment[key]["path"])

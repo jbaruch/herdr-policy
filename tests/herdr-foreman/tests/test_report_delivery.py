@@ -6,6 +6,7 @@ _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[1]))
 _test_sys.path.insert(0, str(_TestPath(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -21,11 +22,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from foreman import cli, recovery, report_delivery as delivery, state
-from foreman.assign import assignment_text
+from foreman.assign import assignment_text, tiered_prompt
 from foreman.errors import UsageError
 from foreman.herdr import HerdrClient
 from tests.fakes import FakeRunner, pane_layout
-from tests import test_recovery_cli as owner_fixture
+from tests import agy_capture, test_recovery_cli as owner_fixture
 
 AT = "2026-09-01T12:00:00+00:00"
 SESSION = "native-session-361"
@@ -61,6 +62,21 @@ def grok_rows(final):
 
 def encode(rows):
     return "\n".join(json.dumps(row) for row in rows) + "\n"
+
+
+def agy_rows(prompt, final):
+    """The captured Antigravity turn carrying this dispatch; every other byte is native."""
+    rows = copy.deepcopy(agy_capture.SONNET_ROWS)
+    request = rows[0]["content"][len("<USER_REQUEST>\n"):rows[0]["content"].index("\n</USER_REQUEST>")]
+    rows[0]["content"] = rows[0]["content"].replace(request, prompt, 1)
+    rows[1]["content"] = final
+    return rows
+
+
+def agy_fallback_selection():
+    """The model the captured `--effort` fallback turn actually selected."""
+    first = json.loads(agy_capture.FALLBACK_TRANSCRIPT.splitlines()[0])["content"]
+    return first[first.index(" to ", first.index("`Model Selection`")) + 4:first.index(". No need to comment")]
 
 
 class MarkerColumnsTests(unittest.TestCase):
@@ -501,18 +517,53 @@ class NativeDeliveryTests(unittest.TestCase):
         native = {"source": antigravity_native.SOURCE, "agent": "agy", "kind": "id", "value": session}
         document["assignments"][0]["context_session"] = {"pane_id": PANE, **native}
         dispatch = document["recovery"]["dispatches"][0]
+        dispatch.update(worker_kind="antigravity-template", provider="agy")
         dispatch["result"]["context_session"] = {"pane_id": PANE, **native}
         pane = {**self.pane, "agent_session": native}
         Path(data["pane"]).write_text(json.dumps({"result": {"pane": pane}}))
         Path(data["visible"]).write_text("Native TUI: " + self.marker)
-        prompt = assignment_text("judge", dispatch["common"], dispatch["brief"])
-        rows = [{"step_index": 0, "type": "USER_INPUT", "source": "USER_EXPLICIT", "status": "DONE", "content": prompt},
-                {"step_index": 1, "type": "PLANNER_RESPONSE", "source": "MODEL", "status": "DONE", "content": self.marker}]
+        tier = {"model": "claude-sonnet-4-6", "effort": None}
+        prompt, prompt_hash = tiered_prompt(assignment_text("judge", dispatch["common"], dispatch["brief"]),
+                                            tier, dispatch["common"], dispatch["brief"])
+        dispatch["result"]["tier"] = {**tier, "prompt_hash": prompt_hash}
+        rows = agy_rows(prompt, self.marker)
+        enrolled = {"native_session": native, "report": data["report"]}
         with patch.object(antigravity_native, "sessions_root", return_value=self.tmp.resolve() / "native"):
             source = antigravity_native.transcript_path(session)
             assert source is not None
             source.parent.mkdir(parents=True)
+            # A bare prompt is the synthetic shape the native CLI never writes.
+            bare = copy.deepcopy(rows)
+            bare[0]["content"] = prompt
+            for altered in (bare, agy_rows(prompt + " ", self.marker), agy_rows("Quoted: " + prompt, self.marker)):
+                source.write_text(encode(altered))
+                with self.assertRaises(UsageError):
+                    delivery.require_primary_delivery(dispatch, document["assignments"][0], enrolled, data["report"])
+                with self.assertRaisesRegex(UsageError, "do not prove this report"):
+                    delivery.recover(document["recovery"], document["assignments"], dict(data, source=str(source)), AT)
+            # The captured fallback selected Gemini for a Sonnet request. An
+            # untiered dispatch, or one requesting another model, proves nothing.
+            substituted = agy_rows(prompt, self.marker)
+            substituted[0]["content"] = substituted[0]["content"].replace(
+                "Claude Sonnet 4.6 (Thinking)", agy_fallback_selection(), 1)
+            opus = {**tier, "model": "claude-opus-4-6-thinking"}
+            opus_prompt = tiered_prompt(assignment_text("judge", dispatch["common"], dispatch["brief"]),
+                                        opus, dispatch["common"], dispatch["brief"])[0]
+            for name, altered, saved in (
+                    ("substituted model", substituted, dispatch["result"]["tier"]),
+                    ("untiered dispatch", agy_rows(assignment_text("judge", dispatch["common"], dispatch["brief"]), self.marker), None),
+                    ("other requested model", agy_rows(opus_prompt, self.marker), {**opus, "prompt_hash": prompt_hash})):
+                source.write_text(encode(altered))
+                changed = copy.deepcopy(document)
+                changed["recovery"]["dispatches"][0]["result"]["tier"] = saved
+                with self.subTest(primary=name), self.assertRaises(UsageError):
+                    delivery.require_primary_delivery(changed["recovery"]["dispatches"][0], changed["assignments"][0], enrolled, data["report"])
+                with self.subTest(name=name), self.assertRaisesRegex(UsageError, "native model selection"):
+                    delivery.recover(changed["recovery"], changed["assignments"], dict(data, source=str(source)), AT)
+            self.assertEqual(document["recovery"]["delivery_recoveries"], [])
             source.write_text(encode(rows))
+            proof = delivery.require_primary_delivery(dispatch, document["assignments"][0], enrolled, data["report"])
+            self.assertEqual(proof, {"path": str(source), "sha256": hashlib.sha256(source.read_bytes()).hexdigest()})
             data["source"] = str(source)
             prior = copy.deepcopy(document["assignments"])
             result = delivery.recover(document["recovery"], document["assignments"], data, AT)

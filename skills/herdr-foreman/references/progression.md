@@ -184,10 +184,11 @@ pending intent and stops progression. A dead process or free lease proves no
 effect outcome. Reconcile through the existing dispatch/native owners; the
 initial adapter does not automatically clear an ambiguous service intent.
 
-After the dispatch owners prove every expected member of a pending step
-`not_sent` and settle its enrollments, the verified bound foreman may run
+After the effect owner supplies its operation-specific canonical readback and
+settles its enrollments or retained probes, the verified bound foreman may run
 `progression-reconcile --state OWNER --record FILE`. The record contains `task`,
-actual `expected_generation`, exact `intent` and explicit `authorization`.
+actual `expected_generation`, exact `intent`, explicit `authorization` and,
+for measurement, a schema-1 `readback` with `kind` and canonical `sha256`.
 The service lease must be free. This clears only that pending intent, leaves
 the schema-1 cursor unchanged and records one owner reconciliation receipt. It does not
 dispatch, resume a hold or accept work. Missing, uncertain or partly applied
@@ -202,6 +203,26 @@ named dispatch is owner-proved `not_sent`, all task enrollments are settled and
 no report exists. It retires the intent and current plan, preserving the task,
 generation, original base and correction counter. Subsequent execution selects
 a fresh native identity; the old no-send row remains canonical evidence.
+
+A schema-2 measurement uses `intent_not_started`, `snapshot_completed` or
+`probes_closed_incomplete`. The first hashes the durable intent and requires
+`effects_started: false`. A completed snapshot must hash to exactly one state-owner
+snapshot and match the intent's saved `--now`, current native measurement context,
+captured config and complete configured worker set. A probe readback must hash to
+one canonical closed startup/cleanup row, match the captured config and saved
+timestamp, leave no pending or live disposable probe, and records only an
+incomplete measurement outcome. Missing processes, dispatches, reports and timeouts
+are not readback. Legacy started measurements without a saved timestamp can use
+only one unambiguous exact probe/config receipt; a later snapshot is never adopted.
+
+Use `--readback-current` on the existing `progression-reconcile` command to derive
+the measurement evidence from its owners. Its record needs only the task,
+expected generation, pending intent and existing authorization. The owner selects
+one exact snapshot or retained probe attempt and records its actual digest;
+callers need no ledger dump or handwritten hash. Ambiguous or missing evidence
+leaves the intent pending. Repeating a settled request reads its existing receipt.
+Policy-change refusals name the expected and observed version/digest in the
+current exception, without loading policy history.
 
 `progression-resume --state OWNER --record FILE` retries a restored schema-2
 observation or cleanup exception. The record contains `task`, actual
@@ -230,3 +251,8 @@ settled dispatches/enrollments, no pending service intent and a free lease.
 `expected_generation` and explicit `authorization`; it increments generation
 and clears service capabilities. Do not edit owner files, reset a cursor,
 delete a lease, duplicate dispatch or infer a successful outcome to recover.
+After return, a new schema-2 admission binds the actual loaded policy and a fresh
+artifact directory. It increments authority generation and preserves the existing
+task record, base, assignment/snapshot/event history and cumulative correction
+value; the original first-measurement counter remains zero rather than being
+reclassified as an attempt.

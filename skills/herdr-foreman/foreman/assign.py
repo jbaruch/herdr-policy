@@ -62,7 +62,7 @@ from .composer import COMPOSER_READ_LINES, COMPOSER_READ_SOURCE, checkable
 from .probe import PROBE_READ_LINES, PROBE_READ_SOURCE, resolve_status, stderr_warn
 from .chronology import latest_assignment
 from .recovery import JUDGE_MODES, briefing_bytes, empty_recovery, fresh_transition, native_refusal_retry, task_record, validate_work
-from .launch import foreground_agent, restart_worker, verify_running, verify_running_permissions
+from .launch import foreground_agent, restart_worker, verify_native_model, verify_running, verify_running_permissions
 from .tiers import EFFORT_RANK, canonical_role, launch_flags, require_seatable, still_de_escalated, worker_launch_args
 from .report_delivery import marker_columns
 from .composition import normalize_requirement, parse_requirements, seat_holds
@@ -1267,6 +1267,8 @@ def apply(client, assignments, agents_by_name, paths, at, no_clear=False, settle
         def before_prompt():
             if fresh and assignment_scoped:
                 startup_observe()
+            if tier_record is not None:
+                verify_native_model(client, agent, step["pane_id"], tier)
             if on_before_send is not None:
                 before = {"cleared": cleared, "clear_reason": clear_reason,
                       "context_session": context_session, "tier": tier_record,

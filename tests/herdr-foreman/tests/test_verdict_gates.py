@@ -48,7 +48,7 @@ class VerdictCase(gate_fixture.LedgerCase):
 
     def parsed(self, path, dispatch, verdict="approved"):
         """An owner-parsed verdict, as a report-sourced assessment of `dispatch` records it."""
-        self.assessments.append({"source": "report", "verdict": verdict, "report": str(path), "dispatch": dispatch,
+        self.assessments.append({"source": "report", "verdict": verdict, "report": str(path), "dispatch": dispatch, "at": AFTER,
                                  "report_evidence": {"path": str(path), "sha256": digest(path)}})
 
     def open_sources(self):
@@ -114,6 +114,16 @@ class ReleaseGateTest(VerdictCase):
 
 
 class RecheckTest(VerdictCase):
+    def test_legacy_antigravity_assessment_never_becomes_native_model_approval(self):
+        self.verdict()
+        self.dispatch("d-agy", "reviewer", "antigravity", self.reread, AFTER, observed=AFTER)
+        self.dispatches[-1].update(worker_kind="antigravity-template", provider="agy")
+        self.parsed(self.reread, "d-agy")
+        self.assessments[-1]["schema_version"] = 2
+        with self.assertRaisesRegex(UsageError, "no owner-parsed"):
+            self.clear(evidence=str(self.reread), reason="Current source must still prove the native model")
+        self.assertEqual(len(gates.status(self.state)["open"]), 1)
+
     def test_an_approved_recheck_of_the_same_responsibility_clears(self):
         self.verdict()
         self.dispatch("d-review-2", "reviewer", "codex-b", self.reread, AFTER, observed=AFTER)

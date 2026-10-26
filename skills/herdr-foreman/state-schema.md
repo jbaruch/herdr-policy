@@ -723,7 +723,7 @@ document and arrives already stamped.
 
 ## Recovery records
 
-The recovery document uses `schema_version: 19`; individual records retain their
+The recovery document uses `schema_version: 20`; individual records retain their
 independent versions. Version 6 adds the dispatch fields `brief_identity`, `refusal` and
 `refusal_move` and the `refusal_authorizations` collection; version 7 adds the
 dispatch's send-time `provider`; version 8 adds the `diagnoses` collection;
@@ -928,6 +928,10 @@ removes it. Operations are `measure`, `apply`, `record`, `close`, `merge` and
 are `JOB_FIELDS` and `CLAIM_FIELDS` in the same owner module, with their human
 contract in `skills/herdr-foreman/references/task-workflow.md`. Claims never replace actual native
 delivery, independent identities, Git scope or existing gate evidence.
+New `measure` intents save their exact owner `--now` pair in `argv` before any
+effect. Its completed snapshot readback must carry that timestamp and the current
+native/config context digest. A pre-existing started intent with empty `argv`
+cannot adopt a later snapshot.
 
 `exception` is null or `{id, code, phase, sources, actions}`. `id` binds this
 occurrence to its task generation, phase, capture time and existing canonical
@@ -996,6 +1000,18 @@ its current plan, preserving generation, task, base, jobs and correction count.
 It requires settled enrollments and no report; a later execution plans a fresh
 native identity rather than reusing an uncertain attempt.
 
+The same command records `progression_measurement_reconciled` for one exact
+schema-2 measure intent. Event details retain the task, generation, intent,
+authorization and schema-1 readback `{schema_version,kind,sha256}`. The digest
+must identify exactly one canonical durable intent, state snapshot or retained
+probe row. Completed snapshots bind the saved measurement timestamp, captured
+config, full configured worker set and native context. Closed-probe incomplete
+outcomes bind the original config/timestamp and require no pending or live
+disposable probe. They never claim `not_sent`; uncertain input remains an
+incomplete measurement owned by that receipt. Unknown launch/close/business-send
+effects retain their existing owners. Replay matches the whole event input and
+writes nothing.
+
 The kernel lease is a dedicated empty file, not a schema-bearing authority
 record. Its separate empty `.owner` sibling holds a process-associated lock;
 `F_GETLK` joins the exact PID to both actual inode identities. A live process
@@ -1019,6 +1035,12 @@ compatible CLI owners and native hooks before admission; never run an old
 sidecar against admitted tasks. Readers do not independently migrate grants.
 The command and initial-adapter limits are in `skills/herdr-foreman/references/progression.md`.
 
+Version 20 adds the `progression_measurement_reconciled` event and its
+operation-specific replay contract. The owner upgrades known older stores
+without inventing this event; a version below 20 already carrying it refuses
+as unowned data. Older owners reject the newer store instead of ignoring the
+reconciliation history.
+
 ## Specialist assessment records
 
 `assess-specialist` appends records to the main state's `specialist_assessments`.
@@ -1028,10 +1050,10 @@ Its input is exactly `id`, `dispatch`, `report` and `delivery`; `outcome`,
 `skills/herdr-foreman/foreman/report_contract.py`, whose module docstring holds
 the line formats and refusal classes.
 
-Each schema-2 record contains `schema_version: 2`, `id`, `at`, `dispatch`,
+Each schema-3 record contains `schema_version: 3`, `id`, `at`, `dispatch`,
 `assignment_index`, `task`, `role`, `agent`, `report`, `delivery`,
 `report_evidence`, `delivery_evidence`, `source`, `brief_evidence`, `criteria`,
-`acceptance`, `verdict`, `contribution`, `legacy` and `gap`. The evidence objects
+`acceptance`, `verdict`, `contribution`, `legacy`, `gap` and `native_delivery`. The evidence objects
 contain absolute `path` and SHA-256 `sha256`. The report is the supervised
 assignment's enrolled path; delivery is saved successful `wait-report` JSON for
 that worker and path, or the exact owner-recorded `recover-report` output for
@@ -1047,6 +1069,7 @@ that dispatch and the same report bytes.
 | `contribution` | The report's optional `CONTRIBUTION:` value or null; a migrated record keeps its old value |
 | `legacy` | `{outcome, summary}` on a migrated record, else null |
 | `gap` | `{message, gaps}` on a `contribution_only` record: the refusal it replays on an identical retry (same input, same report bytes); else null |
+| `native_delivery` | Canonical native-source receipt after the owner proves an Antigravity request/model; null for other providers or unproven historical evidence |
 
 The role and specialty come from the owner dispatch, never from the caller. A
 report with a contract gap appends nothing, save a `contribution_only` entry
@@ -1069,12 +1092,16 @@ A `design` or `implementation` contribution on any record adds a same-task
 independence exclusion; nothing subtracts one. Missing, corrupt or unsupported
 assessment history follows the main state's preserve-and-refuse writer contract.
 
-Migration `1 → 2` runs in the owner while state loads, and is idempotent. It
+Migration `1 → 3` runs in the owner while state loads, and is idempotent. It
 moves `outcome` and `summary` under `legacy`, sets `source:
-foreman_assessment`, nulls the line fields and keeps `contribution`. A migrated
+foreman_assessment`, nulls the line fields and native delivery proof, and keeps `contribution`. A migrated
 record never satisfies `accepted`, a warm follow-up or the diagnose and judge
 gates; an in-flight consultation needs a fresh dispatch. A schema-1 record
-already carrying a schema-2 field is refused as corrupt. A record newer than 2
+already carrying newer fields is refused as corrupt. Schema-2 records remain
+readable without rewriting or inventing native proof. Their Antigravity rows
+cannot supply delivery/approval authority; reassess the same report under a
+new assessment id after the owner can prove its canonical request and model.
+A record newer than 3
 takes the lagging-reader path: no usable prior state, the file left untouched.
 The document's own version is unchanged.
 
@@ -1678,7 +1705,7 @@ Its authority contains `kind: legacy_review`, canonical absolute `repo` and
 `path`, full `base_revision` and `head_revision`, artifact `sha256`, exact `task`,
 accepted `assessment` id and `report_evidence: {path, sha256}`.
 This is read-only command output, not a stored authorization or migration.
-Ordinary specialist assessments remain schema 2; older owner state takes its
+Ordinary specialist assessments use schema 3 and retain readable schema-2 history; older owner state takes its
 existing migration refusal before classification and is left unchanged.
 
 ## Coding Policy Installation

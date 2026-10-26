@@ -18,6 +18,7 @@ sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-fore
 
 from foreman import attention, cli, members, report_gates as gates, supervision  # noqa: E402 -- the skill dir is on sys.path only from here
 from foreman.errors import StateError, UsageError  # noqa: E402 -- the skill dir is on sys.path only from here
+from foreman.state import save_state
 from tests.test_members import LATER, MembersCase, seed_contract  # noqa: E402 -- the skill dir is on sys.path only from here
 from foreman import supervision as store  # noqa: E402 -- the skill dir is on sys.path only from here
 
@@ -473,6 +474,46 @@ class InterleavingTest(GateCase):
 
 
 class CloseMemberGateTest(MembersCase):
+    def test_positive_assessment_remains_delivery_after_close_without_watcher_observation(self):
+        Path(self.report).write_text("VERDICT: approved\n")
+        seed_contract(self)
+        self.write_ledger("accepted")
+        self.assertEqual(store.load(self.path)["members"][0]["observed"], {})
+        members.close(self.path, "dispatch-a", self.ledger, LATER)
+        view = gates.ledger_view(self.path, JUDGE)
+        owner = {"id": "previous-review", "task": "task-a", "role": "reviewer", "specialty": None}
+        since = gates.timestamp("2026-09-01T11:00:00+00:00", "gate")
+        held = str(self.root / "old-review.md")
+        receipt = gates._rechecked(view, owner, held, since, self.report, {"gates": []})
+        self.assertEqual(receipt["dispatch"], "dispatch-a")
+        role, delivery = gates._delivered(view, owner, held, since, self.report, {"worker"})
+        self.assertEqual((role, delivery["dispatch"]), ("worker", "dispatch-a"))
+        Path(self.report).write_text("Changed report.\nVERDICT: approved\n")
+        with self.assertRaises(UsageError):
+            gates._rechecked(gates.ledger_view(self.path, JUDGE), owner, held, since, self.report, {"gates": []})
+        Path(self.report).write_text("VERDICT: approved\n")
+        with self.assertRaises(UsageError):
+            gates._rechecked(view, {**owner, "task": "foreign"}, held, since, self.report, {"gates": []})
+
+    def test_late_assessment_does_not_redate_a_pre_gate_delivery(self):
+        Path(self.report).write_text("VERDICT: approved\n")
+        state, _delivery = seed_contract(self)
+        state["specialist_assessments"][0]["at"] = LATER
+        save_state(self.path, state)
+        since = gates.timestamp("2026-09-01T12:01:00+00:00", "gate")
+        owner = {"id": "previous-review", "task": "task-a", "role": "reviewer"}
+        held = str(self.root / "old-review.md")
+        view = gates.ledger_view(self.path, JUDGE)
+        self.assertIsNone(view["deliveries"][0]["at"])
+        self.assertEqual(view["deliveries"][0]["assessment_at"], LATER)
+        with self.assertRaisesRegex(UsageError, "no delivery receipt"):
+            gates._delivered(view, owner, held, since, self.report, {"worker"})
+        digest = hashlib.sha256(Path(self.report).read_bytes()).hexdigest()
+        store.transaction(self.path, lambda data: store.append_event(data, LATER, "dispatch-a", "report_observed",
+            {"present": True, "path": self.report, "sha256": digest}))
+        role, delivery = gates._delivered(gates.ledger_view(self.path, JUDGE), owner, held, since, self.report, {"worker"})
+        self.assertEqual((role, delivery["dispatch"]), ("worker", "dispatch-a"))
+
     def gate(self, probabilities):
         # The report's recorded VERDICT is what an `accepted` closure reads first (#625).
         Path(self.report).write_text("B1 blocking: the parser accepts a quoted marker.\nVERDICT: approved\n")

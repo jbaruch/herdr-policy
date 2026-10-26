@@ -13,6 +13,7 @@ import os
 import re
 from pathlib import Path, PurePath
 
+from . import antigravity_native
 from .billing import billing_window, effective_multiplier
 from .errors import ConfigError, HerdrError, UsageError
 
@@ -32,6 +33,8 @@ TOP_MODELS = {
     "grok": frozenset({"grok-4.6"}),
     # Native agy models on the signed-in subscription, 2026-10-25. Review
     # alongside the provider catalog during the normal capability refresh.
+    # It takes no effort flag (NATIVE_NO_EFFORT_MODELS), so it can fill no
+    # judgment row; the pin keeps lower rows from claiming the top model.
     "agy": frozenset({"claude-opus-4-6-thinking"}),
 }
 EFFORTS = {
@@ -41,6 +44,10 @@ EFFORTS = {
     "agy": frozenset({"low", "medium", "high", "xhigh", "max"}),
 }
 NO_EFFORT_MODELS = frozenset({"claude-haiku-4-5", "haiku-4.5"})
+#: Per-kind models whose native CLI must not receive an effort flag. Their rows
+#: omit effort, launch without it and record none: no such row can satisfy a
+#: judgment floor or take an effort escalation.
+NATIVE_NO_EFFORT_MODELS = {"agy": antigravity_native.NO_EFFORT_MODELS}
 JUDGMENT_ROUNDS = frozenset({
     "architect", "reconciliation", "critic", "review",
     "hostile_verify", "recheck", "release_adjudication", "lead",
@@ -379,8 +386,13 @@ def verify_worker_permissions(kind, argv):
         raise HerdrError("Worker launch arguments do not prove YOLO mode. " + recovery, {})
 
 
-def parse_tiers(raw, kind, *, no_effort_rows=frozenset()):
-    """Validate an optional per-agent {round: tier} table; never invent rows."""
+def parse_tiers(raw, kind, *, no_effort_rows=frozenset(), saved=False):
+    """Validate an optional per-agent {round: tier} table; never invent rows.
+
+    `saved` reads a recorded launch's syntax: its argv proves what was
+    requested, so an effort that NATIVE_NO_EFFORT_MODELS now refuses for new
+    configuration stays readable history rather than discarding the ledger.
+    """
     if raw is None:
         return {}
     if kind not in TOP_MODELS:
@@ -397,15 +409,25 @@ def parse_tiers(raw, kind, *, no_effort_rows=frozenset()):
         if not isinstance(model, str) or not MODEL_ID.fullmatch(model):
             _error("Tier {!r} needs a model identifier, not a flag or command.".format(round_type))
         effort = entry.get("effort")
+        native_no_effort = model in NATIVE_NO_EFFORT_MODELS.get(kind, frozenset())
         if model in NO_EFFORT_MODELS:
             if kind != "claude" or effort is not None:
                 _error("Haiku accepts no effort flag; omit effort for its Claude tier.")
+        elif native_no_effort and effort is None:
+            pass
+        elif native_no_effort and not saved:
+            _error("Tier {!r}: {} model {!r} takes no effort flag; the native CLI substitutes another model for it. "
+                   "Omit effort.".format(round_type, kind, model))
         elif round_type in no_effort_rows and "effort" in entry and effort is None:
             # Exact-pair installed-launch evidence comes from opted-in config.
             # Routing rechecks freshness; no judgment floor or model pin moves.
             pass
         elif not isinstance(effort, str) or effort not in EFFORTS[kind]:
             _error("Tier {!r} needs an explicit effort from {}.".format(round_type, sorted(EFFORTS[kind])))
+        if round_type in JUDGMENT_ROUNDS and native_no_effort and effort is None:
+            _error("Judgment round {!r} cannot use {} model {!r}: it takes no effort, so nothing proves the high "
+                   "floor. Keep judgment rows on a worker kind whose pinned model accepts effort.".format(
+                       round_type, kind, model))
         if round_type in JUDGMENT_ROUNDS and (
             model not in TOP_MODELS[kind] or effort not in {"high", "xhigh", "max"}
         ):
@@ -506,14 +528,17 @@ def measured_pressure(headroom):
 
 
 def _escalated(agent, tier, chosen_round):
-    """The tier and row high-risk work runs at, or None when no review row exists.
+    """The tier and row high-risk work runs at, or None when none qualifies.
 
-    High risk also excludes a lower build/fix model, not only low effort.
+    High risk also excludes a lower build/fix model, not only low effort. A
+    model whose native CLI takes no effort flag has no effort step to raise.
     """
     if tier["model"] not in TOP_MODELS[agent.kind]:
         if "review" not in agent.tiers:
             return None
         tier, chosen_round = dict(agent.tiers["review"]), "review"
+    if tier["model"] in NATIVE_NO_EFFORT_MODELS.get(agent.kind, frozenset()):
+        return None
     if agent.kind in {"claude", "codex", "agy"} and tier["effort"] not in {"xhigh", "max"}:
         tier = {**tier, "effort": "xhigh"}
     return tier, chosen_round
@@ -617,6 +642,8 @@ def select_tier(agent, role, round_type=None, context=None, fix_round=None, head
     pressure = measured_pressure(headroom)
     de_escalated = False
     if needs_xhigh:
+        if tier["model"] in NATIVE_NO_EFFORT_MODELS.get(agent.kind, frozenset()):
+            raise MissingTierError("Agent {} has no proven effort step for high-risk work; choose a qualified worker whose native model supports the required effort, regardless of remaining headroom.".format(agent.name), {})
         escalated = _escalated(agent, tier, chosen_round)
         # A row already at the top model and effort, or a kind with no effort
         # above its configured one, has no step to decline. Recording one would
@@ -629,7 +656,7 @@ def select_tier(agent, role, round_type=None, context=None, fix_round=None, head
             # part of the selection the operator did not write down.
             de_escalated = True
         elif escalated is None:
-            raise MissingTierError("Agent {} has no review tier for high-risk work; add and qualify its review row before assigning it this round.".format(agent.name), {})
+            raise MissingTierError("Agent {} has no review tier or effort step for high-risk work; add and qualify a review row whose model accepts effort before assigning it this round.".format(agent.name), {})
         else:
             tier, chosen_round = escalated
     return {

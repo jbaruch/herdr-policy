@@ -61,7 +61,7 @@ RECOVERY_SCHEMA_VERSION = 1
 #: Version 18 owns closed no-work recovery receipts and their retry bindings.
 #: Version 19 owns version-2 task records with current service authority.
 #: Historical version-1 tasks stay legacy; migration never delegates a task.
-RECOVERY_STORE_VERSION = 19
+RECOVERY_STORE_VERSION = 20
 #: Three confirmed pre-input service/preflight failures buy no further identical start.
 #: Scope binds task/role/brief/account/template/model/effort, not pane, fresh
 #: identity or report destination. Exhaustion routes to causal diagnosis,
@@ -284,6 +284,8 @@ def _refuse_unowned_legacy(store, version):
         raise UsageError("Older recovery contains a task closure this version never wrote; preserve it for owner recovery.", {})
     if version < 17 and any(isinstance(row, dict) and row.get("kind") == "launch_transient_failure" for row in events):
         raise UsageError("Older recovery contains an unowned launch retry gate; preserve it for owner recovery.", {})
+    if version < 20 and any(isinstance(row, dict) and row.get("kind") == "progression_measurement_reconciled" for row in events):
+        raise UsageError("Older recovery contains an unowned measurement reconciliation; preserve it for owner recovery.", {})
     if version == 3:
         deliveries = store.get("delivery_recoveries")
         if not isinstance(deliveries, list):
@@ -728,16 +730,16 @@ def checkpoint(store, assignments, data, at, judge_agent):
     return record
 
 
-def accepted(assessments):
+def accepted(assessments, dispatches):
     """The report-sourced assessments stating every criterion met and no blocking verdict (#625).
 
     A migrated foreman assessment, a report with an `unmet` criterion, or one
     recording `VERDICT: blocking` never satisfies the diagnose or
     judge-investigation gate, which rely on the investigation's outcome.
     """
-    from .engagement import investigated
+    from .engagement import eligible_assessments, investigated
 
-    return [row for row in assessments if investigated(row)]
+    return [row for row in eligible_assessments(assessments, dispatches) if investigated(row)]
 
 
 def investigated_after(assignments, row, task, developer_index):
@@ -810,7 +812,7 @@ def require_investigation_before_judge(store, assignments, task, investigations,
     developer = latest_assignment(assignments, task=task, role="developer", status="applied")
     if developer is None:
         return None
-    if not any(investigated_after(assignments, row, task, developer[0]) for row in accepted(investigations)):
+    if not any(investigated_after(assignments, row, task, developer[0]) for row in accepted(investigations, store["dispatches"])):
         raise UsageError("Task {} sits at an exhausted allowance: consult the investigator and record `{}` on its report, every criterion met, before dispatching the judge, which rules on that assessment.".format(
             task, runnable.command("assess-specialist")), {})
     return None
@@ -1010,7 +1012,7 @@ def diagnose(store, assignments, data, at, judge_agent, enrolled_report, supervi
     # it. The assessment time is what matters: an investigator dispatched early
     # and assessed after the judge finished is not what the judge read (#408).
     judge_at = timestamp(assignments[judge[0]].get("at"), "Judge assignment chronology")
-    consulted = [row for row in accepted(investigations)
+    consulted = [row for row in accepted(investigations, store["dispatches"])
                  if investigated_after(assignments, row, data["task"], developer[0])
                  and timestamp(row["at"], "Investigator assessment chronology") < judge_at]
     if not consulted:
