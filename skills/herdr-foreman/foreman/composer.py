@@ -672,11 +672,29 @@ def identifier_unavailable_error(agent, pane_id, model):
         IDENTIFIER_UNAVAILABLE_KIND, runnable.command("plan"), IDENTIFIER_UNAVAILABLE_RECOVERY)
 
 
-def startup_pending_error(agent, pane_id):
+def startup_pending_error(agent, pane_id, *, client=None):
     """No authority decision: leave this named pre-input UI for its owner."""
+    if client is not None:
+        text, _ansi = read_pane(client, agent)
+        require_no_hook_review(text, agent, pane_id)
     return _fresh_startup_error("startup_dialog_pending",
         "Fresh startup for {} in {} has no proved empty composer; inspect its retained native pane. Nothing was sent.".format(agent.name, pane_id),
         {"agent": agent.name, "pane_id": pane_id})
+
+
+def require_no_hook_review(text, agent, pane_id, *, operation=None):
+    """Recognize the captured native menu without trusting or driving it."""
+    rows = [row.strip() for row in strip_ansi(text).splitlines()]
+    if (agent.kind == "codex" and "Hooks need review" in rows
+            and any("1. Review hooks" in row for row in rows)):
+        raise owner_recovery(
+            HerdrError("Native hook review is required for {} in {}; nothing was sent.".format(agent.name, pane_id),
+                       {"agent": agent.name, "pane_id": pane_id}),
+            "hook_review_required", operation or runnable.command("apply"),
+            "Open Review hooks in the retained native pane and inspect each exact changed command and its declared source. "
+            "The initial menu does not expose those commands. Apply only the existing authorized individual trust decisions; "
+            "never Trust all, type assignment text into the menu, or infer hook trust from YOLO. "
+            "Retry the same owner operation after the verified empty composer returns; preserve unknown sends and unrelated workers.")
 
 
 def _settle_fresh_composer(client, agent, pane_id, observe, sleep, warn):
@@ -697,9 +715,7 @@ def _settle_fresh_composer(client, agent, pane_id, observe, sleep, warn):
                 raise identifier_unavailable_error(agent, pane_id, model)
         # The native hook-review menu uses the same glyph as Codex's composer.
         # Recognizing its UI preserves the target, not permission to trust it.
-        rows = [row.strip() for row in strip_ansi(text).splitlines()]
-        if agent.kind == "codex" and "Hooks need review" in rows and any("1. Review hooks" in row for row in rows):
-            raise startup_pending_error(agent, pane_id)
+        require_no_hook_review(text, agent, pane_id)
         if not ansi or not composer.visible or codex_startup_pending(text, agent):
             if not ansi:
                 raise _fresh_startup_error("startup_evidence_missing", "Fresh startup lacks ANSI composer evidence; nothing was sent.", {"pane_id": pane_id, "ansi_read": ansi})
@@ -754,9 +770,11 @@ def ensure_ready(client, agent, pane_id=None, session=None, sleep=time.sleep, wa
     session = session if session is not None else DispatchSession()
     if text is None:
         text, ansi = read_pane(client, agent, warn=warn)
+    require_no_hook_review(text, agent, pane_id)
     text, ansi, composer = _wait_for_visible_composer(
         client, agent, pane_id, text, ansi, sleep, warn
     )
+    require_no_hook_review(text, agent, pane_id)
     if not composer.occupied:
         return text
 

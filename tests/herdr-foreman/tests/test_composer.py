@@ -1556,7 +1556,7 @@ class FreshStartupDeliveryTest(unittest.TestCase):
         with patch("foreman.composer.read_pane", return_value=(frame, True)), self.assertRaises(HerdrError) as caught:
             send_message(client, BY_NAME["codex"], "brief", "brief", before_prompt=boundary,
                          startup_observe=lambda: ("p1", 42), sleep=NO_SLEEP)
-        self.assertEqual(caught.exception.details["failure_kind"], "startup_dialog_pending")
+        self.assertEqual(caught.exception.details["failure_kind"], "hook_review_required")
         boundary.assert_not_called()
         client.agent_prompt.assert_not_called()
         client.pane_send_keys.assert_not_called()

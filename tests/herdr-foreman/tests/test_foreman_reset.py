@@ -224,6 +224,9 @@ class FakeClient:
         return [{"name": "other", "pane_id": "w2:p1", "agent_status": "idle", "agent": "codex"},
                 {"name": "foreman", "pane_id": PANE, "agent_status": status, "agent": self.kind}]
 
+    def agent_read(self, name, **_kwargs):
+        return {"claude": "❯ ", "codex": "› ", "grok": "│ ❯ "}[self.kind]
+
     def agent_wait(self, name, until=(), timeout_ms=None):
         self.waits.append(name)
 
@@ -1207,6 +1210,36 @@ class ResetCommandTest(CliCase):
         # Scheduling now observes a live name and bound native session. Keep
         # those reads isolated even when a test exercises non-default binaries.
         return super().run_cli(argv, client=FakeClient(["working"]) if client is None else client)
+
+    def test_reset_readiness_catches_hook_modal_before_any_handoff_artifact(self):
+        client = FakeClient(["idle"], kind="codex")
+        frame = "Hooks need review\n1 hook is new or changed.\n› 1. Review hooks\n2. Trust all and continue"
+        with patch.object(client, "agent_read", return_value=frame), \
+                patch("foreman.cli.supervision.load", return_value=supervision_data()[0]), \
+                patch("foreman.cli.memory.show", side_effect=AssertionError("no checkpoint required")), \
+                patch("foreman.cli._spawn_detached", side_effect=AssertionError("must not spawn")):
+            code, out, err = self.run_cli(self.base() + ["verify-foreman", "--reset-ready", "--pane", PANE], client=client)
+        self.assertEqual((code, out), (1, ""))
+        details = json.loads(err)["details"]
+        self.assertEqual(details["failure_kind"], "hook_review_required")
+        self.assertIn("each exact changed command", details["recovery"]["condition"])
+        self.assertFalse(self.state.exists())
+        self.assertFalse(foreman_reset.record_path(self.state).exists())
+        self.assertEqual(client.keystrokes, [])
+
+    def test_reset_readiness_is_read_only_and_unknown_modals_do_not_claim_readiness(self):
+        for frame, expected in (("› ", 0), ("› 1. Approve command", 1), ("Unknown overlay", 1)):
+            with self.subTest(frame=frame), \
+                    patch("foreman.cli.supervision.load", return_value=supervision_data()[0]):
+                client = FakeClient(["idle"], kind="codex")
+                with patch.object(client, "agent_read", return_value=frame):
+                    code, out, err = self.run_cli(self.base() + ["verify-foreman", "--reset-ready", "--pane", PANE], client=client)
+                self.assertEqual(code, expected, err)
+                self.assertFalse(foreman_reset.record_path(self.state).exists())
+                self.assertEqual(client.keystrokes, [])
+                if code == 0:
+                    self.assertTrue(json.loads(out)["native_session_verified"])
+                self.out, self.err = io.StringIO(), io.StringIO()
 
     def test_reset_status_cli_prints_only_the_selected_receipt(self):
         foreman_reset.schedule(self.state, {"pane_id": PANE, "stow": "round-7"}, RESET_AT,

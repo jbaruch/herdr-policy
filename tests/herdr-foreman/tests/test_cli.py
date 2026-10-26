@@ -3287,7 +3287,7 @@ class PublicOwnerRetryTest(unittest.TestCase):
                     code, _, err = invoke(arguments, native)
                     self.assertEqual(code, 1, err)
                     refused = json.loads("\n".join(line for line in err.splitlines() if not line.startswith(DIAGNOSTIC_PREFIX)))
-                    self.assertEqual(refused["details"]["failure_kind"], "startup_dialog_pending")
+                    self.assertEqual(refused["details"]["failure_kind"], "hook_review_required" if mode == "hook_menu" else "startup_dialog_pending")
                     evidence = refused["details"]["recovery"]["evidence"]
                     self.assertEqual(evidence["retained_agents"], ["judge-719"])
                     self.assertEqual(evidence["closed_agents"], [])

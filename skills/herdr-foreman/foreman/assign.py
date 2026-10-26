@@ -49,6 +49,7 @@ from .composer import (
     DispatchSession,
     send_command,
     send_message,
+    startup_pending_error,
 )
 from .errors import AgentBusyError, HerdrError, UsageError, owner_recovery
 from .herdr import (
@@ -1183,9 +1184,7 @@ def apply(client, assignments, agents_by_name, paths, at, no_clear=False, settle
                     "The apply owner must close only its proved pre-send surface and record not_sent before retrying the unchanged plan.")
             startup_identity = identity
             if live.get("agent_status") == "blocked":
-                raise owner_recovery(HerdrError("Fresh worker is blocked at native startup; nothing was sent.",
-                    {"agent": name, "pane_id": step["pane_id"]}), "startup_dialog_pending", runnable.command("apply"),
-                    "The owner must inspect and resolve this retained native dialog under Runtime Dialogs before retrying.")
+                raise startup_pending_error(agent, step["pane_id"], client=client)
             return identity
 
         if not tier:

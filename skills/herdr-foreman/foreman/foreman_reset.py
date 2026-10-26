@@ -1270,11 +1270,18 @@ def live_preflight(client, agents, pane_id, native_session):
     """Read-only scheduling prerequisites; no child, record or runtime input yet."""
     record = _foreman_record(client, pane_id, scheduling=True)
     name = require_name(record, pane_id, "schedule_preflight")
-    mechanics(agents, record.get("agent"), name)
+    agent = mechanics(agents, record.get("agent"), name)
     if pane_session(client, pane_id, expected_agent=record["agent"]) != native_session:
         raise SessionChanged("The foreman's pane {} no longer holds its bound native session; revalidate the current "
                              "foreman and supervision binding before scheduling. Nothing was scheduled or typed.".format(pane_id),
                              {"pane_id": pane_id, "reason": "native_session_changed", "phase": "schedule_preflight"})
+    from .composer import inspect_composer, read_pane, require_no_hook_review
+    text, ansi = read_pane(client, agent)
+    require_no_hook_review(text, agent, pane_id, operation=command("verify-foreman --reset-ready --pane " + shlex.quote(pane_id)))
+    composer = inspect_composer(text, agent, ansi=ansi)
+    if not ansi or not composer.visible or composer.occupied:
+        raise HerdrError("The foreman's native input surface is not a verified empty composer. Inspect its retained pane and resolve its modal or draft under existing authority before preparing or scheduling this handoff; nothing was typed.",
+                         {"pane_id": pane_id, "reason": "native_input_not_ready", "phase": "schedule_preflight"})
     return record
 
 

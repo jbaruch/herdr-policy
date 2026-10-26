@@ -554,7 +554,7 @@ def _prepare_fresh_probe(client, worker, pane, tier, *, sleep=time.sleep, warn=N
         original = identity
         status, _source = resolve_status(client, worker, live.get("agent_status"), warn=warn)
         if status == "blocked":
-            raise startup_pending_error(worker, pane)
+            raise startup_pending_error(worker, pane, client=client)
         if status not in READY_STATES:
             raise HerdrError("Fresh probe is not idle/done; no usage command was sent.", {"agent": worker.name, "pane_id": pane})
         return identity
@@ -562,7 +562,7 @@ def _prepare_fresh_probe(client, worker, pane, tier, *, sleep=time.sleep, warn=N
         ensure_ready(client, worker, pane, startup_observe=observe, sleep=sleep, warn=warn)
     except HerdrError as exc:
         setattr(exc, "_probe_startup_observation", original)
-        if exc.details.get("failure_kind") == "startup_dialog_pending":
+        if exc.details.get("failure_kind") in {"startup_dialog_pending", "hook_review_required"}:
             exc.details["startup_observation"] = original
         raise
     return original
@@ -693,13 +693,17 @@ def measure_worker_kinds(client, templates, measured_at, *, state_path=None, con
                 original = getattr(exc, "_probe_startup_observation", None)
                 if isinstance(exc.details.get("pane_closure"), dict):
                     closure = exc.details["pane_closure"]
-            needs_retention = (pane is not None and exc.details.get("failure_kind") == "startup_dialog_pending"
+            needs_retention = (pane is not None and exc.details.get("failure_kind") in {"startup_dialog_pending", "hook_review_required"}
                        and exc.details.get("agent") == probe.name and exc.details.get("pane_id") == pane)
             if needs_retention:
+                hook_review = exc.details.get("failure_kind") == "hook_review_required"
                 row = probe_recovery.retain(state_path, template, probe, pane, tier,
                     exc.details.get("startup_observation"), measured_at, config_path=config_path)
                 pending = True
                 exc = probe_recovery.diagnostic(state_path, row, herdr_bin=binary)
+                if hook_review:
+                    exc.details["native_modal"] = "hook_review"
+                    exc.message += " The retained native pane requires individual review of its exact changed hook definitions; YOLO does not grant hook trust."
             elif startup and pane is not None:
                 _capture_failure(exc, lambda text: _probe_failure_view(client, probe, pane, tier,
                     getattr(exc, "_probe_startup_observation", None), text))

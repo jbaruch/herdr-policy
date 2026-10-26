@@ -181,6 +181,8 @@ def build_parser():
     verify_foreman.add_argument("--pane", help="The foreman's pane (default: this Herdr pane, $HERDR_PANE_ID).")
     verify_foreman.add_argument("--config-only", action="store_true",
                                 help="Report only whether config declares a foreman block; no tier selection, no pane probe.")
+    verify_foreman.add_argument("--reset-ready", action="store_true",
+                                help="Check the bound native session and hook-review readiness before preparing a maintenance handoff. Read-only.")
 
     for command in ("retro-check", "retro-record"):
         retro_parser = sub.add_parser(command, parents=[common], help="Check or record a foreman-authored retrospective.")
@@ -2017,7 +2019,7 @@ def _apply(args, client, warn, trace, hold_gates):
         failures = []
         closed = []
         retained = []
-        if isinstance(primary, ForemanError) and primary.details.get("failure_kind") == "startup_dialog_pending":
+        if isinstance(primary, ForemanError) and primary.details.get("failure_kind") in {"startup_dialog_pending", "hook_review_required"}:
             name = primary.details.get("agent")
             if name in names and spawned[name] == primary.details.get("pane_id") and name not in sending:
                 retained.append(name)
@@ -3127,6 +3129,19 @@ def cmd_verify_foreman(args, client=None, warn=None, trace=None):
     if client is not None and getattr(getattr(client, "context", None), "mode", None) == "attested-remote":
         from .command_context import refuse
         raise refuse("native_foreman_tier_verifier_in_remote_context")
+    if getattr(args, "config_only", False) and getattr(args, "reset_ready", False):
+        raise UsageError("Select --config-only or --reset-ready; a config declaration cannot prove native readiness.", {})
+    if getattr(args, "reset_ready", False):
+        data = supervision.load(_state_path(args))
+        bound_pane = (data.get("binding") or {}).get("identity", {}).get("pane_id")
+        pane = args.pane or (os.environ.get("HERDR_PANE_ID") if "HERDR_ENV" in os.environ else None)
+        if not pane or pane != bound_pane:
+            raise UsageError("Reset readiness requires the bound foreman's actual pane; preserve its binding and select that pane before preparing a handoff.", {})
+        client = client if client is not None else _client(args, trace=trace)
+        live = foreman_reset.live_preflight(client, load_config(_config_path(args)), pane, foreman_reset.bound_session(data))
+        return {"pane": pane, "agent": live["agent"], "native_session_verified": True,
+                "hook_review_required": False, "checked": "current visible native frame",
+                "coverage": "Read-only pre-handoff check; grants no reset, hook trust or tool permission. Scheduling rechecks the live pane."}, None
     if getattr(args, "config_only", False):
         # The preflight's view when headroom did not pass: whether the seat is
         # configured is independent of any measurement.
