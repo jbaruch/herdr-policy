@@ -37,7 +37,7 @@ def block_calls(file, block):
     for line in lines[1:]:
         if not owned.search(line) or re.search(r"\.(?:sh|py)(?:[\"' \t]|$)", line) is None:
             continue
-        match = re.match(r'\s*(bash|python3) "\$HS/([^"\n]+)"', line)
+        match = re.match(r'\s*(bash|python3(?: -I)?) "\$HS/([^"\n]+)"', line)
         if match is None:
             raise AssertionError("covered script needs an explicit interpreter and quoted HS path in " + str(file))
         result.append((file, target.group(1), bootstrap, match.group(1), match.group(2)))
@@ -75,7 +75,7 @@ class SkillBootstrapTest(unittest.TestCase):
     def stub(self, root, relative, interpreter, marker):
         file = root / relative
         file.parent.mkdir(parents=True, exist_ok=True)
-        text = "print(" + repr(marker) + ")\n" if interpreter == "python3" else "printf '%s\\n' '" + marker + "'\n"
+        text = "print(" + repr(marker) + ")\n" if interpreter.split()[0] == "python3" else "printf '%s\\n' '" + marker + "'\n"
         file.write_text(text)
         file.chmod(0o644)
 
@@ -98,7 +98,7 @@ class SkillBootstrapTest(unittest.TestCase):
                 script = (root / relative).resolve()
                 self.assertTrue(script.is_relative_to(root.resolve()))
                 self.assertTrue(script.is_file(), str(script))
-                self.assertEqual(interpreter, {".sh": "bash", ".py": "python3"}[script.suffix])
+                self.assertEqual(interpreter.split()[0], {".sh": "bash", ".py": "python3"}[script.suffix])
                 if kind in bootstraps:
                     self.assertEqual(bootstrap, bootstraps[kind])
                 bootstraps[kind] = bootstrap

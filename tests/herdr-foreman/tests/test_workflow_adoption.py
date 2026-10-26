@@ -11,9 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import copy
+from contextlib import ExitStack, contextmanager
 import io
 import json
 import os
+from threading import Event, Thread
 import unittest
 from unittest.mock import patch
 
@@ -21,7 +23,7 @@ from tests import test_workflow_service as workflow_fixture
 from foreman import assign, cli, delivery_collection, progression_owner as authority, recovery, supervision
 from foreman import workflow_adoption as adoption, workflow_batch, workflow_contract, workflow_workspace as workspace
 from foreman.errors import UsageError
-from foreman.state import add_assignment, load_state_checked, save_state, state_lock
+from foreman.state import TransactionBusy, add_assignment, load_state_checked, save_state, state_lock
 
 
 class WorkflowAdoptionTest(unittest.TestCase):
@@ -288,6 +290,67 @@ class WorkflowAdoptionTest(unittest.TestCase):
         reviewer = next(row for row in state["recovery"]["dispatches"] if row["role"] == "reviewer")
         self.assertEqual(reviewer["assignment_index"], 2)
         self.assertEqual(state["assignments"][1]["agent"], "other-task-contributor")
+
+    def test_short_owner_contention_during_native_startup_does_not_create_an_unknown_send(self):
+        self.prepare()
+        self.admit()
+        held, contended, finished = Event(), Event(), Event()
+        failures, threads = [], []
+        native_create = self.fx.native.workspace_create
+
+        def hold_other_task_write():
+            try:
+                with state_lock(self.fx.path):
+                    state = self.fx.owner.state()
+                    add_assignment(state, self.fx.now(), "developer", "other-task-contributor", task="two",
+                                   cleared=True, clear_reason="automatic")
+                    save_state(self.fx.path, state)
+                    held.set()
+                    if not contended.wait(3):
+                        failures.append("native startup never attempted its checkpoint")
+            except Exception as exc:
+                failures.append(str(exc))
+            finally:
+                finished.set()
+
+        def create(**options):
+            result = native_create(**options)
+            thread = Thread(target=hold_other_task_write)
+            threads.append(thread)
+            thread.start()
+            self.assertTrue(held.wait(3))
+            return result
+
+        @contextmanager
+        def checkpoint_lock(path):
+            with ExitStack() as stack:
+                try:
+                    stack.enter_context(state_lock(path))
+                except TransactionBusy:
+                    contended.set()
+                    raise
+                yield
+
+        before = len([row for row in self.fx.native.events if row[0] == "prompt"])
+        try:
+            with self.fx.owner.session() as cap:
+                runner = self.fx.runner(cap)
+                with patch.object(self.fx.native, "workspace_create", side_effect=create), \
+                        patch("foreman.workflow_service.state_lock", side_effect=checkpoint_lock):
+                    self.fx.advance(runner, lambda: bool(self.fx.progress()["jobs"].get("reviewer")))
+                    self.assertTrue(contended.is_set())
+        finally:
+            contended.set()
+            for thread in threads:
+                thread.join(3)
+        self.assertTrue(finished.is_set())
+        self.assertEqual(failures, [])
+        state = self.fx.owner.state()
+        self.assertEqual([row["task"] for row in state["assignments"]], ["one", "two", "one"])
+        reviewer = next(row for row in state["recovery"]["dispatches"] if row["role"] == "reviewer")
+        self.assertEqual(reviewer["assignment_index"], 2)
+        self.assertEqual(len([row for row in self.fx.native.events if row[0] == "prompt"]), before + 1)
+        self.assertIsNone(self.fx.progress()["exception"])
 
     def test_three_task_batch_starts_legacy_verification_despite_decision_and_invalid_input(self):
         self.prepare()

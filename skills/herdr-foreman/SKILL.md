@@ -1,70 +1,58 @@
 ---
 name: herdr-foreman
 description: >
-  Coordinate Herdr delivery or answer named offline Herdr lookups. Use when asked
-  to assign or delegate work, recover workers, quarantine contradictory context
-  evidence, release verified changes, or check readiness, task cost, attention,
-  GitHub evidence, memory, retrospectives/postmortems and coordination metrics.
+  Use when asked to coordinate/delegate Herdr work, recover workers, quarantine
+  contradictory context evidence, release changes, or inspect readiness, costs,
+  attention, GitHub, memory, retrospectives/postmortems and coordination metrics.
 ---
 
 # Herdr Foreman Skill
 
 This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
 
-The selected delivery entry runs concurrent workers internally.
-Inspection entries are individual lookups, not a startup checklist. Step 1 owns
-concurrent delivery; unselected entries add no prerequisite work.
-
-Step 1 chains concurrent delivery. Authorized quarantine chains Step 1 to Step 10,
-then returns to Step 1's role lookup and verified continuation. Other entries
-execute only their selected action.
-
-Resolve prose paths from the verified plugin root; commands use `HS`.
-Preserve owner, holds, unknown deliveries and supervision obligations.
-Context grants no task or effect authority.
+Step 1 delivers concurrent work; authorized quarantine chains Step 1 → Step 10 →
+Step 1's verified role. Others finish after their selected action.
+Resolve paths from the verified plugin root (`HS`). Preserve owners, holds,
+unknown deliveries and supervision. Context grants no authority.
 
 ## Step 1 — Coordinate Live Work
 
-For owner-attested remote context, read:
+Owner-attested remote context:
 
 ```text
 skills/herdr-foreman/references/remote-context.md
 ```
 
-Use its bound `cli.main(["role-context"], client=...)` for preflight and recovery.
-Never manufacture role evidence.
+Use its bound `cli.main(["role-context"], client=...)`; never manufacture role evidence.
 
-For native live requests, read:
+Native:
 
 ```text
 skills/herdr-foreman/references/bootstrap.md
 ```
 
-Keep the selected owner's state/config overrides:
+Keep the selected state/config overrides:
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
 bash "$HS/foreman.sh" role-context
 ```
 
-Read `role`, `verified`, `reason`, `context` and owner path. On failure, report
-the diagnostic, restore the selected installation or owner, and finish here.
-Use no replacement store.
+Read the returned role, verification, reason, context and owner path. On failure,
+report the diagnostic, restore that owner and finish; use no replacement store.
 
-- Verified `foreman`: follow the returned context; fill eligible capacity and run
-  independent tasks and reviewer/tester seats concurrently before waiting.
-  Continue to the delivery loop's Stop/handoff boundary.
+- Verified `foreman`: follow context; fill independent task/reviewer/tester
+  capacity concurrently and continue to Stop/handoff.
 - Verified `worker` or `observer`: follow the returned context; finish here.
 - `standalone`: perform ordinary authorized work under general policy; finish here.
 - `recovery` or `unverified`:
   - For an authorized context-quarantine request with `reason: owner_state_unreadable`, continue immediately to Step 10.
-  - Otherwise follow recovery instructions, preserve obligations, restore a verified
-    role before coordination, and finish here.
+  - Otherwise preserve obligations, restore the verified role under recovery
+    instructions, and finish here.
 
 ## Step 2 — Collect Coordination Evidence
 
-Return the capture receipt for the selected frozen owners and observation
-window, retaining collection gaps; finish here:
+Return the frozen receipt and collection gaps:
 
 ```text
 skills/herdr-foreman/references/coordination-metrics.md
@@ -72,8 +60,7 @@ skills/herdr-foreman/references/coordination-metrics.md
 
 ## Step 3 — Summarize a Measurement Snapshot
 
-Return the prepared sanitized snapshot's counts, deltas and stated limitations;
-finish here:
+Return counts, deltas and limitations:
 
 ```text
 skills/herdr-foreman/references/coordination-metrics.md
@@ -81,8 +68,7 @@ skills/herdr-foreman/references/coordination-metrics.md
 
 ## Step 4 — Inspect Workflow Readiness
 
-Return the selected task's readiness reasons and eligible capacity, retaining
-unknowns and page coverage; finish here:
+Return task readiness, eligible capacity, unknowns and page coverage:
 
 ```text
 skills/herdr-foreman/references/workflow-capacity.md
@@ -90,8 +76,7 @@ skills/herdr-foreman/references/workflow-capacity.md
 
 ## Step 5 — Retrieve Saved Attention
 
-Return the named obligation or selected attention page with lifecycle, sources
-and page coverage; finish here:
+Return the named obligation or attention page with lifecycle, sources and coverage:
 
 ```text
 skills/herdr-foreman/references/attention.md
@@ -99,8 +84,7 @@ skills/herdr-foreman/references/attention.md
 
 ## Step 6 — Retrieve Working Memory
 
-Return the named capture, lesson or stow with its evidence references,
-freshness and recorded gaps; finish here:
+Return the named memory with evidence, freshness and gaps:
 
 ```text
 skills/herdr-foreman/references/working-memory.md
@@ -108,8 +92,7 @@ skills/herdr-foreman/references/working-memory.md
 
 ## Step 7 — Retrieve a Retrospective
 
-Return the selected retrospective evidence with its date, coverage and source
-path; finish here:
+Return retrospective evidence with date, coverage and source:
 
 ```text
 skills/herdr-foreman/references/retrospectives.md
@@ -117,8 +100,7 @@ skills/herdr-foreman/references/retrospectives.md
 
 ## Step 8 — Inspect Task Cost
 
-Return the selected task's effort/cost facts and unmeasured fields, retaining
-page coverage; finish here:
+Return task cost facts, unmeasured fields and page coverage:
 
 ```text
 skills/herdr-foreman/references/decision-context.md
@@ -126,8 +108,7 @@ skills/herdr-foreman/references/decision-context.md
 
 ## Step 9 — Retrieve GitHub Evidence
 
-Return the named GitHub source's identity, current state, source link and
-evidence coverage; finish here:
+Return GitHub identity, state, source link and evidence coverage:
 
 ```text
 skills/herdr-foreman/references/decision-context.md
@@ -135,13 +116,12 @@ skills/herdr-foreman/references/decision-context.md
 
 ## Step 10 — Quarantine Context Evidence
 
-Use protected quarantine and its continuation:
+Read:
 
 ```text
 skills/herdr-foreman/references/context-quarantine.md
 ```
 
-The owner must confirm the original native binding, explicit authorization and
-quarantine eligibility before its write. On refusal, preserve the evidence and
-report its diagnostic. After a successful repair, return to Step 1's role lookup
-and continue only under its verified role and saved continuation.
+Before writing, the owner confirms original native binding, explicit authorization
+and quarantine eligibility. Preserve refused evidence and report its diagnostic.
+After repair, return to Step 1's verified role and saved continuation.

@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import Callable
 
 from . import cli, engagement, load_set, progression_owner as authority
@@ -21,6 +21,9 @@ from . import workflow_artifacts, workflow_upgrade
 from .errors import ForemanError, UsageError
 from .state import TransactionBusy, save_state, state_lock
 from .workflow_native import NativeWorkflowAdapter
+
+CHECKPOINT_LOCK_BUDGET_SEC = 5
+CHECKPOINT_LOCK_POLL_SEC = 0.01
 
 
 def encoded(value):
@@ -132,7 +135,18 @@ class WorkflowService:
         if self._effect_lock_held:
             yield
             return
-        with state_lock(self.path):
+        with ExitStack() as transaction:
+            deadline = time.monotonic() + CHECKPOINT_LOCK_BUDGET_SEC
+            while True:
+                try:
+                    transaction.enter_context(state_lock(self.path))
+                    break
+                except TransactionBusy:
+                    if time.monotonic() >= deadline:
+                        raise
+                    # Retry only lock acquisition. The checkpoint body and
+                    # native effect below this boundary execute at most once.
+                    time.sleep(CHECKPOINT_LOCK_POLL_SEC)
             current, _task, progress = self._current()
             if progress["pending"] is None or progress["pending"]["id"] != identifier:
                 raise UsageError("The task's pending native intent changed; preserve the original effect for its owner.", {})
