@@ -371,7 +371,10 @@ composer; its canonical consultation roles select that shared template. Supply
 `TASK`, `SPECIALTY`, `RESPONSIBILITY`, `OBJECTIVE`, `ACCEPTANCE_CRITERIA`, `INPUTS`,
 `TOOLS_AND_SKILLS`, `SCOPE_LIMITS`, `CONTRIBUTION_HISTORY`, `KNOWLEDGE` and `REPORT`,
 plus the common task, branch and authority values. Set `RESPONSIBILITY` to the
-planned role. `ACCEPTANCE_CRITERIA` is one `CRITERION <k>: <text>` line per
+planned role when using the low-level composer. The selected-plan
+`prepare-briefs.py` adapter derives `TASK`, `SPECIALTY` and `RESPONSIBILITY` from
+the plan instead; supply the remaining semantic consultation inputs.
+`ACCEPTANCE_CRITERIA` is one `CRITERION <k>: <text>` line per
 criterion, numbered from 1; the template renders it as the brief's single
 `## Acceptance Criteria` section. `apply` refuses a consultation brief without
 that contiguous block, and its count is the `N` the report answers. Put applicable profile questions and evidence in the actual

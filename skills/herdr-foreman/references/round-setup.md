@@ -317,14 +317,41 @@ On non-zero, report the diagnostic and repair the named input before composing.
 Lookup precedence and optional global-root input belong to the resolver's
 header contract. Never delegate path selection to a worker.
 
-Write the remaining values, then compose:
+Prepare from the selected plan instead of reconstructing role schemas. Supply
+semantic values in the existing `shared`/`roles` shape; the adapter puts a shared
+field only in templates that consume it. It derives responsibilities, task and
+specialty identities, slice paths/digests and distinct report destinations.
+Omit `RESPONSIBILITY`, `SLICE_SCOPE`, `SLICE_PATHS` and `SLICE_DIGEST` when authoring
+new values. Existing role-specific responsibility/path/digest inputs are accepted
+only when they match the plan exactly; no manual removal is required. The
+adapter retains the plan's selected round and capability requirements;
+no guessed `critic` round or capability alias is introduced. For new planning,
+omit round overrides unless the task actually requires one and use configured
+capability names from the selected requirements.
 
 ```bash
 HS=.tessl/plugins/jbaruch/herdr-policy/skills/herdr-foreman/; [ -d "$HS" ] || HS="$HOME/$HS"; [ -d "$HS" ] || case "$(git config --get remote.origin.url)" in git@github.com:jbaruch/herdr-policy|git@github.com:jbaruch/herdr-policy.git|https://github.com/jbaruch/herdr-policy|https://github.com/jbaruch/herdr-policy.git|ssh://git@github.com/jbaruch/herdr-policy|ssh://git@github.com/jbaruch/herdr-policy.git) HS=skills/herdr-foreman/ ;; *) echo "herdr-policy skill not found: install jbaruch/herdr-policy" >&2; exit 1 ;; esac
-bash "$HS/compose-briefs.sh" \
-  "$HS/templates" \
-  <values.json> <round-reports-dir>
+python3 -I "$HS/prepare-briefs.py" \
+  --plan <selected-plan.json> --values <semantic-values.json> \
+  --state <selected-owner-state> --reports-dir <short-absolute-reports-dir> \
+  --output <round-briefs-dir>
 ```
+
+Omit `--values` and `--output` to inspect the template-derived field inventory.
+The bounded JSON response names every role's fields, missing inputs and selected
+round/requirements, plus paginated diagnostics and separate nonblocking plan
+notes. Historical-exclusion notes do not turn a successful plan into a refusal.
+Follow each `next_offset` when
+needed. Exit 1 holds this preparation and writes no requested round for an
+invalid role; it does not reject unrelated tasks. After structural validation,
+all roles pass the existing canonical composer in private disposable scratch
+space before the requested output is written. It creates no report, reservation,
+native send or acceptance. A canonical final write/tool failure still needs its
+reported artifact inspection before retrying. A successful preparation grants
+no dispatch or release authority.
+
+The low-level `compose-briefs.sh` interface remains available to existing owners;
+its values, rendering and provenance contract follows.
 
 The packaged values file is `{"task":"<existing registered task id>", "state":"<owner state path when non-default>", "shared": {...}, "roles": {"<role>": {...}}}`;
 composition reads the original registered task base and Git-owned provisioning
