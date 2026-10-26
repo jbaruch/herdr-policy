@@ -1561,6 +1561,11 @@ class FreshStartupDeliveryTest(unittest.TestCase):
         client.agent_prompt.assert_not_called()
         client.pane_send_keys.assert_not_called()
 
+    def test_old_hook_menu_in_transcript_does_not_cover_the_current_empty_composer(self):
+        from foreman.composer import require_no_hook_review
+        old = "Hooks need review\n› 1. Review hooks\n2. Trust all and continue\n"
+        require_no_hook_review(old + "\x1b[2m› Ask Codex to do anything\x1b[0m", BY_NAME["codex"], "p1")
+
     def test_unsafe_startup_frames_never_reach_prompt_or_sending_boundary(self):
         from unittest.mock import Mock, patch
         for frame in [("\x1b[2m› recalled draft\x1b[0m", True),

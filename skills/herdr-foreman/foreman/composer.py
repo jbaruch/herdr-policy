@@ -686,7 +686,8 @@ def require_no_hook_review(text, agent, pane_id, *, operation=None):
     """Recognize the captured native menu without trusting or driving it."""
     rows = [row.strip() for row in strip_ansi(text).splitlines()]
     if (agent.kind == "codex" and "Hooks need review" in rows
-            and any("1. Review hooks" in row for row in rows)):
+            and any("1. Review hooks" in row for row in rows)
+            and inspect_composer(text, agent, ansi=True).occupied):
         raise owner_recovery(
             HerdrError("Native hook review is required for {} in {}; nothing was sent.".format(agent.name, pane_id),
                        {"agent": agent.name, "pane_id": pane_id}),
