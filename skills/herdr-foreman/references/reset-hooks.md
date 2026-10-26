@@ -21,7 +21,7 @@ under its owner lock, preserves members/events/holds, and saves acceptance on
 the reset row. Replay cannot consume the original binding twice. The deliverer
 requires that acceptance and the matching new binding before reporting success.
 For Codex, input admission also requires source retirement through the host-goal receipt owned by
-`skills/herdr-foreman/foreman/host_goals.py` (`prepare`, `transfer`). That module
+`skills/herdr-foreman/foreman/host_goals.py` (`prepare`, `preclear`, `transfer`). That module
 defines supported host control, ordering, recovery phases and budget accounting;
 the record shape is in `skills/herdr-foreman/state-schema.md` Foreman Reset Record.
 An unavailable existing Codex daemon refuses scheduling before pane input.
@@ -29,7 +29,14 @@ The transfer never starts another app-server or changes the user's goal status
 to represent executor retirement. Native Claude/Grok retain their session reset
 without creating an external host goal; external schedulers need their own
 supported integration before a reset can claim that goal's handoff.
-The input hook creates no successor goal: it retires the source, commits the
+Before waiting for idle, the claimed deliverer pins the original runtime and
+retires its Codex goal. An already-running outgoing continuation is interrupted
+by its exact turn ID; final usage is retained. This prevents the active goal
+from repeatedly starting another turn while the deliverer waits. Its schema-2
+receipt can reach `retired` before any incoming session is selected. A failed
+preclear preserves that receipt and guarded recovery instead of scheduling a
+second reset for the same pane.
+The input hook creates no successor goal: it verifies source retirement, commits the
 incoming binding/acceptance, and admits the saved continuation. That continuation
 reads its scope and holds, then uses `foreman-reset-reconcile --outcome delivered`
 to restore the original lifecycle. A blocked hook can never activate automatic
@@ -72,7 +79,13 @@ setting is translated on the reset's copied mechanics, not written to config.
 No checkout picker or arbitrary modal response is automated.
 The deliverer permits that hint only for the planned continuation, under the
 unchanged foreground pins. The pre-prompt hook still refuses an old native
-session. Claude/Grok keep their eager-session check before input and use the
+session. After authenticating the incoming payload and unchanged foreground,
+the hook reports that verified native identity through Herdr's public session
+reporting API and requires matching readback before saving input acceptance.
+A foreign hint or unacknowledged report blocks admission; session metadata is
+never repaired from a guessed ID. An attested remote transport that lacks this
+reporting operation refuses a stale hint rather than falling back locally.
+Claude/Grok keep their eager-session check before input and use the
 same final hook gate. Unknown sends remain interrupted and are never repeated.
 After clearing, all runtimes must establish stable idle under the original
 process pins. That bounded read-only wait handles startup hooks after a stale
@@ -113,6 +126,8 @@ binding. Verify changed stows and replacement process identities refuse too.
   must be interrupted and its final usage retained before successor admission.
   Repeat the reset after spending part of the successor budget; carried usage
   must accumulate without replenishing that budget. Repeat with no token cap.
+  After both resets, the live Herdr hint, supervision binding and authenticated
+  native payload must name the same incoming session.
   Lose a host mutation response in the deterministic protocol fixture, restore
   access and reconcile; no additional goal or native continuation may be sent.
 - Close only the owned fixture surfaces and stop only its named test server.

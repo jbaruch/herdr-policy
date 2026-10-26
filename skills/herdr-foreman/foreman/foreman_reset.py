@@ -7,7 +7,9 @@ as the native session binding before admitting its continuation.
 
 A foreman cannot type into its own composer mid-turn, so the reset is two
 commands. `foreman-reset` runs inside the turn: it checks the preconditions
-and starts a detached `foreman-reset-deliver`. The deliverer waits until the
+and starts a detached `foreman-reset-deliver`. Its claimed child first retires
+the outgoing Codex goal, interrupting only that executor's exact active turn.
+It then waits until the
 foreman's pane is idle -- the turn has ended -- then sends the runtime's clear
 command and the resume prompt through the same composer checks used for
 workers (foreman/composer.py). It never types into a working or blocked pane.
@@ -74,7 +76,7 @@ from .assign import SETTLE_STATES
 from .composer import COMPOSER_SETTLE_SEC, send_command, send_message
 from .errors import HerdrError, StateError, ForemanError, UsageError
 from .herdr import DEFAULT_SETTLE_TIMEOUT_MS
-from . import supervision, host_goals, context_output
+from . import supervision, host_goals, context_output, memory
 from .chronology import timestamp
 from .runnable import command, launcher
 from .supervision_runtime import process_identity, read_client
@@ -431,6 +433,9 @@ def arm_resume(state, pane, stow, before, processes):
         document = _records(path)
         row = _row(document, {"pane_id": pane, "stow": stow})
         me = process_identity(os.getpid())
+        if (row is not None and row["status"] == "delivering" and row["process"] == me
+                and row["native_session"] == before and row["foreground"] == processes):
+            return
         if (row is None or row["status"] != "delivering" or row["process"] != me
                 or row["native_session"] != before or not _valid_foreground(processes)
                 or row["foreground"] is not None):
@@ -731,6 +736,15 @@ def schedule(state_path, plan, at, start, *, native_session, alive=_alive, probe
                     if live is not None:
                         return _claimed_replay(live, state_path)
                     _refuse(row, state_path)
+                for prior in document["resets"]:
+                    if prior["pane_id"] != plan["pane_id"]:
+                        continue
+                    if prior["status"] in ("scheduled", "delivering"):
+                        _live, changed = _settle(document, prior, state_path, alive)
+                        if changed:
+                            save_state(path, document)
+                    if prior["status"] in ("scheduled", "delivering") or _goal_pending(prior):
+                        raise UsageError("This pane already has an unsettled reset from stow {}. Inspect its saved reset status and complete that handoff or its guarded recovery; do not replace it with another stow.".format(prior["stow"]), {})
                 row = {"schema_version": RESET_SCHEMA_VERSION, **plan, "status": "scheduled", "scheduled_at": at,
                        "options": dict(options or {}), "process": None, "result": None, "native_session": dict(native_session),
                        "foreground": None, "accepted_session": None, "host_goal": copy.deepcopy(host_goal)}
@@ -835,8 +849,8 @@ TERMINAL_FAILURES = frozenset({"failed", "interrupted"})
 
 def _goal_pending(row):
     goal = row["host_goal"]
-    return (row["accepted_session"] is not None and goal is not None
-            and goal["runtime"] == "codex" and goal["phase"] != "verified")
+    return (goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified"
+            and (row["accepted_session"] is not None or goal["target_thread"] is not None or goal["phase"] != "prepared"))
 
 
 def outstanding(state_path, *, alive=_alive):
@@ -871,7 +885,7 @@ def outstanding(state_path, *, alive=_alive):
         latest[row["pane_id"]] = row
     items = []
     for row in latest.values():
-        if _goal_pending(row):
+        if _goal_pending(row) and row["accepted_session"] is not None:
             prompt = None
             needed = ("The admitted continuation has not finished its host-goal restoration. Preserve its saved scope and holds; "
                       "run `{}` from the bound successor. No reset or repeated input is needed.".format(
@@ -1262,8 +1276,34 @@ def prepare_host_goal(state, runtime, native_session):
     path = record_path(state)
     with state_lock(path):
         document = _records(path)
+        pane = ((supervision.load(state).get("binding") or {}).get("identity") or {}).get("pane_id")
+        if any(row["pane_id"] == pane and _goal_pending(row) for row in document["resets"]):
+            raise UsageError("This foreman's previous host-goal handoff is unfinished. Inspect its saved reset status and finish the admitted continuation or guarded recovery before scheduling another reset; preserve its original objective and accounting.", {})
         previous = [row["host_goal"] for row in document["resets"]]
     return host_goals.prepare(runtime, native_session, previous)
+
+
+def quiesce_host_goal(state, plan, client, at):
+    """Only the claimed reset child retires its source scheduler before idle."""
+    pane = plan["pane_id"]
+    before = bound_session(supervision.load(state))
+    live = _foreman_record(client, pane)
+    if live.get("agent") != "codex" or pane_session(client, pane) != before:
+        raise SessionChanged("The outgoing Codex session changed before scheduler retirement. Preserve the reset and restore the verified source binding before retrying.", {})
+    processes = foreground_processes(client, pane)
+    if processes is None:
+        raise SessionChanged("The outgoing Codex foreground process is unproven. Restore its native process evidence before retiring this reset's scheduler.", {})
+    arm_resume(state, pane, plan["stow"], before, processes)
+    path = record_path(state)
+    with state_lock(path), supervision.effect_boundary(state) as data:
+        document = _records(path)
+        row = _row(document, plan)
+        if (row is None or row["status"] != "delivering" or row["process"] != process_identity(os.getpid())
+                or row["native_session"] != bound_session(data) or row["foreground"] != foreground_processes(client, pane)
+                or pane_session(client, pane) != before):
+            raise SessionChanged("The claimed reset's source or foreground pins changed. Preserve its receipt; no scheduler retirement was authorized.", {})
+        preflight(memory.show(state, at, plan["stow"])["record"], data, pane)
+        host_goals.preclear(row["host_goal"], lambda: save_state(path, document))
 
 
 def mechanics(agents, kind, name):

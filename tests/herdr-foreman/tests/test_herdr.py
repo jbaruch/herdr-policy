@@ -113,6 +113,23 @@ class ArgvBuilderTest(unittest.TestCase):
         self.assertEqual(self.client.argv_pane_close("w2:p9"),
                          ["herdr", "pane", "close", "w2:p9"])
 
+    def test_verified_session_report_uses_the_native_kind_and_session_flag(self):
+        for kind, flag, value in (("id", "--agent-session-id", "incoming"),
+                                  ("path", "--agent-session-path", "/private/native transcript.jsonl")):
+            with self.subTest(kind=kind):
+                runner = FakeRunner()
+                runner.set("pane report-agent-session", stdout="")
+                client = HerdrClient(binary="custom-herdr", runner=runner)
+                self.assertEqual(client.pane_report_agent_session("w7:p9", "codex", {"kind": kind, "value": value}, 123), {})
+                self.assertEqual(runner.calls, [["custom-herdr", "pane", "report-agent-session", "w7:p9",
+                    "--source", "herdr:codex", "--agent", "codex", "--seq", "123", flag, value]])
+
+    def test_unknown_native_session_kind_is_never_reported(self):
+        runner = FakeRunner()
+        with self.assertRaisesRegex(HerdrError, "preserve unknown identity"):
+            HerdrClient(runner=runner).pane_report_agent_session("w7:p9", "codex", {"kind": "guess", "value": "incoming"}, 123)
+        self.assertEqual(runner.calls, [])
+
     def test_workspace_create_returns_the_supplied_root_pane_without_focus(self):
         runner = FakeRunner()
         runner.set("workspace create", json.dumps({"result": {

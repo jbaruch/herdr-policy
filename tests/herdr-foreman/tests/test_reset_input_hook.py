@@ -18,6 +18,7 @@ from unittest.mock import patch
 ROOT = (Path(__file__).resolve().parents[3] / "skills/herdr-foreman")
 sys.path.insert(0, str(ROOT))
 from foreman import foreman_reset as reset, host_goals, memory, reset_input_hook as hook, supervision as store
+from foreman.errors import UsageError
 from tests.test_foreman_reset import FakeClient, SESSION, CLEARED, PANE, worker
 from tests.goal_fakes import GoalHost, goal
 
@@ -74,6 +75,69 @@ class ResetHookTest(unittest.TestCase):
                 self.assertEqual(data["binding"]["identity"]["value"], CLEARED)
                 self.assertEqual(data["events"], [])
                 self.assertEqual(self.invoke(kind=kind)["decision"], "block")
+
+    def test_claimed_child_quiesces_active_goal_before_any_composer_input(self):
+        self.setUp(source=goal(SESSION["value"]))
+        client = FakeClient(["working"], kind="codex")
+        self.host.active.add(SESSION["value"])
+        def identify(pid):
+            return CHILD if pid == os.getpid() else client.identify(pid)
+        with patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            reset.quiesce_host_goal(self.state, self.plan, client, AT)
+            reset.quiesce_host_goal(self.state, self.plan, client, AT)
+        self.assertEqual(client.keystrokes, [])
+        self.assertEqual(self.host.goals, {})
+        document, _ = reset._load(reset.record_path(self.state), migrate_legacy=False)
+        receipt = document["resets"][0]["host_goal"]
+        self.assertEqual((receipt["phase"], receipt["target_thread"]), ("retired", None))
+        self.assertEqual(store.load(self.state)["binding"]["identity"], self.who)
+        self.assertEqual(sum(method == "turn/interrupt" for method, _ in self.host.calls), 1)
+        self.assertEqual(sum(method == "thread/goal/clear" for method, _ in self.host.calls), 1)
+        with self.assertRaisesRegex(UsageError, "previous host-goal handoff is unfinished"):
+            reset.prepare_host_goal(self.state, "codex", SESSION)
+        with self.assertRaisesRegex(UsageError, "unsettled reset"):
+            reset.schedule(self.state, {**self.plan, "stow": "replacement"}, AT,
+                           lambda: self.fail("must not spawn another reset"), native_session=SESSION,
+                           alive=lambda _: True)
+
+    def test_native_hint_acknowledgement_is_required_and_foreign_identity_is_preserved(self):
+        client = FakeClient(["idle"], kind="codex")
+        with patch.object(client, "pane_report_agent_session", return_value=None):
+            self.assertEqual(self.invoke(client=client)["decision"], "block")
+        document, _ = reset._load(reset.record_path(self.state), migrate_legacy=False)
+        self.assertIsNone(document["resets"][0]["accepted_session"])
+        self.setUp()
+        client = FakeClient(["idle"], kind="codex", sessions=["foreign-native-session"])
+        before = store.load(self.state)["binding"]
+        self.assertEqual(self.invoke(client=client)["decision"], "block")
+        self.assertEqual(client.session_reports, [])
+        self.assertEqual(store.load(self.state)["binding"], before)
+
+    def test_two_resets_leave_herdr_and_native_owner_identity_agreeing(self):
+        first = FakeClient(["idle"], kind="codex")
+        self.assertEqual(self.invoke(client=first), hook.acceptance())
+        with patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
+            self.reconcile(client=first)
+        self.assertEqual(reset.pane_session(first, PANE), reset.bound_session(store.load(self.state)))
+        memory.stow(self.state, {"id": "round-8", "capture": "Continue the same authorized work.",
+            "unresolved_work": ["Resume release"], "gaps": [], "required_reads": [str(self.proof)]}, AT)
+        before = {"kind": "id", "value": CLEARED}
+        plan = {"pane_id": PANE, "stow": "round-8"}
+        goal_receipt = host_goals.prepare("codex", before, connect=self.host.connect, discover=lambda: "/fixture/codex.sock")
+        reset.schedule(self.state, plan, AT, lambda: CHILD["pid"], native_session=before,
+                       probe=lambda _: CHILD, alive=lambda _: True, host_goal=goal_receipt)
+        reset.claim(self.state, plan, CHILD)
+        with patch("foreman.foreman_reset.process_identity", return_value=CHILD):
+            reset.arm_resume(self.state, PANE, "round-8", before, FOREGROUND)
+        payload = {"session_id": "third-native-session", "cwd": str(self.directory),
+                   "prompt": reset.guarded_resume("round-8", self.state, before, FOREGROUND)}
+        second = FakeClient(["idle"], kind="codex", sessions=[CLEARED])
+        self.assertEqual(self.invoke(payload=payload, client=second), hook.acceptance())
+        current = reset.bound_session(store.load(self.state))
+        self.assertEqual(current, {"kind": "id", "value": "third-native-session"})
+        self.assertEqual(reset.pane_session(second, PANE), current)
+        reset.live_preflight(second, [worker("codex-template", "codex")], PANE, current)
 
     def test_an_accepted_receipt_stays_consumed_even_if_the_old_binding_is_restored(self):
         self.assertEqual(self.invoke(), hook.acceptance())

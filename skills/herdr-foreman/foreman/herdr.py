@@ -593,6 +593,15 @@ class HerdrClient:
     def pane_close(self, pane_id):
         return self._run_optional_json(self.argv_pane_close(pane_id))
 
+    def pane_report_agent_session(self, pane_id, kind, session, seq):
+        """Publish a native hook's verified identity; readback supplies acceptance."""
+        if session.get("kind") not in ("id", "path"):
+            raise HerdrError("Native session reporting requires an id or canonical transcript path; preserve unknown identity instead of reporting it.", {})
+        flag = "--agent-session-id" if session["kind"] == "id" else "--agent-session-path"
+        argv = self._argv("pane", "report-agent-session", pane_id, "--source", "herdr:" + kind,
+                          "--agent", kind, "--seq", str(seq), flag, session["value"])
+        return self._run_optional_json(argv)
+
     def argv_pane_process_info(self, pane_id):
         return self._argv("pane", "process-info", "--pane", pane_id)
 

@@ -174,6 +174,8 @@ class FakeClient:
         self.cleared = False
         self.prompt_started = False
         self.keystrokes = []
+        self.reported_session = None
+        self.session_reports = []
 
     def identify(self, pid):
         """Stands in for supervision_runtime.process_identity, which reads `ps`."""
@@ -195,12 +197,19 @@ class FakeClient:
         self.keystrokes.append(text)
 
     def pane_get(self, pane_id):
+        if self.reported_session is not None:
+            return {"pane_id": pane_id, "agent_session": {"source": "herdr:" + self.kind, "agent": self.kind,
+                                                          **self.reported_session}}
         if self.sessions is None:
             value = CLEARED if self.cleared else SESSION["value"]
         else:
             value = self.sessions.pop(0) if len(self.sessions) > 1 else self.sessions[0]
         return {"pane_id": pane_id, "agent_session": {"source": "herdr:" + self.kind, "agent": self.kind,
                                                       "kind": "id", "value": value}}
+
+    def pane_report_agent_session(self, pane_id, kind, session, seq):
+        self.session_reports.append((pane_id, kind, session.copy(), seq))
+        self.reported_session = session.copy()
 
     def pane_process_info(self, pane_id):
         pid = self.pids.pop(0) if len(self.pids) > 1 else self.pids[0]

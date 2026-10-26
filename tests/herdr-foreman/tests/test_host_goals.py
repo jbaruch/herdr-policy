@@ -38,6 +38,34 @@ class HostGoalTest(unittest.TestCase):
         self.assertEqual(mutations[1][1]["status"], "active")
         self.assertEqual(self.receipt["phase"], "verified")
 
+    def test_preclear_retires_auto_continuation_before_idle_without_activating_a_successor(self):
+        self.host.active.add("old")
+        self.host.on_interrupt = lambda: self.host.goals["old"].update(tokensUsed=400, timeUsedSeconds=20)
+        transfer.preclear(self.receipt, self.persist, connect=self.host.connect)
+        self.assertTrue(transfer.valid(self.receipt))
+        self.assertEqual((self.receipt["phase"], self.receipt["target_thread"]), ("retired", None))
+        self.assertEqual(self.host.goals, {})
+        self.host.end_turn("old")
+        self.assertEqual(self.host.continuations, [])
+        self.assertFalse(any(method == "thread/goal/set" for method, _ in self.host.calls))
+        self.deliver(restore=False)
+        self.assertEqual(self.host.goals, {})
+        self.deliver()
+        self.assertEqual((self.host.goals["new"]["status"], self.host.goals["new"]["tokenBudget"]), ("active", 600))
+        self.assertEqual((self.receipt["carried_tokens"], self.receipt["carried_seconds"]), (400, 20))
+
+    def test_preclear_migrates_known_receipt_and_recovers_unknown_clear_by_readback(self):
+        self.receipt["schema_version"] = 1
+        self.host.lost = "thread/goal/clear"
+        with self.assertRaises(GoalError):
+            transfer.preclear(self.receipt, self.persist, connect=self.host.connect)
+        self.assertEqual(self.receipt["schema_version"], 2)
+        transfer.preclear(self.receipt, self.persist, connect=self.host.connect)
+        self.assertEqual(sum(method == "thread/goal/clear" for method, _ in self.host.calls), 1)
+        self.assertIsNone(self.receipt["target_thread"])
+        self.deliver()
+        self.assertEqual(self.host.goals["new"]["objective"], self.receipt["source_goal"]["objective"])
+
     def test_exact_objective_text_survives_without_prompt_rewriting(self):
         self.host.goals["old"]["objective"] = "Ship A; retain B's hold.\nDo not change C."
         self.receipt = transfer.prepare("codex", {"kind": "id", "value": "old"},
@@ -188,9 +216,11 @@ class HostGoalTest(unittest.TestCase):
             transfer.transfer(receipt, "incoming", lambda: None,
                               connect=lambda _: self.fail("must not control another runtime"))
             self.assertEqual(receipt["phase"], "not_applicable")
+            self.assertTrue(transfer.valid(receipt))
+            self.assertFalse(transfer.valid({**receipt, "schema_version": 2}))
 
     def test_impossible_phase_authority_never_becomes_handoff_proof(self):
-        for changes in ({"target_thread": "old"}, {"phase": "retired"},
+        for changes in ({"target_thread": "old"}, {"schema_version": 1, "phase": "retired"},
                         {"phase": "verified"}, {"phase": "verified", "target_thread": "new"},
                         {"target_created_at": 200}, {"retiring_turn": "turn-before-quiesce"},
                         {"carried_tokens": 0}, {"resume_status": "blocked"}):
