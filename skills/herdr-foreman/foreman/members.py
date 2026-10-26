@@ -258,6 +258,9 @@ def close(state_path, enrollment, ledger, at, client=None):
     result = dispatch.get("result") if isinstance(dispatch, dict) else None
     result_record = result if isinstance(result, dict) else {}
     if event["decision"] == "accepted" and member["active"] and dispatch is not None:
+        if dispatch.get("status") != "applied":
+            raise UsageError("Dispatch {} is unresolved; reconcile its actual send through references/dispatch-recovery.md before accepting or closing its enrollment. Preserve unknown delivery instead of retrying it.".format(enrollment),
+                             {"enrollment": enrollment, "dispatch_status": dispatch.get("status")})
         from .report_delivery import require_primary_delivery
         require_primary_delivery(dispatch, state["assignments"][dispatch["assignment_index"]], assignment, assignment["report"])
     # A reconcile can reconstruct an older-shaped result from transport

@@ -160,7 +160,7 @@ class LedgerCase(GateCase):
         self.assessments = []
         self.dispatch("d-review", "reviewer", "codex-a", self.report, BEFORE)
         recovery = mock.patch.object(gates, "_ledger_state", lambda _path: (
-            {"dispatches": self.dispatches, "delivery_recoveries": []}, self.assessments))
+            {"dispatches": self.dispatches, "delivery_recoveries": []}, self.assessments, []))
         recovery.start()
         self.addCleanup(recovery.stop)
 
@@ -537,7 +537,7 @@ class CloseMemberGateTest(MembersCase):
                       {"id": "dispatch-j", "task": "task-a", "role": "judge", "agent": JUDGE, "status": "applied",
                        "judge_mode": "adjudication"}]
         with mock.patch.object(gates, "_ledger_state",
-                               lambda _path: ({"dispatches": dispatches, "delivery_recoveries": []}, [])):
+                               lambda _path: ({"dispatches": dispatches, "delivery_recoveries": []}, [], [])):
             view = gates.ledger_view(self.path, JUDGE)
         gates.resolve(self.path, self.report, "clear", "The finding is out of scope per ruling R2.", LATER, view,
                       evidence=str(ruling))

@@ -227,6 +227,49 @@ class AntigravityTest(unittest.TestCase):
                 self.assertTrue(report_delivery.prompt_matches(request, request, "agy"))
                 self.assertFalse(report_delivery.prompt_matches(data[0]["content"], request, "agy"))
 
+    def test_captured_same_conversation_followup_retains_the_unchanged_selection(self):
+        path = Path(__file__).resolve().parents[1] / "fixtures/agy-1.4.7-followup.json"
+        data = json.loads(path.read_text())["rows"]
+        current = native.user_request(data[2]["content"])
+        self.assertIsNotNone(current)
+        assert current is not None
+        self.assertIsNone(current["model_selection"])
+        native_path = native.transcript_path(SESSION)
+        self.assertEqual(native.model_selection(data, SESSION, native_path), "Claude Sonnet 4.6 (Thinking)")
+        self.assertEqual(native.prompt_text(data, SESSION, native_path), current["request"])
+        self.assertEqual(native.final_message(data, SESSION, native_path), "CAPTURE_TWO")
+        body = "\n".join(json.dumps(row) for row in data)
+        self.assertTrue(report_delivery.native_model_matches(body, SESSION, native_path,
+            {"model": "claude-sonnet-4-6", "effort": None}))
+        self.assertFalse(report_delivery.native_model_matches(body, SESSION, native_path,
+            {"model": "claude-opus-4-6-thinking", "effort": None}))
+        self.assertIsNone(native.model_selection(data[2:], SESSION, native_path))
+        self.assertIsNone(native.model_selection(data, SESSION, Path("/archive/transcript.jsonl")))
+
+    def test_followup_selection_changes_and_unrecognized_inputs_do_not_inherit_stale_proof(self):
+        path = Path(__file__).resolve().parents[1] / "fixtures/agy-1.4.7-followup.json"
+        original = json.loads(path.read_text())["rows"]
+        native_path = native.transcript_path(SESSION)
+        settings = original[0]["content"].split("\n<USER_SETTINGS_CHANGE>", 1)[1]
+        changed = copy.deepcopy(original)
+        changed[2]["content"] += "\n<USER_SETTINGS_CHANGE>" + settings.replace(
+            "from None to Claude Sonnet 4.6 (Thinking)",
+            "from Claude Sonnet 4.6 (Thinking) to Claude Opus 4.6 (Thinking)")
+        self.assertEqual(native.model_selection(changed, SESSION, native_path), "Claude Opus 4.6 (Thinking)")
+        for alteration in ({"content": "unrecognized input"}, {"source": "UNKNOWN"}, {"status": "RUNNING"}):
+            data = copy.deepcopy(original)
+            data[2].update(alteration)
+            with self.subTest(alteration=alteration):
+                self.assertIsNone(native.model_selection(data, SESSION, native_path))
+        data = copy.deepcopy(original)
+        data[0]["content"] = "unrecognized earlier settings"
+        self.assertIsNone(native.model_selection(data, SESSION, native_path))
+        data = copy.deepcopy(original)
+        data[2]["step_index"], data[3]["step_index"] = 4, 5
+        data.insert(2, {"step_index": 2, "type": "USER_INPUT", "source": "USER_EXPLICIT", "status": "DONE",
+                        "content": "unrecognized intervening input"})
+        self.assertIsNone(native.model_selection(data, SESSION, native_path))
+
     def test_multiline_request_whitespace_survives_the_native_envelope_exactly(self):
         content = transcript_rows(capture.OPUS_TRANSCRIPT)[0]["content"]
         for request in ("  Indented first line\n\n\tTabbed line  \nLast line ", "\nLeading blank line", "Trailing newline\n"):

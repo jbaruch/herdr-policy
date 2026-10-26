@@ -1078,7 +1078,7 @@ Its input is exactly `id`, `dispatch`, `report` and `delivery`; `outcome`,
 `skills/herdr-foreman/foreman/report_contract.py`, whose module docstring holds
 the line formats and refusal classes.
 
-Each schema-3 record contains `schema_version: 3`, `id`, `at`, `dispatch`,
+Each schema-4 record contains `schema_version: 4`, `id`, `at`, `dispatch`,
 `assignment_index`, `task`, `role`, `agent`, `report`, `delivery`,
 `report_evidence`, `delivery_evidence`, `source`, `brief_evidence`, `criteria`,
 `acceptance`, `verdict`, `contribution`, `legacy`, `gap` and `native_delivery`. The evidence objects
@@ -1097,7 +1097,7 @@ that dispatch and the same report bytes.
 | `contribution` | The report's optional `CONTRIBUTION:` value or null; a migrated record keeps its old value |
 | `legacy` | `{outcome, summary}` on a migrated record, else null |
 | `gap` | `{message, gaps}` on a `contribution_only` record: the refusal it replays on an identical retry (same input, same report bytes); else null |
-| `native_delivery` | Canonical native-source receipt after the owner proves an Antigravity request/model; null for other providers or unproven historical evidence |
+| `native_delivery` | Versioned canonical native-prefix proof bound to the original Antigravity assignment/session and immutable dispatch; null for other providers or unproven migrated history |
 
 The role and specialty come from the owner dispatch, never from the caller. A
 report with a contract gap appends nothing, save a `contribution_only` entry
@@ -1106,7 +1106,25 @@ and satisfies no reader below. The utility verifies the original
 confirmed dispatch, assignment, enrollment and frozen brief before appending.
 Exact ID/input retries preserve the original receipt, including after source
 cleanup; changed input requires a new ID. Historical reads validate schema and
-relationships without reopening sources.
+relationships without reopening sources. Missing native sources do not erase
+history, contributors or exclusions, and establish no positive delivery authority.
+
+`skills/herdr-foreman/foreman/report_delivery.py` owns native proof schema 1.
+It records `provider`, the original `native_session`, canonical assignment and
+immutable-dispatch digests, the report receipt, and `source: {path, sha256, bytes}`.
+The prefix length and digest bind the exact completed canonical conversation at
+assessment time; later warm turns may append without invalidating that prefix.
+Only Antigravity report-sourced assessments carry this proof; every other
+provider requires null. `NATIVE_ASSESSMENT_FIELDS`, `validate_native_assessment`,
+`verify_native_assessment` and `MAX_ASSESSMENT_SOURCE_BYTES` own its fields,
+relationships and byte budget. Source schemas are never migrated by this reader.
+
+Positive evidence consumers verify the selected record/task's current canonical
+prefix, exact original assignment/request/report and captured model selection.
+An unrelated archive, session, provider or dispatch, a changed/truncated prefix,
+or missing proof supplies no authority. Reading one task does not reopen unrelated
+native history. A general gate-ledger inspection leaves native delivery unknown
+until a report scopes the affected task. No native content is copied into state.
 
 A report-sourced record gates three readers. `close-member` needs one matching
 the current report bytes before an `accepted` reviewer, tester or consultation
@@ -1120,16 +1138,18 @@ A `design` or `implementation` contribution on any record adds a same-task
 independence exclusion; nothing subtracts one. Missing, corrupt or unsupported
 assessment history follows the main state's preserve-and-refuse writer contract.
 
-Migration `1 → 3` runs in the owner while state loads, and is idempotent. It
+Migration `1 → 4` runs in the owner while state loads, and is idempotent. It
 moves `outcome` and `summary` under `legacy`, sets `source:
 foreman_assessment`, nulls the line fields and native delivery proof, and keeps `contribution`. A migrated
 record never satisfies `accepted`, a warm follow-up or the diagnose and judge
 gates; an in-flight consultation needs a fresh dispatch. A schema-1 record
-already carrying newer fields is refused as corrupt. Schema-2 records remain
-readable without rewriting or inventing native proof. Their Antigravity rows
+already carrying newer fields is refused as corrupt. Schema-2/3 records remain
+readable without rewriting or inventing native proof. Schema 3 introduced an
+unbound generic native receipt; it cannot establish the newer canonical prefix
+and assignment proof. These historical Antigravity rows
 cannot supply delivery/approval authority; reassess the same report under a
 new assessment id after the owner can prove its canonical request and model.
-A record newer than 3
+A record newer than 4
 takes the lagging-reader path: no usable prior state, the file left untouched.
 The document's own version is unchanged.
 
@@ -1722,7 +1742,7 @@ without the provenance placeholder retain their rendering-only contract.
 A first trigger consultation's `TRIGGER_DECLARATION` line is report content,
 not a new owner-state schema or acceptance record. Only a standalone line counts;
 fenced, quoted, indented and inline-code copies are examples
-(`skills/herdr-foreman/foreman/report_contract.py` `trigger_bindings`). Ordinary schema-2 specialist
+(`skills/herdr-foreman/foreman/report_contract.py` `trigger_bindings`). Ordinary schema-4 specialist
 assessment receipts bind its exact bytes; the assessment owner checks its
 absolute repository/artifact, exact task base and reviewed digest. The existing
 four-key writing shape is unchanged. Legacy review uses the separate five-key
@@ -1742,7 +1762,7 @@ Its authority contains `kind: legacy_review`, canonical absolute `repo` and
 `path`, full `base_revision` and `head_revision`, artifact `sha256`, exact `task`,
 accepted `assessment` id and `report_evidence: {path, sha256}`.
 This is read-only command output, not a stored authorization or migration.
-Ordinary specialist assessments use schema 3 and retain readable schema-2 history; older owner state takes its
+Ordinary specialist assessments use schema 4 and retain readable schema-2/3 history without Antigravity native authority; older owner state takes its
 existing migration refusal before classification and is left unchanged.
 
 ## Coding Policy Installation

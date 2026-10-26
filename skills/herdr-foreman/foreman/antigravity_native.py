@@ -27,7 +27,8 @@ NO_EFFORT_MODELS = frozenset({"claude-opus-4-6-thinking", "claude-sonnet-4-6"})
 #: CLI upgrade and the monthly capability refresh. Recapture exact native
 #: launches, effective-model footers and completed-turn settings/request shapes;
 #: a catalog entry alone grants no qualification. Current capture: CLI 1.4.7,
-#: 2026-10-25. Keep uncaptured model/effort pairs unadmitted.
+#: 2026-10-25; same-process Sonnet follow-up captured 2026-10-26. An unchanged
+#: selection is omitted on the second turn. Keep uncaptured pairs unadmitted.
 #: The label each captured model shows once selected: in the live footer and
 #: in its first turn's model selection. A model or effort without a captured
 #: label has no native proof of what runs and is refused before input (#73).
@@ -143,8 +144,8 @@ def transcript_path(session):
     return sessions_root() / session / ".system_generated/logs/transcript.jsonl"
 
 
-def main_turn(rows, session, path):
-    """Return the latest explicit user turn only under its actual native path."""
+def _ordered_rows(rows, session, path):
+    """Canonical conversation rows with unique native indices, or no proof."""
     expected = transcript_path(session)
     if expected is None or path is None or Path(path) != expected or expected.resolve() != expected:
         return None
@@ -154,7 +155,14 @@ def main_turn(rows, session, path):
         if type(index) is not int or index < 0 or index in indexed:
             return None
         indexed[index] = row
-    ordered = [indexed[index] for index in sorted(indexed)]
+    return [indexed[index] for index in sorted(indexed)]
+
+
+def main_turn(rows, session, path):
+    """Return the latest explicit user turn only under its actual native path."""
+    ordered = _ordered_rows(rows, session, path)
+    if ordered is None:
+        return None
     start = None
     for offset, row in enumerate(ordered):
         if row.get("type") == "USER_INPUT" and row.get("source") == "USER_EXPLICIT":
@@ -220,7 +228,28 @@ def prompt_text(rows, session, path):
 
 
 def model_selection(rows, session, path):
-    """The model the latest explicit turn's native settings change selected, or None."""
-    turn = main_turn(rows, session, path)
-    envelope = user_request(turn[0]["content"]) if turn else None
-    return envelope["model_selection"] if envelope else None
+    """The latest proved selection in this one canonical native conversation.
+
+    CLI 1.4.7 omits unchanged settings on a follow-up. Only valid explicit
+    envelopes can carry that state forward; malformed or unknown user-input
+    forms clear it. A later actual settings change replaces the earlier value.
+    The dispatched prompt still comes only from the latest explicit turn.
+    """
+    ordered = _ordered_rows(rows, session, path)
+    if ordered is None:
+        return None
+    selected = None
+    for row in ordered:
+        if row.get("type") != "USER_INPUT":
+            continue
+        if row.get("source") != "USER_EXPLICIT":
+            selected = None
+            continue
+        if row.get("status") != "DONE" or not isinstance(row.get("content"), str):
+            return None
+        envelope = user_request(row["content"])
+        if envelope is None:
+            selected = None
+        elif envelope["model_selection"] is not None:
+            selected = envelope["model_selection"]
+    return selected

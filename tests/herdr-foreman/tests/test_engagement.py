@@ -17,8 +17,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
-from foreman import cli, composition, engagement, recovery, report_delivery, supervision
-from foreman.assign import freeze_paths
+from foreman import antigravity_native, cli, composition, engagement, recovery, report_delivery, report_gates, supervision
+from foreman.assign import assignment_text, freeze_paths, tiered_prompt
 from foreman.errors import UsageError
 from foreman.state import STATE_SCHEMA_VERSION, add_assignment, empty_state, load_state_checked, save_state
 from tests import test_report_delivery as delivery_fixture
@@ -89,6 +89,123 @@ class EngagementTest(unittest.TestCase):
     def retire(self):
         return supervision.resolve(self.path, {"id": self.dispatch["id"], "outcome": "Report assessed; consultation ended",
                                                "evidence": [str(self.report)]}, LATER)
+
+    def native_assessment(self):
+        """A canonical captured-format turn of this exact dispatched consultation."""
+        root = patch.object(antigravity_native, "sessions_root", return_value=self.root / "native")
+        root.start()
+        self.addCleanup(root.stop)
+        native = {"source": antigravity_native.SOURCE, "agent": "agy", "kind": "id",
+                  "value": "00000000-0000-4000-8000-000000000001"}
+        dispatch = self.state["recovery"]["dispatches"][0]
+        common, brief = self.root / "common.md", self.root / "native-brief.md"
+        common.write_text("Shared fixture requirements.\n")
+        brief.write_text("## Acceptance Criteria\n\nCRITERION 1: Verify the grouping\nCRITERION 2: Verify the flow\n\n## Report\n\nREPORT: " + str(self.report) + "\n")
+        dispatch.update(freeze_paths({"common": str(common), "brief": str(brief)}), provider="agy")
+        tier = {"kind": "agy", "model": "claude-sonnet-4-6", "effort": None}
+        prompt, prompt_hash = tiered_prompt(assignment_text(dispatch["role"], dispatch["common"], dispatch["brief"]),
+                                            tier, dispatch["common"], dispatch["brief"])
+        self.state["assignments"][0]["context_session"] = {"pane_id": "worker-pane", **native}
+        dispatch["result"].update(context_session={"pane_id": "worker-pane", **native}, tier={**tier, "prompt_hash": prompt_hash})
+        supervision.refine(self.path, dispatch["id"], "worker-pane", native, LATER)
+        source = antigravity_native.transcript_path(native["value"])
+        assert source is not None
+        source.parent.mkdir(parents=True)
+        source.write_text(delivery_fixture.encode(delivery_fixture.agy_rows(prompt, "REPORT: " + str(self.report))))
+        return self.assess(), dispatch, source
+
+    def test_native_assessment_binds_original_dispatch_session_provider_and_committed_prefix(self):
+        record, dispatch, source = self.native_assessment()
+        proof = record["native_delivery"]
+        self.assertEqual(record["schema_version"], 4)
+        self.assertEqual(proof["source"]["bytes"], source.stat().st_size)
+        engagement.validate_assessments(self.state)
+        save_state(self.path, self.state)
+        with patch.object(report_delivery, "_assessment_source", side_effect=AssertionError("State loading must not reopen native history")):
+            self.assertTrue(load_state_checked(self.path)[1])
+        assignment = self.state["assignments"][0]
+        self.assertTrue(engagement.native_delivery_proven(record, dispatch, assignment))
+        self.assertEqual(engagement.require_accepted(self.state, record["dispatch"], record["report"]), record)
+        original = source.read_bytes()
+        rows = json.loads((Path(__file__).resolve().parents[1] / "fixtures/agy-1.4.7-followup.json").read_text())["rows"][2:]
+        with source.open("ab") as handle:
+            handle.write(delivery_fixture.encode(rows).encode())
+        self.assertGreater(source.stat().st_size, proof["source"]["bytes"])
+        self.assertTrue(source.read_bytes().startswith(original))
+        self.assertTrue(engagement.native_delivery_proven(record, dispatch, assignment), "A later native turn must not invalidate its committed prefix")
+        self.retire()
+        engagement.require_followup(self.state, self.path, {"advisor": "worker"})
+        source.write_bytes(b" " + source.read_bytes()[1:])
+        self.assertFalse(engagement.native_delivery_proven(record, dispatch, assignment))
+        with self.assertRaisesRegex(UsageError, "native model/request proof"):
+            engagement.require_accepted(self.state, record["dispatch"], record["report"])
+
+    def test_forged_or_unrelated_native_receipts_never_supply_positive_evidence(self):
+        record, dispatch, source = self.native_assessment()
+        assignment = self.state["assignments"][0]
+        original = copy.deepcopy(record["native_delivery"])
+        unrelated = self.root / "unrelated.jsonl"
+        unrelated.write_bytes(source.read_bytes())
+        variants = [{"path": str(unrelated), "sha256": recovery.receipt(str(unrelated))[0]["sha256"]},
+                    {**original, "source": {**original["source"], "path": str(unrelated)}},
+                    {**original, "dispatch_sha256": "a" * 64},
+                    {**original, "assignment_sha256": "b" * 64},
+                    {**original, "native_session": {**original["native_session"], "value": "00000000-0000-4000-8000-000000000002"}},
+                    {**original, "provider": "claude"},
+                    {**original, "source": {**original["source"], "bytes": True}},
+                    {**original, "source": {**original["source"], "sha256": "c" * 64}}]
+        for proof in variants:
+            with self.subTest(proof_fields=sorted(proof)):
+                changed = {**record, "native_delivery": proof}
+                self.assertFalse(engagement.native_delivery_proven(changed, dispatch, assignment))
+                self.assertEqual(engagement.eligible_assessments([changed], [dispatch], [assignment]), [])
+                self.assertEqual(recovery.accepted([changed], [dispatch], [assignment], task=record["task"]), [])
+        # Even internally consistent receipts cannot turn a different native
+        # request or selected model into this dispatch's evidence.
+        rows = delivery_fixture.agy_rows("unrelated request", "REPORT: " + str(self.report))
+        source.write_text(delivery_fixture.encode(rows))
+        forged = {**original, "source": {"path": str(source), "bytes": source.stat().st_size,
+                                         "sha256": recovery.receipt(str(source))[0]["sha256"]}}
+        self.assertFalse(engagement.native_delivery_proven({**record, "native_delivery": forged}, dispatch, assignment))
+
+    def test_native_history_is_readable_without_file_scans_but_never_promoted(self):
+        record, dispatch, source = self.native_assessment()
+        record.update(schema_version=3, native_delivery=recovery.receipt(str(source))[0], contribution="design")
+        before = copy.deepcopy(self.state)
+        source.unlink()
+        with patch.object(report_delivery, "verify_native_assessment", side_effect=AssertionError("Historical loading must not read native files")):
+            engagement.validate_assessments(self.state)
+            self.assertFalse(engagement.native_delivery_proven(record, dispatch, self.state["assignments"][0]))
+        self.assertEqual(self.state, before)
+        constraints = composition.selection_constraints(["reviewer"], [], {}, self.state["assignments"], "task-1",
+            assessments=self.state["specialist_assessments"], candidate_names=["worker"])
+        self.assertIn("worker", constraints["exclude"]["reviewer"])
+
+    def test_other_providers_require_null_native_proof_and_task_scopes_skip_unrelated_sources(self):
+        record = self.assess()
+        self.assertIsNone(record["native_delivery"])
+        record["native_delivery"] = recovery.receipt(str(self.report))[0]
+        with self.assertRaisesRegex(UsageError, "Non-Antigravity"):
+            engagement.validate_assessments(self.state)
+        record["native_delivery"] = None
+        self.state["specialist_assessments"] = []
+        native, dispatch, source = self.native_assessment()
+        source.unlink()
+        with patch.object(report_delivery, "verify_native_assessment", side_effect=AssertionError("Unrelated task must not reopen native history")):
+            self.assertEqual(engagement.eligible_assessments([native], [dispatch], self.state["assignments"], task="other-task"), [])
+
+    def test_report_gate_evidence_rechecks_only_the_scoped_native_prefix_and_rejects_forgery(self):
+        record, _dispatch, _source = self.native_assessment()
+        save_state(self.path, self.state)
+        view = report_gates.ledger_view(self.path, None, str(self.report))
+        self.assertEqual(len(view["deliveries"]), 1)
+        record["native_delivery"]["source"]["sha256"] = "d" * 64
+        save_state(self.path, self.state)
+        before = self.path.read_bytes()
+        self.assertEqual(report_gates.ledger_view(self.path, None, str(self.report))["deliveries"], [])
+        self.assertEqual(self.path.read_bytes(), before)
+        with patch.object(report_delivery, "verify_native_assessment", side_effect=AssertionError("Unscoped ledger inspection must not read native history")):
+            self.assertEqual(report_gates.ledger_view(self.path, None)["deliveries"], [])
 
     def test_assessment_records_report_lines_bound_to_delivery_without_accepting_task(self):
         before = copy.deepcopy(self.state["assignments"])

@@ -11,6 +11,8 @@
 
 ## 0.17.0 — 2026-10-25
 
+- Accept unchanged Antigravity model selection on a genuine follow-up turn using the last valid selection in that same canonical native conversation. A fresh CLI 1.4.7 two-turn capture proves the omitted settings block; unknown or malformed user-input frames clear inherited proof. Preserve exact current-request matching and current model-label admission.
+
 - Reuse the successful delivery receipt and exact report digest already bound by the specialist assessment when resolving report gates (#71). Closing an enrollment before a watcher sample no longer strands an approved report or requires a replacement review; changed report bytes and foreign dispatches still refuse.
 - Ship Antigravity's captured `> ` composer in the example and reject missing configuration before measurement or dispatch (#78). Existing ANSI, occupancy, identity and startup guards remain required.
 - Version measurement reconciliation in recovery store 20 and native delivery proof in assessment schema 3. Preserve schema-2 assessment history without granting unproven Antigravity rows new delivery/approval authority; reassess existing report bytes when native proof is recoverable.
