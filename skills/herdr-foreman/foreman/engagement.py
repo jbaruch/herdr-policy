@@ -31,12 +31,16 @@ from .chronology import latest_assignment
 from .errors import UsageError
 from .recovery import receipt, text, validate_receipt
 from .tiers import canonical_role
-from . import supervision
+from . import release_activation, supervision
 
 
 ASSESSMENT_SCHEMA_VERSION = 4
 PREVIOUS_SCHEMA_VERSION = 2
 LEGACY_NATIVE_SCHEMA_VERSION = 3
+
+
+def writable_version():
+    return ASSESSMENT_SCHEMA_VERSION if release_activation.enabled() else PREVIOUS_SCHEMA_VERSION
 #: The one older record schema the owner migration upgrades.
 LEGACY_SCHEMA_VERSION = 1
 CONSULTATION_ROLES = report_contract.CONSULTATION_ROLES
@@ -183,10 +187,12 @@ def migrate_assessments(payload):
         if set(record) != LEGACY_FIELDS:
             raise _corrupt()
         upgraded = {key: record[key] for key in INPUT_FIELDS | _BOUND_FIELDS}
-        upgraded.update(schema_version=ASSESSMENT_SCHEMA_VERSION, source="foreman_assessment",
+        upgraded.update(schema_version=writable_version(), source="foreman_assessment",
                         brief_evidence=None, criteria=None, acceptance=None, verdict=None,
-                        contribution=record["contribution"], gap=None, native_delivery=None,
+                        contribution=record["contribution"], gap=None,
                         legacy={"outcome": record["outcome"], "summary": record["summary"]})
+        if upgraded["schema_version"] == ASSESSMENT_SCHEMA_VERSION:
+            upgraded["native_delivery"] = None
         records[index] = upgraded
         changed = True
     return changed
@@ -337,6 +343,8 @@ def record_assessment(state, state_path, data, at):
             raise UsageError("Assessment identity already names different input; record a new assessment without rewriting prior evidence.", {})
         return prior
     dispatch, index = _dispatch(state, data["dispatch"])
+    if requires_native_delivery(dispatch):
+        release_activation.require("Canonical Antigravity assessment proof")
     if supervision.timestamp(at) < supervision.timestamp(state["assignments"][index]["at"]):
         raise UsageError("Assessment cannot predate dispatch; use the actual assessment time.", {})
     fleet = supervision.load(state_path)
@@ -365,11 +373,12 @@ def record_assessment(state, state_path, data, at):
     # the field without versioning it (rules/stateful-artifacts.md Migration
     # Policy). The seat stays on the dispatch this record cites (#434).
     role = canonical_role(dispatch["role"])
-    bound = {"schema_version": ASSESSMENT_SCHEMA_VERSION, "at": at, **data,
+    bound = {"schema_version": writable_version(), "at": at, **data,
              "assignment_index": index, "task": dispatch["task"],
              "role": role, "agent": dispatch["agent"],
-             "report_evidence": report_evidence, "delivery_evidence": delivery_evidence,
-             "native_delivery": native_delivery}
+             "report_evidence": report_evidence, "delivery_evidence": delivery_evidence}
+    if bound["schema_version"] == ASSESSMENT_SCHEMA_VERSION:
+        bound["native_delivery"] = native_delivery
     try:
         brief_evidence, criteria = _brief_criteria(dispatch) if role in CONSULTATION_ROLES else (None, None)
         lines = report_contract.report_lines(body, role, specialty(dispatch), criteria)

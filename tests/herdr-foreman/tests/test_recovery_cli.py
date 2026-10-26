@@ -549,7 +549,7 @@ class RecoveryCommandTests(fixture.CliCase):
         store["dispatches"].append({"schema_version": 1, "id": "d", "role": "developer", "agent": "claude",
                                     "task": TASK, "status": "applied"})
         self.assertTrue(recovery_module.migrate_store(store))
-        self.assertEqual(store["schema_version"], recovery_module.RECOVERY_STORE_VERSION)
+        self.assertEqual(store["schema_version"], recovery_module.writable_version())
 
     def test_a_version_thirteen_store_carrying_its_own_task_closure_still_migrates(self):
         # Store version 13 owns the task_closed event kind; v14's upgrade must keep it.
@@ -560,7 +560,7 @@ class RecoveryCommandTests(fixture.CliCase):
         store["events"].append({"schema_version": 1, "sequence": 1, "at": AT, "kind": "task_closed",
                                 "task": TASK, "details": {"outcome": "merged", "evidence": "pr"}})
         self.assertTrue(recovery_module.migrate_store(store))
-        self.assertEqual(store["schema_version"], recovery_module.RECOVERY_STORE_VERSION)
+        self.assertEqual(store["schema_version"], recovery_module.writable_version())
         self.assertEqual([row["kind"] for row in store["events"]], ["task_closed"])
 
     def test_a_malformed_bound_oracle_is_refused_on_load(self):
@@ -591,7 +591,7 @@ class RecoveryCommandTests(fixture.CliCase):
         store["dispatches"].append({"schema_version": 3, "id": "d", "role": "judge", "agent": "claude",
                                     "task": TASK, "status": "sending", "judge_mode": "diagnosis"})
         self.assertTrue(recovery_module.migrate_store(store))
-        self.assertEqual(store["schema_version"], recovery_module.RECOVERY_STORE_VERSION)
+        self.assertEqual(store["schema_version"], recovery_module.writable_version())
         self.assertEqual(store["dispatches"][0]["judge_mode"], "diagnosis")
 
     def test_a_version_eleven_store_with_seated_dispatches_still_migrates(self):
@@ -609,7 +609,7 @@ class RecoveryCommandTests(fixture.CliCase):
                                             "agent": "claude", "task": TASK, "status": "applied",
                                             "result": {"schema_version": 1, "role": "reviewer#api"}})
                 self.assertTrue(recovery_module.migrate_store(store))
-                self.assertEqual(store["schema_version"], recovery_module.RECOVERY_STORE_VERSION)
+                self.assertEqual(store["schema_version"], recovery_module.writable_version())
                 self.assertEqual(store["dispatches"][0]["role"], "reviewer#api")
 
     def test_a_live_judge_dispatch_records_its_declared_mode_on_the_assignment(self):

@@ -22,6 +22,23 @@ fields. Sections are binding, current and closures. The private observer reads
 these projections instead of complete historical state/supervision documents.
 This interface writes no owner, gate or replacement store.
 
+### Shared Writer Activation
+
+`skills/herdr-foreman/foreman/release_activation.py` owns the single release
+activation for pending owner formats. Compatibility readers accept recovery
+19/20 and assessment 2/3/4 while ordinary new writes retain recovery 19 and
+assessment 2. Existing newer records remain readable and are never downgraded.
+Legacy assessment writes omit `native_delivery`; no new field or event is
+silently written under a deployed version.
+
+The activation release changes the one shared release-owned constant only after
+both Tessl and ACR compatibility publication are confirmed. Environment, command
+input and owner records cannot activate it. A staged native-proof or measurement
+reconciliation write refuses with `owner_writes_staged`, preserving pending
+evidence and supported legacy work. No per-task approval, timer or extra
+migration command is introduced. Tests patch this same constant for the activated
+writer paths and separately exercise default compatibility behavior.
+
 | Path | Owner | Purpose |
 | ---- | ----- | ------- |
 | `$XDG_STATE_HOME/foreman/state.json` (default `~/.local/state/foreman/state.json`, override `--state FILE`) | `skills/herdr-foreman/foreman/state.py` and its `skills/herdr-foreman/foreman/recovery.py` helper, within the same owner skill | Snapshots, append-only assignments, and audited task recovery |
@@ -751,7 +768,8 @@ document and arrives already stamped.
 
 ## Recovery records
 
-The recovery document uses `schema_version: 20`; individual records retain their
+The recovery reader accepts `schema_version: 19` and `20`; ordinary writes retain
+19 until Shared Writer Activation permits 20. Individual records retain their
 independent versions. Version 6 adds the dispatch fields `brief_identity`, `refusal` and
 `refusal_move` and the `refusal_authorizations` collection; version 7 adds the
 dispatch's send-time `provider`; version 8 adds the `diagnoses` collection;
@@ -1057,7 +1075,7 @@ its current plan, preserving generation, task, base, jobs and correction count.
 It requires settled enrollments and no report; a later execution plans a fresh
 native identity rather than reusing an uncertain attempt.
 
-The same command records `progression_measurement_reconciled` for one exact
+After Shared Writer Activation, the same command records `progression_measurement_reconciled` for one exact
 schema-2 measure intent. Event details retain the task, generation, intent,
 authorization and schema-1 readback `{schema_version,kind,sha256}`. The digest
 must identify exactly one canonical durable intent, state snapshot or retained
@@ -1093,8 +1111,10 @@ sidecar against admitted tasks. Readers do not independently migrate grants.
 The command and initial-adapter limits are in `skills/herdr-foreman/references/progression.md`.
 
 Version 20 adds the `progression_measurement_reconciled` event and its
-operation-specific replay contract. The owner upgrades known older stores
-without inventing this event; a version below 20 already carrying it refuses
+operation-specific replay contract. Compatibility mode keeps version 19 and its
+deployed empty measurement argv; activated new intents retain the exact owner
+timestamp. Both intent forms remain readable and executable. The activated
+owner upgrades known older stores without inventing this event; a version below 20 already carrying it refuses
 as unowned data. Older owners reject the newer store instead of ignoring the
 reconciliation history.
 
@@ -1107,7 +1127,8 @@ Its input is exactly `id`, `dispatch`, `report` and `delivery`; `outcome`,
 `skills/herdr-foreman/foreman/report_contract.py`, whose module docstring holds
 the line formats and refusal classes.
 
-Each schema-4 record contains `schema_version: 4`, `id`, `at`, `dispatch`,
+Shared Writer Activation selects schema 4 for new assessments; compatibility
+writes retain schema 2 without `native_delivery`. Each schema-4 record contains `schema_version: 4`, `id`, `at`, `dispatch`,
 `assignment_index`, `task`, `role`, `agent`, `report`, `delivery`,
 `report_evidence`, `delivery_evidence`, `source`, `brief_evidence`, `criteria`,
 `acceptance`, `verdict`, `contribution`, `legacy`, `gap` and `native_delivery`. The evidence objects
@@ -1167,7 +1188,8 @@ A `design` or `implementation` contribution on any record adds a same-task
 independence exclusion; nothing subtracts one. Missing, corrupt or unsupported
 assessment history follows the main state's preserve-and-refuse writer contract.
 
-Migration `1 → 4` runs in the owner while state loads, and is idempotent. It
+Migration `1 → 2` runs in compatibility mode; activated owners use `1 → 4`.
+Both are idempotent and preserve the same historical meaning. Migration
 moves `outcome` and `summary` under `legacy`, sets `source:
 foreman_assessment`, nulls the line fields and native delivery proof, and keeps `contribution`. A migrated
 record never satisfies `accepted`, a warm follow-up or the diagnose and judge

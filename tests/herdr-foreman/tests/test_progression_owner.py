@@ -175,7 +175,7 @@ class ProgressionOwnerTest(unittest.TestCase):
         save_state(self.path, state)
         migrated, usable = load_state_checked(self.path)
         self.assertTrue(usable)
-        self.assertEqual(migrated["recovery"]["schema_version"], recovery.RECOVERY_STORE_VERSION)
+        self.assertEqual(migrated["recovery"]["schema_version"], recovery.writable_version())
         self.assertEqual(migrated["recovery"]["tasks"], original)
         self.admit()
         unowned = copy.deepcopy(self.state()["recovery"])

@@ -14,13 +14,16 @@ from unittest.mock import patch
 from tests import test_workflow_service as fixture
 from tests import test_report_gates as gate_fixture
 from foreman import cli, config, measurement_retry, probe_recovery, process_lease, progression_owner as authority
-from foreman import recovery, supervision, workflow_recovery, workflow_service
+from foreman import recovery, release_activation, supervision, workflow_recovery, workflow_service
 from foreman.errors import ForemanError, UsageError
 from foreman.state import add_snapshot, latest_snapshot, load_state_checked, save_state, state_lock
 
 
 class WorkflowRecoveryTest(unittest.TestCase):
     def setUp(self):
+        activation = patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", True)
+        activation.start()
+        self.addCleanup(activation.stop)
         self.case = fixture.WorkflowServiceTest()
         self.case.setUp()
         self.addCleanup(self.case.doCleanups)

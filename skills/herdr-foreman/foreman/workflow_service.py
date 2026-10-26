@@ -103,7 +103,8 @@ class WorkflowService:
     def _intent(self, progress, operation, *, job=None, inputs=(), dispatches=()):
         identifier = "workflow-" + supervision.digest([self.capability.task, self.capability.generation,
             progress["round"], progress["phase"], operation, job["id"] if job else None])[:48]
-        argv = ["--now", self.clock()] if operation == "measure" else []
+        from .release_activation import enabled
+        argv = ["--now", self.clock()] if operation == "measure" and enabled() else []
         progress["pending"] = {"schema_version": 2, "id": identifier, "operation": operation,
             "argv": argv, "inputs": list(inputs), "effects_started": False,
             "dispatches": list(dispatches), "job": job}
@@ -280,10 +281,11 @@ class WorkflowService:
                     adapter.close(job, accepted=job["claim"]["outcome"] in ("built", "verified", "ready", "delivered"))
                     return self._view(progress, "effect_recorded")
                 if operation == "measure":
-                    if (len(intent["argv"]) != 2 or intent["argv"][0] != "--now"):
+                    if intent["argv"] and (len(intent["argv"]) != 2 or intent["argv"][0] != "--now"):
                         raise UsageError("Restore the measurement intent's exact owner timestamp before starting effects.", {})
+                    argv = intent["argv"] or ["--now", self.clock()]
                     args = cli.build_parser().parse_args(["measure", "--config", self.document["config"]["path"],
-                                                        "--state", str(self.path), *intent["argv"]])
+                                                        "--state", str(self.path), *argv])
                     _result, error = cli.cmd_measure(args, client=client)
                     # The existing measurement owner saved its own fresh state.
                     with state_lock(self.path):

@@ -44,7 +44,8 @@ Version 10 adds the non-counting `maintenance` status for a verified worker
 relaunch that creates no dispatch.
 Version 6 adds specialist requirements and assessed contribution receipts.
 Each assessment record carries its own schema; `foreman/engagement.py`
-`migrate_assessments` upgrades a schema-1 record to 4 here, and the document
+`migrate_assessments` upgrades a schema-1 record to the release's writable
+assessment version (2 before shared activation, 4 afterward), and the document
 version is unchanged (#625).
 Version 5 adds recovery history without inventing original authorization or
 session proof. Version 4 adds verified model-tier evidence.

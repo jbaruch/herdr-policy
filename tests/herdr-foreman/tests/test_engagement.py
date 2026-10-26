@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
-from foreman import antigravity_native, cli, composition, engagement, recovery, report_delivery, report_gates, supervision
+from foreman import antigravity_native, cli, composition, engagement, recovery, release_activation, report_delivery, report_gates, supervision
 from foreman.assign import assignment_text, freeze_paths, tiered_prompt
 from foreman.errors import UsageError
 from foreman.state import STATE_SCHEMA_VERSION, add_assignment, empty_state, load_state_checked, save_state
@@ -52,6 +52,9 @@ def legacy_record(record):
 
 class EngagementTest(unittest.TestCase):
     def setUp(self):
+        activation = patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", True)
+        activation.start()
+        self.addCleanup(activation.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()

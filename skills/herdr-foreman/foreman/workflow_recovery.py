@@ -155,6 +155,10 @@ def reconcile_measurement(path, state, grant, supervised, document, data, at, cl
     if _replayed(state, data, "progression_measurement_reconciled"):
         return {"task": data["task"], "intent": data["intent"], "outcome": readback["kind"],
                 "replayed": True, "authorizes_dispatch": False}
+    from .release_activation import require
+    require("Measurement reconciliation")
+    if state["recovery"]["schema_version"] < 20:
+        raise UsageError("Load this original owner through the activated release before recording measurement reconciliation; preserve its pending intent and evidence.", {})
     progress = state["recovery"]["tasks"][data["task"]]["progression"]
     schema.validate_current(progress, document)
     intent = _measurement_intent(progress, document, data)
