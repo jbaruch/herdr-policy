@@ -5,6 +5,7 @@
 - Activate the shared writers after confirmed Tessl and ACR publication of the 0.19.0 compatibility readers. New owner writes use recovery 20, Antigravity assessment 4, Codex goal receipt 2 and legacy adoption 3; accepted older history remains readable.
 - Enable interrupted-measurement reconciliation, native authenticated report proof, legacy task adoption and active-goal reset quiescence through their existing owners. Preserve original task scope, reports, counters, holds and unknown effects.
 - Enable clean same-head release checkout handoffs without deleting local setup or private files (#72). Native startup retains the proved original project context; business Git uses the clean successor and its unchanged release gates.
+- Verify existing-task adoption outside the shared owner lock, then commit against fresh task and input evidence. Preserve independent worker checkpoints during native and remote verification.
 - Exercise the reduced coding-policy 0.5.10 rule layout alongside the pinned 0.5.0 test baseline. Read an explicitly routed full contract when checking its requirements; preserve the older complete-rule path.
 
 ## 0.19.0 — 2026-10-26
