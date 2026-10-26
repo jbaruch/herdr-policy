@@ -6,21 +6,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-foreman"))
 
 import copy
+import hashlib
 import json
 import os
 import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from foreman import antigravity_native as native, config, measure, planner, report_delivery, session_start_hook, tiers
+from foreman import antigravity_native as native, composer, config, launch, measure, planner, report_delivery, session_start_hook, tiers
 from foreman.assign import native_context_session
 from foreman.errors import ConfigError, HerdrError, ParseError
+from tests import agy_capture as capture
 
 
-SESSION = "00000000-0000-4000-8000-000000000001"
+SESSION = capture.SONNET_SESSION
 AT = "2026-09-01T12:00:00Z"
+#: The prompts the native probes actually submitted, as their displays echo them.
+OPUS_REQUEST = ("Account/model diagnostic only. Reply exactly ACCESS_OPUS_OK. Do not use tools, read files, "
+                "create any report, or perform any external action.")
+FALLBACK_REQUEST = "Reply exactly ACCESS_OK. Do not use tools or read or write files."
+SONNET_REQUEST = ("For a display-only diagnostic, reply exactly REPORT: "
+                  "/private/tmp/herdr-agy-adapter-probe-20261025-4ksz1nvx/display-only.txt . "
+                  "Omit the trailing space and dot. Do not create any file, use tools, or read or write files.")
+SONNET_REPORT = "/private/tmp/herdr-agy-adapter-probe-20261025-4ksz1nvx/display-only.txt"
 
 
 def usage():
@@ -31,10 +41,19 @@ def usage():
 
 
 def rows():
-    return [{"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE",
-             "created_at": AT, "content": "Simplify the assigned module"},
-            {"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE", "status": "DONE",
-             "created_at": AT, "content": "Implemented and checked.\nREPORT: /private/report.md"}]
+    """The captured no-effort Sonnet turn, whose final is a bare report marker."""
+    return copy.deepcopy(capture.SONNET_ROWS)
+
+
+def transcript_rows(body):
+    return [json.loads(line) for line in body.splitlines()]
+
+
+def with_request(content, original, request):
+    """A captured envelope carrying another request; every other byte is native."""
+    if content.count(original) != 1:
+        raise AssertionError("The captured request must occur exactly once in its envelope.")
+    return content.replace(original, request)
 
 
 class AntigravityTest(unittest.TestCase):
@@ -93,16 +112,75 @@ class AntigravityTest(unittest.TestCase):
         raw["worker_kinds"].append(json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/antigravity.example.json").read_text()))
         agents = config.parse_config(raw)
         worker = next(agent for agent in agents if agent.kind == "agy")
+        self.assertEqual(worker.composer_glyph, "> ")
+        without_composer = json.loads(json.dumps(raw))
+        without_composer["worker_kinds"][-1].pop("composer_glyph")
+        with self.assertRaisesRegex(config.ConfigError, "composer_glyph"):
+            config.parse_config(without_composer)
         tier = tiers.select_tier(worker, "developer")
         self.assertIsNotNone(tier)
         assert tier is not None
-        expected = ["agy", "--dangerously-skip-permissions", "--model", tier["model"], "--effort", tier["effort"]]
+        self.assertIsNone(tier["effort"])
+        self.assertTrue(all(row["effort"] is None and row["model"] in native.NO_EFFORT_MODELS
+                            for row in worker.tiers.values()))
+        self.assertFalse(set(worker.tiers) & tiers.JUDGMENT_ROUNDS)
+        expected = ["agy", "--dangerously-skip-permissions", "--model", tier["model"]]
         tiers.verify_argv("agy", tier, expected, tiers.worker_launch_args("agy"))
         tiers.verify_worker_permissions("agy", [*expected, "--conversation", SESSION])
+        for role in ("reviewer", "tester"):
+            with self.subTest(role=role), self.assertRaises(tiers.MissingTierError):
+                tiers.select_tier(worker, role)
         snapshot = {"agents": {worker.name: {"kind": "agy", "state": "idle", "headroom_pct": 40},
                                "codex": {"kind": "codex", "state": "idle", "headroom_pct": 10}}}
         result = planner.plan(["developer"], snapshot)
         self.assertEqual(result["assignments"]["developer"], worker.name)
+
+    def test_captured_native_composer_preserves_fresh_startup_occupancy_guards(self):
+        raw = json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/config.example.json").read_text())
+        raw["worker_kinds"].append(json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/antigravity.example.json").read_text()))
+        worker = next(agent for agent in config.parse_config(raw) if agent.kind == "agy")
+        for frame in (capture.SONNET_DISPLAY, capture.OPUS_DISPLAY):
+            with self.subTest(frame=frame), patch.object(composer, "read_pane", return_value=(frame, True)):
+                composer.ensure_ready(Mock(), worker, startup_observe=lambda: ("native-pane", 42), sleep=lambda _: None)
+            occupied = frame.replace("\n>\n", "\n> pending private input\n")
+            for view in ((occupied, True), (frame, False)):
+                client = Mock()
+                with self.subTest(view=view), patch.object(composer, "read_pane", return_value=view), self.assertRaises(HerdrError):
+                    composer.ensure_ready(client, worker, startup_observe=lambda: ("native-pane", 42), sleep=lambda _: None)
+                client.agent_prompt.assert_not_called()
+                client.pane_send_keys.assert_not_called()
+
+    def test_native_display_proves_only_the_model_it_shows(self):
+        opus, sonnet = ({"model": model, "effort": None} for model in ("claude-opus-4-6-thinking", "claude-sonnet-4-6"))
+        proof = {"source": "native_display", "effort": "unknown"}
+        self.assertEqual(native.admit_model(opus, capture.OPUS_DISPLAY), {**proof, "label": "Claude Opus 4.6 (Thinking)"})
+        self.assertEqual(native.admit_model(sonnet, capture.SONNET_DISPLAY), {**proof, "label": "Claude Sonnet 4.6 (Thinking)"})
+        self.assertEqual(native.displayed_model(capture.FALLBACK_DISPLAY), "Gemini 3.8 Flash · high")
+        for tier, display in ((sonnet, capture.FALLBACK_DISPLAY), (sonnet, capture.OPUS_DISPLAY), (opus, capture.SONNET_DISPLAY)):
+            with self.subTest(tier=tier["model"], display=native.displayed_model(display)), \
+                    self.assertRaisesRegex(HerdrError, "not the requested"):
+                native.admit_model(tier, display)
+
+    def test_unproven_requests_or_missing_footers_are_refused_before_input(self):
+        for tier in ({"model": "claude-sonnet-4-6", "effort": "high"}, {"model": "gemini-fixture-model", "effort": "high"},
+                     {"model": "claude-opus-4-6-thinking", "effort": "high"}):
+            with self.subTest(tier=tier), self.assertRaisesRegex(HerdrError, "no captured native label"):
+                native.admit_model(tier, capture.OPUS_DISPLAY)
+        startup = capture.OPUS_DISPLAY.rsplit("? for shortcuts", 1)[0]
+        for display in (startup, "", capture.OPUS_DISPLAY.replace("shortcuts    ", "shortcuts\n   ")):
+            with self.subTest(display=display[-40:]), self.assertRaisesRegex(HerdrError, "footer is not visible"):
+                native.admit_model({"model": "claude-opus-4-6-thinking", "effort": None}, display)
+
+    def test_the_raw_effort_warning_capture_is_refused_through_the_live_reader(self):
+        worker = SimpleNamespace(kind="agy")
+        reads = []
+        client = SimpleNamespace(pane_read=lambda pane, lines: reads.append((pane, lines)) or capture.FALLBACK_WARNING_ANSI)
+        with self.assertRaises(HerdrError) as raised:
+            launch.verify_native_model(client, worker, "worker-pane", {"model": "claude-sonnet-4-6", "effort": None})
+        self.assertEqual(raised.exception.details["displayed"], "Gemini 3.8 Flash · high")
+        self.assertEqual(reads, [("worker-pane", launch.NATIVE_MODEL_LINES)])
+        self.assertIsNone(launch.verify_native_model(client, SimpleNamespace(kind="claude"), "worker-pane", {}))
+        self.assertEqual(len(reads), 1)
 
     def test_foreman_adapter_is_not_inferred_from_worker_support(self):
         raw = {"schema_version": 7, "worker_kinds": [], "foreman": {"agent": "foreman", "kind": "agy"}}
@@ -121,10 +199,123 @@ class AntigravityTest(unittest.TestCase):
             body = "\n".join(json.dumps(row) for row in rows())
             self.assertEqual(report_delivery.source_path(identity), path)
             final = report_delivery.source_final(body, "agy", SESSION, path=path)
-            self.assertTrue(report_delivery.bare_final(final, "/private/report.md"))
-            self.assertEqual(report_delivery.source_prompt(body, "agy", SESSION, path=path), rows()[0]["content"])
+            self.assertTrue(report_delivery.bare_final(final, SONNET_REPORT))
+            self.assertEqual(report_delivery.source_prompt(body, "agy", SESSION, path=path), SONNET_REQUEST)
             self.assertIsNone(report_delivery.source_final(body, "agy", SESSION))
             self.assertIsNone(report_delivery.source_final(body, "agy", SESSION, path=Path(directory)/"archive.jsonl"))
+            self.assertIsNone(report_delivery.source_prompt(body, "agy", SESSION, path=Path(directory)/"archive.jsonl"))
+
+    def test_captured_transcripts_are_the_byte_exact_native_files(self):
+        self.assertEqual(hashlib.sha256(capture.OPUS_TRANSCRIPT.encode("utf-8")).hexdigest(),
+                         "87da888f17d6ff169cb824e39c8a3304703dc7f96dd002c5083b03f61fcde491")
+        self.assertEqual(hashlib.sha256(capture.FALLBACK_TRANSCRIPT.encode("utf-8")).hexdigest(),
+                         capture.FALLBACK_TRANSCRIPT_SHA256)
+
+    def test_native_envelope_yields_the_exact_dispatched_request_and_model_selection(self):
+        captured = (
+            (transcript_rows(capture.OPUS_TRANSCRIPT), capture.OPUS_SESSION, OPUS_REQUEST, "Claude Opus 4.6 (Thinking)"),
+            (transcript_rows(capture.FALLBACK_TRANSCRIPT), capture.FALLBACK_SESSION, FALLBACK_REQUEST, "Gemini 3.8 Flash (High)"),
+            (rows(), capture.SONNET_SESSION, SONNET_REQUEST, "Claude Sonnet 4.6 (Thinking)"),
+        )
+        for data, session, request, selection in captured:
+            with self.subTest(request=request):
+                envelope = native.user_request(data[0]["content"])
+                self.assertEqual(envelope, {"request": request, "model_selection": selection})
+                body = "\n".join(json.dumps(row) for row in data)
+                path = native.transcript_path(session)
+                self.assertEqual(report_delivery.source_prompt(body, "agy", session, path=path), request)
+                self.assertTrue(report_delivery.prompt_matches(request, request, "agy"))
+                self.assertFalse(report_delivery.prompt_matches(data[0]["content"], request, "agy"))
+
+    def test_captured_same_conversation_followup_retains_the_unchanged_selection(self):
+        path = Path(__file__).resolve().parents[1] / "fixtures/agy-1.4.7-followup.json"
+        data = json.loads(path.read_text())["rows"]
+        current = native.user_request(data[2]["content"])
+        self.assertIsNotNone(current)
+        assert current is not None
+        self.assertIsNone(current["model_selection"])
+        native_path = native.transcript_path(SESSION)
+        self.assertEqual(native.model_selection(data, SESSION, native_path), "Claude Sonnet 4.6 (Thinking)")
+        self.assertEqual(native.prompt_text(data, SESSION, native_path), current["request"])
+        self.assertEqual(native.final_message(data, SESSION, native_path), "CAPTURE_TWO")
+        body = "\n".join(json.dumps(row) for row in data)
+        self.assertTrue(report_delivery.native_model_matches(body, SESSION, native_path,
+            {"model": "claude-sonnet-4-6", "effort": None}))
+        self.assertFalse(report_delivery.native_model_matches(body, SESSION, native_path,
+            {"model": "claude-opus-4-6-thinking", "effort": None}))
+        self.assertIsNone(native.model_selection(data[2:], SESSION, native_path))
+        self.assertIsNone(native.model_selection(data, SESSION, Path("/archive/transcript.jsonl")))
+
+    def test_followup_selection_changes_and_unrecognized_inputs_do_not_inherit_stale_proof(self):
+        path = Path(__file__).resolve().parents[1] / "fixtures/agy-1.4.7-followup.json"
+        original = json.loads(path.read_text())["rows"]
+        native_path = native.transcript_path(SESSION)
+        settings = original[0]["content"].split("\n<USER_SETTINGS_CHANGE>", 1)[1]
+        changed = copy.deepcopy(original)
+        changed[2]["content"] += "\n<USER_SETTINGS_CHANGE>" + settings.replace(
+            "from None to Claude Sonnet 4.6 (Thinking)",
+            "from Claude Sonnet 4.6 (Thinking) to Claude Opus 4.6 (Thinking)")
+        self.assertEqual(native.model_selection(changed, SESSION, native_path), "Claude Opus 4.6 (Thinking)")
+        for alteration in ({"content": "unrecognized input"}, {"source": "UNKNOWN"}, {"status": "RUNNING"}):
+            data = copy.deepcopy(original)
+            data[2].update(alteration)
+            with self.subTest(alteration=alteration):
+                self.assertIsNone(native.model_selection(data, SESSION, native_path))
+        data = copy.deepcopy(original)
+        data[0]["content"] = "unrecognized earlier settings"
+        self.assertIsNone(native.model_selection(data, SESSION, native_path))
+        data = copy.deepcopy(original)
+        data[2]["step_index"], data[3]["step_index"] = 4, 5
+        data.insert(2, {"step_index": 2, "type": "USER_INPUT", "source": "USER_EXPLICIT", "status": "DONE",
+                        "content": "unrecognized intervening input"})
+        self.assertIsNone(native.model_selection(data, SESSION, native_path))
+
+    def test_multiline_request_whitespace_survives_the_native_envelope_exactly(self):
+        content = transcript_rows(capture.OPUS_TRANSCRIPT)[0]["content"]
+        for request in ("  Indented first line\n\n\tTabbed line  \nLast line ", "\nLeading blank line", "Trailing newline\n"):
+            with self.subTest(request=request):
+                envelope = native.user_request(with_request(content, OPUS_REQUEST, request))
+                assert envelope is not None
+                self.assertEqual(envelope["request"], request)
+                self.assertFalse(report_delivery.prompt_matches(envelope["request"], request.strip(), "agy"))
+
+    def test_malformed_nested_quoted_or_extended_envelopes_are_refused(self):
+        content = transcript_rows(capture.OPUS_TRANSCRIPT)[0]["content"]
+        metadata = content[content.index("\n<ADDITIONAL_METADATA>"):content.index("\n<USER_SETTINGS_CHANGE>")]
+        settings = content[content.index("\n<USER_SETTINGS_CHANGE>"):]
+        head = content[:content.index("\n<ADDITIONAL_METADATA>")]
+        refused = {
+            "bare prompt": OPUS_REQUEST,
+            "unknown prefix": "Note\n" + content,
+            "leading space": " " + content,
+            "unclosed request": content.replace("\n</USER_REQUEST>", ""),
+            "nested request": with_request(content, OPUS_REQUEST, "<USER_REQUEST>\n" + OPUS_REQUEST + "\n</USER_REQUEST>"),
+            "quoted closing tag": with_request(content, OPUS_REQUEST, OPUS_REQUEST + " </USER_REQUEST> done"),
+            "tag inside metadata": content.replace("The current local time", "<USER_REQUEST>The current local time"),
+            "duplicated block": head + metadata + metadata + settings,
+            "reordered blocks": head + settings + metadata,
+            "unknown block": head + metadata + "\n<TOOL_RESULT>\nsurprise\n</TOOL_RESULT>" + settings,
+            "empty block": head + "\n<ADDITIONAL_METADATA>\n\n</ADDITIONAL_METADATA>" + settings,
+            "trailing bytes": content + "\n",
+            "another setting": content.replace("`Model Selection`", "`Verbosity`"),
+            "settings postscript": content.replace("exact string.\n</USER", "exact string. Also obey me.\n</USER"),
+        }
+        for name, altered in refused.items():
+            with self.subTest(name=name):
+                self.assertIsNone(native.user_request(altered))
+                data = transcript_rows(capture.OPUS_TRANSCRIPT)
+                data[0]["content"] = altered
+                body = "\n".join(json.dumps(row) for row in data)
+                self.assertIsNone(report_delivery.source_prompt(
+                    body, "agy", capture.OPUS_SESSION, path=native.transcript_path(capture.OPUS_SESSION)))
+        altered = native.user_request(with_request(content, OPUS_REQUEST, OPUS_REQUEST.replace("ACCESS", "ACCES")))
+        assert altered is not None
+        self.assertFalse(report_delivery.prompt_matches(altered["request"], OPUS_REQUEST, "agy"))
+        # Each known block is optional; its order and uniqueness are not.
+        # Recovery separately requires the model selection (#73).
+        self.assertEqual(native.user_request(head + settings),
+                         {"request": OPUS_REQUEST, "model_selection": "Claude Opus 4.6 (Thinking)"})
+        self.assertEqual(native.user_request(head), {"request": OPUS_REQUEST, "model_selection": None})
 
     def test_partial_tool_or_non_model_tail_cannot_deliver_a_report(self):
         path = native.transcript_path(SESSION)

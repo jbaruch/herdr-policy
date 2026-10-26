@@ -834,6 +834,11 @@ original `herdr pane get` JSON. Read these original artifacts and the saved
 dispatch's common/role briefs. Use the existing task authority to record
 delivery; this recovery requests no new work or allowance.
 
+A successful positive wait uses normal specialist assessment with that
+unchanged receipt and report. The assessment retains delivery provenance for
+gate resolution after closure; do not manufacture a negative receipt or
+dispatch another review to replace a missing watcher sample.
+
 Even a refused owner operation can persist an owner schema migration.
 Use isolated ledger copies for validation until the installed owner supports
 the versions documented in `skills/herdr-foreman/state-schema.md`.

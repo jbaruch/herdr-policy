@@ -11,8 +11,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "skills/herdr-observer"))
@@ -110,6 +111,10 @@ class ObserverTest(unittest.TestCase):
         assert value is not None
         return value
 
+    def clock(self, sleeper=None):
+        return SimpleNamespace(time=lambda: self.now, monotonic=lambda: 0.0,
+                               sleep=Mock(side_effect=sleeper))
+
     def save_owner(self):
         self.owner.write_text(json.dumps(self.data))
         Path(str(self.owner) + ".supervision.json").write_text(json.dumps(self.supervised))
@@ -151,6 +156,225 @@ class ObserverTest(unittest.TestCase):
         self.save_owner()
         _roles, _quota, _closures, _contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
         self.assertIn("owner_projection_row_exceeds_budget", gaps)
+
+    def test_receipt_discovery_ignores_locks_and_deduplicates_owners_before_factory_cap(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        binding = self.supervised["binding"]
+        for index in range(40):
+            (registry / ("{:03d}.json.lock".format(index))).touch()
+            receipt = {**binding, "identity": {**binding["identity"], "value": "old-{}".format(index)}}
+            (registry / ("{:03d}.json".format(index))).write_text(json.dumps(receipt))
+        (registry / "zzz-current.json").write_text(json.dumps(binding))
+        before = {path: path.read_bytes() for path in registry.iterdir()}
+        with patch.object(sources, "MAX_FACTORIES", 1), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(probes.call_count, 1)
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(gaps, [])
+        self.assertEqual(before, {path: path.read_bytes() for path in registry.iterdir()})
+        with self.store.transaction():
+            configuration = self.record("config")
+            configuration.update(states=[], owner_root=str(selected))
+            self.store.put("meta", "config", configuration)
+        self.tick()
+        view = collect.evidence(self.store, self.now)
+        foreman = next(row for row in view["current"]["agents"] if row["name"] == "coordinator")
+        self.assertEqual(foreman["role"], "foreman")
+        self.assertNotIn("factory_discovery_truncated", view["current"]["coverage"])
+
+    def ordered_registry(self, registry):
+        original = Path.iterdir
+        def entries(path):
+            values = original(path)
+            return iter(sorted(values)) if path == registry else values
+        return patch.object(Path, "iterdir", entries)
+
+    def test_explicit_owner_reserves_a_slot_before_full_registry_discovery(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        discovered = []
+        for index in range(sources.MAX_FACTORIES):
+            owner = self.root / "a-owners" / "{:03d}".format(index) / "state.json"
+            owner.parent.mkdir(parents=True)
+            owner.write_text(json.dumps(state.empty_state()))
+            supervision.bind(owner, supervision.identity(
+                "00000000-0000-4000-8000-{:012d}".format(index), "/factory", "1",
+                pane_id="discovered-{}".format(index)), stamp(self.now), root=registry)
+            discovered.append(str(owner.resolve()))
+        alias = self.root / "selected-alias"
+        alias.symlink_to(self.owner.parent, target_is_directory=True)
+        explicit = [str(alias / self.owner.name), str(self.owner)]
+        originals = [self.owner, Path(str(self.owner) + ".supervision.json"),
+                     *registry.iterdir()]
+        before = {path: path.read_bytes() for path in originals}
+        with self.ordered_registry(registry), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, explicit)
+        self.assertEqual(len(paths), sources.MAX_FACTORIES)
+        self.assertEqual(paths[0], str(self.owner.resolve()))
+        self.assertEqual(len(set(paths)), len(paths))
+        self.assertEqual(len(set(paths) & set(discovered)), sources.MAX_FACTORIES - 1)
+        self.assertEqual(probes.call_count, sources.MAX_FACTORIES - 1)
+        self.assertIn("factory_sources_truncated", gaps)
+        self.assertEqual({path: path.read_bytes() for path in originals}, before)
+
+    def test_explicit_owners_take_priority_over_the_default_with_bounded_coverage(self):
+        selected = self.root / "a-registry"
+        selected.mkdir()
+        default = selected / "state.json"
+        default.write_text(json.dumps(state.empty_state()))
+        with patch.object(sources, "MAX_FACTORIES", 1):
+            paths, gaps = sources.owner_paths(selected, [str(self.owner), str(default)])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_sources_truncated", gaps)
+
+    def test_binding_locks_do_not_spend_the_receipt_scan_allowance(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        for index in range(40):
+            (registry / ("{:03d}.json.lock".format(index))).touch()
+        (registry / "zzz-current.json").write_text(json.dumps(self.supervised["binding"]))
+        before = {path: path.read_bytes() for path in registry.iterdir()}
+        with self.ordered_registry(registry), patch.object(sources, "MAX_DISCOVERY_FILES", 2):
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(gaps, [])
+        self.assertEqual({path: path.read_bytes() for path in registry.iterdir()}, before)
+
+    def test_duplicate_receipts_keep_one_probe_and_explicit_physical_scan_coverage(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        for index in range(4):
+            (registry / ("{:03d}.json".format(index))).write_text(json.dumps(self.supervised["binding"]))
+        with self.ordered_registry(registry), patch.object(sources, "MAX_DISCOVERY_FILES", 2), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(probes.call_count, 1)
+        self.assertIn("factory_receipt_scan_truncated", gaps)
+        self.assertNotIn("factory_sources_truncated", gaps)
+        self.assertEqual(sources.coverage_diagnostics(gaps)[0]["section"], "discovery")
+
+    def test_directory_safety_bound_retains_explicit_owner_and_a_distinct_gap(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        for index in range(3):
+            (registry / ("{:03d}.json.lock".format(index))).touch()
+        (registry / "zzz-current.json").write_text(json.dumps(self.supervised["binding"]))
+        with self.ordered_registry(registry), patch.object(sources, "MAX_BINDING_DIRECTORY_ENTRIES", 2):
+            paths, gaps = sources.owner_paths(selected, [str(self.owner)])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_directory_scan_truncated", gaps)
+        self.assertNotIn("factory_receipt_scan_truncated", gaps)
+
+    def test_failed_owner_aliases_are_probed_once_and_preserve_independent_binding(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        invalid = self.owner.with_name("unsupported.json")
+        invalid.write_text(json.dumps({"schema_version": 99}))
+        for index in range(4):
+            (registry / ("{:03d}.json".format(index))).write_text(json.dumps({
+                **self.supervised["binding"], "state_path": str(invalid)}))
+        (registry / "zzz-current.json").write_text(json.dumps(self.supervised["binding"]))
+        with self.ordered_registry(registry), patch.object(sources, "MAX_FACTORIES", 2), \
+                patch.object(sources, "owner_view", wraps=sources.owner_view) as probes:
+            paths, gaps = sources.owner_paths(selected, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertEqual(probes.call_count, 2)
+        self.assertIn("factory_receipt_unreadable", gaps)
+        self.assertNotIn("factory_sources_truncated", gaps)
+        self.assertEqual(json.loads(invalid.read_text()), {"schema_version": 99})
+
+    def test_nonregular_binding_receipt_cannot_stall_independent_discovery(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        os.mkfifo(registry / "unsafe.json", mode=0o600)
+        (registry / "current.json").write_text(json.dumps(self.supervised["binding"]))
+        program = ("import json,sys; from pathlib import Path; sys.path[:0]=[sys.argv[1],sys.argv[3]]; "
+                   "from factory_observer import sources; "
+                   "paths,gaps=sources.owner_paths(Path(sys.argv[2]),[]); print(json.dumps([paths,gaps]))")
+        result = subprocess.run([sys.executable, "-I", "-c", program, str(ROOT / "skills/herdr-observer"), str(selected),
+                                 str(ROOT / "skills/herdr-foreman")], capture_output=True, text=True, timeout=3, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        paths, gaps = json.loads(result.stdout)
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_receipt:source_invalid", gaps)
+
+    def test_explicit_and_receipt_parent_loops_remain_local_coverage_gaps(self):
+        loop = self.owner.parent / "loop"
+        loop.symlink_to("loop", target_is_directory=True)
+        broken = str(loop / "state.json")
+        paths, gaps = sources.owner_paths(self.owner.parent, [broken, str(self.owner)])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_owner:source_unreadable", gaps)
+        diagnostic = next(row for row in sources.coverage_diagnostics(gaps) if row["source"] == "factory_owner")
+        self.assertIn("original readable parent", diagnostic["recovery"])
+        registry = self.owner.parent / "supervision-bindings"
+        registry.mkdir()
+        (registry / "loop.json").write_text(json.dumps({**self.supervised["binding"], "state_path": broken}))
+        (registry / "good.json").write_text(json.dumps(self.supervised["binding"]))
+        paths, gaps = sources.owner_paths(self.owner.parent, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_receipt:source_unreadable", gaps)
+        roles, _quota, _closures, _contexts, owner_gaps = sources.owners(paths, self.client.agents)
+        self.assertEqual(roles[native.fingerprint(native.identity(self.foreman))]["role"], "foreman")
+        self.assertEqual(owner_gaps, [])
+
+    def test_real_receipt_and_projection_refusals_keep_actionable_private_sections(self):
+        registry = self.owner.parent / "supervision-bindings"
+        registry.mkdir()
+        (registry / "invalid.json").write_text("not JSON")
+        (registry / "current.json").write_text(json.dumps(self.supervised["binding"]))
+        self.supervised["schema_version"] = 99
+        self.save_owner()
+        _paths, gaps = sources.owner_paths(self.owner.parent, [])
+        diagnostics = sources.coverage_diagnostics(gaps)
+        self.assertIn({"source": "factory_receipt", "section": "discovery", "refusal": "source_invalid",
+                       "recovery": "Inspect the selected owner's JSON binding receipts; restore unreadable original receipts without replacing the owner."}, diagnostics)
+        refusal = next(row for row in diagnostics if row["source"] == "owner_projection")
+        self.assertEqual((refusal["section"], refusal["refusal"]), ("binding", "owner_schema_unsupported"))
+        self.assertIn("Update", refusal["recovery"])
+
+    def test_failed_closures_keep_current_attribution_and_unknown_outcomes(self):
+        self.data["recovery"]["events"] = [{"kind": "task_closed", "task": "large" * sources.OWNER_PAGE_BYTES,
+                                              "at": stamp(self.now), "sequence": 1,
+                                              "details": {"outcome": "merged"}}]
+        self.save_owner()
+        self.tick()
+        view = collect.evidence(self.store, self.now)
+        self.assertEqual(next(row for row in view["current"]["agents"] if row["name"] == "coordinator")["role"], "foreman")
+        self.assertFalse(view["current"]["factories"][0]["section_coverage"]["closures"])
+        self.assertNotIn("merged_task_closures", view["total_metrics"])
+        diagnostic = view["coverage_diagnostics"][0]
+        self.assertEqual((diagnostic["section"], diagnostic["refusal"]), ("closures", "owner_projection_row_exceeds_budget"))
+        self.assertEqual(cli.status(self.store, self.now)["coverage_diagnostics"], view["coverage_diagnostics"])
+
+    def test_failed_current_metadata_keeps_binding_and_counts_unknown(self):
+        self.data["snapshots"][0]["agents"]["grok"]["windows"]["weekly"]["resets"] = "large" * sources.OWNER_PAGE_BYTES
+        self.save_owner()
+        roles, quota, _closures, contexts, gaps = sources.owners([str(self.owner)], self.client.agents)
+        self.assertEqual(roles[native.fingerprint(native.identity(self.foreman))]["role"], "foreman")
+        self.assertEqual(quota, [])
+        self.assertIsNone(contexts[0]["active_assignments"])
+        self.assertIsNone(contexts[0]["holds"])
+        self.assertEqual(sources.coverage_diagnostics(gaps)[0]["section"], "current")
+
+    def test_projection_reads_recovery_twenty_without_migrating_owner(self):
+        self.data["recovery"]["schema_version"] = 20
+        self.save_owner()
+        before = self.owner.read_bytes()
+        result = owner_projection(self.owner)
+        self.assertTrue(result["context_complete"])
+        self.assertEqual(before, self.owner.read_bytes())
 
     def test_projection_cli_reports_bad_pagination_as_usage_without_reading_owners(self):
         for options in (("--limit", "0"), ("--limit", "101"), ("--offset", "-1")):
@@ -410,8 +634,7 @@ class ObserverTest(unittest.TestCase):
             config["binary"] = "fixture"
             self.store.put("meta", "config", config)
         with patch("factory_observer.cli.native.Native", return_value=self.client), \
-                patch("factory_observer.cli.time.time", return_value=self.now), \
-                patch("factory_observer.cli.time.sleep", side_effect=stop_after_sample), \
+                patch("factory_observer.cli.time", self.clock(stop_after_sample)), \
                 patch("factory_observer.collect.sources.locate", return_value=None):
             result = cli.serve(self.store)
         self.assertTrue(result["stopped"])
@@ -489,9 +712,10 @@ class ObserverTest(unittest.TestCase):
             config = self.record("config")
             config["enabled"] = False
             self.store.put("meta", "config", config)
-        with patch("factory_observer.cli.lock", side_effect=[None, guard]), patch("factory_observer.cli.time.sleep") as sleep:
+        clock = self.clock()
+        with patch("factory_observer.cli.lock", side_effect=[None, guard]), patch("factory_observer.cli.time", clock):
             self.assertTrue(cli.serve(self.store)["stopped"])
-        sleep.assert_called_once_with(cli.SERVICE_LOCK_RETRY_SECONDS)
+        clock.sleep.assert_called_once_with(cli.SERVICE_LOCK_RETRY_SECONDS)
 
     def test_collector_records_recoverable_io_failures_and_keeps_its_loop(self):
         def stop_after_tick(_seconds):
@@ -507,8 +731,7 @@ class ObserverTest(unittest.TestCase):
                     self.store.put("meta", "config", config)
                 with patch("factory_observer.cli.native.Native", return_value=self.client), \
                         patch("factory_observer.cli.collect.tick", side_effect=error), \
-                        patch("factory_observer.cli.time.time", return_value=self.now), \
-                        patch("factory_observer.cli.time.sleep", side_effect=stop_after_tick):
+                        patch("factory_observer.cli.time", self.clock(stop_after_tick)):
                     result = cli.serve(self.store)
                 self.assertTrue(result["stopped"])
                 self.assertIn("collection_or_wake_failed", self.record("heartbeat")["error"])

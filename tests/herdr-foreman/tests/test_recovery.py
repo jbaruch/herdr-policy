@@ -19,8 +19,9 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from foreman import runnable
+from foreman import release_activation, runnable
 from foreman.errors import UsageError
 from foreman.recovery import (
     ASSIGNMENT_DISPATCH_VERSION, DIAGNOSIS_BOUND_CEILING, DIAGNOSIS_RECORD_VERSION, RECOVERY_STORE_VERSION,
@@ -28,7 +29,7 @@ from foreman.recovery import (
     abort_pre_send, active_plans, authorize_context, authorize_plan, authorize_refused_dispatch, brief_identity, checkpoint, confirmed_fix,
     diagnose, require_investigation_before_judge, require_judge_mode,
     dispatch_identity, finish_dispatch, fresh_transition, mark_sending,
-    _item, migrate_store, prior_dispatch, record_refusal, record_report, refusal_move, register_task, reserve,
+    _item, migrate_store, prior_dispatch, record_refusal, record_report, refusal_move, register_task, reserve, writable_version,
     task_statuses, validate_store, validate_work,
 )
 from foreman.state import add_assignment, empty_state, load_state_checked, save_state
@@ -75,7 +76,7 @@ class RecoveryTests(unittest.TestCase):
         previous_events = copy.deepcopy(self.store["events"])
         self.assertTrue(migrate_store(self.store))
         validate_store(self.store, self.history)
-        self.assertEqual(self.store["schema_version"], RECOVERY_STORE_VERSION)
+        self.assertEqual(self.store["schema_version"], writable_version())
         self.assertEqual(self.store["events"], previous_events)
         self.assertEqual(transient_launch_attempts(self.store, TASK, "a" * 64), 0)
 
@@ -172,6 +173,12 @@ class RecoveryTests(unittest.TestCase):
         add_assignment(self.state, at, "investigator", "worker", task=TASK)
         self.investigator_index = len(self.history) - 1
         self.investigator_assessed_at = assessed_at
+        self.investigator_dispatch = "investigator-fixture-" + str(self.investigator_index)
+        reserve(self.store, {"id": self.investigator_dispatch, "fingerprint": "a" * 64, "task": TASK,
+            "role": "investigator", "agent": "worker", "fix_round": None, "plan": None, "work": None,
+            "provider": "codex"}, at)
+        finish_dispatch(self.store, self.investigator_dispatch, {"task": TASK, "role": "investigator",
+            "agent": "worker", "fix_round": None, "status": "applied"}, self.investigator_index, at)
         return self.investigator_index
 
     def investigated(self, index=None, at=None, report=None):
@@ -184,7 +191,8 @@ class RecoveryTests(unittest.TestCase):
         sha = (self.investigation_sha if report == self.investigation
                else hashlib.sha256(Path(report).read_bytes()).hexdigest() if Path(report).exists()
                else "d" * 64)
-        return [{"task": TASK, "role": "investigator", "assignment_index": index, "at": at,
+        return [{"schema_version": 2, "dispatch": getattr(self, "investigator_dispatch", "missing-investigator"),
+                 "task": TASK, "role": "investigator", "assignment_index": index, "at": at,
                  "report": report, "report_evidence": {"path": report, "sha256": sha},
                  "source": "report", "acceptance": [{"k": 1, "state": "met", "evidence": "reproduced"}]}]
 
@@ -508,6 +516,19 @@ class RecoveryTests(unittest.TestCase):
         self.seed_checkpoint()
         self.run_diagnosis(self.diagnosis("diag-stop", "stop", None), "judge")
         self.assertIsNone(require_investigation_before_judge(self.store, self.history, TASK, self.investigated()))
+
+    def test_legacy_antigravity_investigation_cannot_authorize_judge_or_diagnosis(self):
+        self.seed_checkpoint()
+        investigations = self.investigated()
+        self.assertIsNone(require_investigation_before_judge(self.store, self.history, TASK, investigations))
+        dispatch = next(row for row in self.store["dispatches"] if row["id"] == self.investigator_dispatch)
+        dispatch["provider"] = "agy"
+        before = copy.deepcopy(self.store)
+        with self.assertRaisesRegex(UsageError, "consult the investigator"):
+            require_investigation_before_judge(self.store, self.history, TASK, investigations)
+        with self.assertRaisesRegex(UsageError, "prepared causal assessment"):
+            self.run_diagnosis(self.diagnosis("unproven-native", "continue", 2), investigations=investigations)
+        self.assertEqual(self.store, before)
 
     def test_a_diagnosis_rules_on_a_prepared_causal_assessment(self):
         # coding-policy#408: the investigator's profile is written for repeated
@@ -1157,7 +1178,7 @@ class RecoveryTests(unittest.TestCase):
             prior_dispatch(self.store, record["id"], record["fingerprint"])
         with self.assertRaisesRegex(UsageError, "unresolved dispatch"):
             reserve(self.store, {**record, "id": "another-id"}, AT)
-        self.assertEqual(len(self.store["dispatches"]), 1)
+        self.assertEqual(sum(row["role"] == record["role"] for row in self.store["dispatches"]), 1)
         self.assertEqual(confirmed_fix(self.history, TASK), 5)
 
     def test_a_seated_dispatch_needs_the_migrated_store(self):
@@ -1299,7 +1320,7 @@ class RecoveryTests(unittest.TestCase):
         clean["schema_version"] = 14
         clean.pop("no_work_recoveries")
         self.assertTrue(migrate_store(clean))
-        self.assertEqual(clean["schema_version"], RECOVERY_STORE_VERSION)
+        self.assertEqual(clean["schema_version"], writable_version())
 
         scoped = copy.deepcopy(self.store)
         scoped["schema_version"] = 14
@@ -1546,6 +1567,22 @@ class RecoveryTests(unittest.TestCase):
             refusal_move(self.store, TASK, "tester", None, "grok", self.BRIEF)
         validate_store(self.store, self.history)
 
+    def test_store_nineteen_migration_preserves_history_without_blessing_new_events(self):
+        old = copy.deepcopy(self.store)
+        old["schema_version"] = 19
+        before = copy.deepcopy(old)
+        self.assertFalse(migrate_store(old))
+        self.assertEqual(old, before)
+        with patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", True):
+            self.assertTrue(migrate_store(old))
+        self.assertEqual(old, {**before, "schema_version": RECOVERY_STORE_VERSION})
+        unknown = copy.deepcopy(before)
+        unknown["events"].append({"kind": "progression_measurement_reconciled"})
+        saved = copy.deepcopy(unknown)
+        with self.assertRaisesRegex(UsageError, "unowned measurement reconciliation"):
+            migrate_store(unknown)
+        self.assertEqual(unknown, saved)
+
     def test_store_migration_stamps_a_clean_older_store_and_refuses_unowned_fields(self):
         first = self.dispatch_tester(1, "codex-a")
         identified = copy.deepcopy(self.store)
@@ -1565,7 +1602,7 @@ class RecoveryTests(unittest.TestCase):
             del row["provider"]
         before = copy.deepcopy(old)
         self.assertTrue(migrate_store(old))
-        self.assertEqual(old["schema_version"], RECOVERY_STORE_VERSION)
+        self.assertEqual(old["schema_version"], writable_version())
         self.assertEqual(old.pop("refusal_authorizations"), [])
         self.assertEqual(old.pop("diagnoses"), [])
         self.assertEqual(old.pop("legacy_ruling_recoveries"), [])
@@ -1604,7 +1641,7 @@ class RecoveryTests(unittest.TestCase):
         for row in six["dispatches"]:
             del row["provider"]
         self.assertTrue(migrate_store(six))
-        self.assertEqual(six["schema_version"], RECOVERY_STORE_VERSION)
+        self.assertEqual(six["schema_version"], writable_version())
         self.assertEqual(six["diagnoses"], [])
         validate_store(six, self.history)
         record_refusal(self.store, {"dispatch": first, "receipt": self.refusal_receipt("codex-a")}, AT, "codex", self.REPORT)

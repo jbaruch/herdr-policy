@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import time
 
 from . import foreman_reset as reset, host_goals, memory, supervision as store, supervision_runtime as runtime
 from .errors import ForemanError, UsageError
@@ -21,6 +22,8 @@ from .state import save_state, state_lock
 
 
 def refusal(cause="invalid_native_payload"):
+    if cause == "incoming_native_permission_mode_unverified":
+        return {"decision": "block", "reason": "Herdr reset input was not verified (incoming_native_permission_mode_unverified). Restore the existing operator-approved full-access mode in this native Codex session before using the saved guarded recovery input. Missing, interactive and restricted modes grant no takeover; preserve the same reset, foreground and scope, and never replay uncertain input."}
     return {"decision": "block", "reason": "Herdr reset input was not verified ({}). Preserve its reset record, restore the native hook/owner state, and continue foreground supervision; never repeat an uncertain reset input.".format(cause)}
 
 
@@ -95,12 +98,22 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
             live = reset._foreman_record(native, pane)
             if live.get("agent") not in reset.SESSION_AGENTS or reset.foreground_processes(native, pane) != receipt["foreground"]:
                 return refusal("foreground_replaced")
+            if live.get("agent") == "codex":
+                from . import native_permissions
+                if not native_permissions.incoming(payload):
+                    return refusal("incoming_native_permission_mode_unverified")
             goal = row["host_goal"]
             if live.get("agent") == "codex" and (goal is None or goal["runtime"] != "codex"
                     or goal["source_thread"] != row["native_session"]["value"] or who["kind"] != "id"):
                 return refusal("missing_host_goal_preflight")
             if goal is not None and goal["runtime"] != live.get("agent"):
                 return refusal("host_goal_runtime_changed")
+            incoming = {key: who[key] for key in ("kind", "value")}
+            hint = reset.pane_session(native, pane, expected_agent=live["agent"])
+            if hint not in (None, row["native_session"], incoming):
+                return refusal("native_hint_changed")
+            if live["agent"] != "codex" and hint != incoming:
+                return refusal("native_hint_unacknowledged")
 
             def validate(data):
                 bound = (data["binding"] or {}).get("identity", {})
@@ -133,7 +146,22 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
                         goal["target_thread"] = who["value"]
                         save_state(path, document)
                     host_goals.transfer(goal, who["value"], lambda: save_state(path, document), restore=False)
-                row["accepted_session"] = {key: who[key] for key in ("kind", "value")}
+                reported = reset.pane_session(native, pane, expected_agent=live["agent"])
+                if reported not in (None, row["native_session"], incoming):
+                    return refusal("native_hint_changed")
+                if live["agent"] == "codex":
+                    if (reset.foreground_processes(native, pane) != row["foreground"]
+                            or reset._foreman_record(native, pane).get("agent") != live["agent"]):
+                        return refusal("foreground_replaced_before_session_report")
+                    acknowledgment = native.pane_report_agent_session(
+                        pane, live["agent"], incoming, time.time_ns(), session_start_source="clear")
+                    if not isinstance(acknowledgment, dict):
+                        return refusal("native_hint_report_unacknowledged")
+                elif reported != incoming:
+                    return refusal("native_hint_unacknowledged")
+                if reset.pane_session(native, pane, expected_agent=live["agent"]) != incoming:
+                    return refusal("native_hint_unacknowledged")
+                row["accepted_session"] = incoming
                 save_state(path, document)
         return acceptance(recovered=row["status"] in reset.TERMINAL_FAILURES)
     except ForemanError as exc:

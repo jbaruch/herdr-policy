@@ -31,7 +31,8 @@ from .assign import APPLY_SCHEMA_VERSION, dry_run, freeze_decision, freeze_paths
 from . import no_work_recovery, bootstrap_recovery, context_evidence, model_unavailability, probe_recovery, renderable
 from . import attention, capabilities, chronology, churn, composition, engagement, foreman_queue, foreman_reset, historical, home, lifecycle, load_set, members, memory, oracle, partition, recovery, report_delivery, report_gates, restoration, role_clear, retrospective, retrospective_runtime, supervision, supervision_gate, supervision_runtime, triggers
 from . import progression_owner
-from . import progression_service
+from . import progression_service, workflow_adoption, delivery_collection
+from . import release_checkout
 from . import config as config_owner
 from .config import FOREMAN_CONFIG_VERSION, default_config_path, load_config, load_foreman, load_judge, load_role_costs, select_agents
 from .errors import AgentBusyError, IDENTIFIER_UNAVAILABLE_KIND, IDENTIFIER_UNAVAILABLE_RECOVERY, TRANSIENT_LAUNCH_KIND, PREFLIGHT_LAUNCH_KIND, PlanError, StateError, ForemanError, HerdrError, UsageError, owner_recovery
@@ -150,7 +151,14 @@ def build_parser():
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
     progression_owner.register_commands(sub, common)
+    release_checkout.register_commands(sub, common)
     progression_service.register_commands(sub, common)
+    workflow_adoption.register_commands(sub, common)
+    delivery_collection.register_commands(sub, common)
+    from . import plan_explanation
+    plan_explanation.register_commands(sub, common)
+    from . import workflow_batch
+    workflow_batch.register_commands(sub, common)
 
     judge_parser = sub.add_parser("start-judge", parents=[common],
                                   help="Start the plan's judge in a shell pane and verify its launch argv.")
@@ -175,6 +183,8 @@ def build_parser():
     verify_foreman.add_argument("--pane", help="The foreman's pane (default: this Herdr pane, $HERDR_PANE_ID).")
     verify_foreman.add_argument("--config-only", action="store_true",
                                 help="Report only whether config declares a foreman block; no tier selection, no pane probe.")
+    verify_foreman.add_argument("--reset-ready", action="store_true",
+                                help="Check the bound native session and hook-review readiness before preparing a maintenance handoff. Read-only.")
 
     for command in ("retro-check", "retro-record"):
         retro_parser = sub.add_parser(command, parents=[common], help="Check or record a foreman-authored retrospective.")
@@ -2011,7 +2021,7 @@ def _apply(args, client, warn, trace, hold_gates):
         failures = []
         closed = []
         retained = []
-        if isinstance(primary, ForemanError) and primary.details.get("failure_kind") == "startup_dialog_pending":
+        if isinstance(primary, ForemanError) and primary.details.get("failure_kind") in {"startup_dialog_pending", "hook_review_required"}:
             name = primary.details.get("agent")
             if name in names and spawned[name] == primary.details.get("pane_id") and name not in sending:
                 retained.append(name)
@@ -2262,6 +2272,7 @@ def _validate_context_selector(value):
 
 
 def cmd_status(args, client=None, warn=None, trace=None):
+    from . import task_evidence
     _validate_context_selector(args.task)
     state, usable = load_state_checked(_state_path(args), warn=warn)
     if not usable:
@@ -2273,7 +2284,8 @@ def cmd_status(args, client=None, warn=None, trace=None):
             raise UsageError("The selected task has no recorded implementation status. Keep its outcome unresolved and select its canonical identity from the task's owning GitHub issue or dispatch receipt.", {})
         tasks = {args.task: tasks[args.task]}
     return context_output.enforce_budget(
-        {"schema_version": recovery.RECOVERY_SCHEMA_VERSION, "tasks": tasks},
+        {"schema_version": recovery.RECOVERY_SCHEMA_VERSION, "tasks": tasks,
+         **({"task_evidence": task_evidence.view(state, args.task)} if task_evidence.faults(state) else {})},
         "Status exceeds its printed output budget. Select one known canonical task with `{}`; every unexamined task remains unresolved.".format(
             runnable.command("status --task <task>"))), None
 
@@ -2301,7 +2313,8 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
     plan = foreman_reset.preflight(stow, data, caller)
     native_session = foreman_reset.bound_session(data)
     client = client if client is not None else _client(args, trace=trace)
-    live = foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    live = foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session,
+                                      expected_cwd=data["binding"]["identity"]["cwd"])
     host_goal = foreman_reset.prepare_host_goal(state_path, live["agent"], native_session)
     log = Path(str(state_path) + ".foreman-reset.log")
     # The deliverer runs from the package directory, so every path it gets is absolute.
@@ -2408,6 +2421,9 @@ def cmd_foreman_reset_deliver(args, client=None, warn=None, trace=None):
         foreman_reset.startup_notify(startup_fd, "claimed", identity)
         # Setup runs after the claim, so its failure must finish the row too.
         client = client if client is not None else _client(args, trace=trace)
+        goal = claimed.get("host_goal")
+        if foreman_reset.host_goals.preclear_enabled(goal):
+            foreman_reset.quiesce_host_goal(state_path, plan, client, now_iso())
         result = foreman_reset.deliver(
             client, load_config(_config_path(args)), args.pane, args.stow, str(state_path), warn=_log_safe(warn), options=options,
             native_session=claimed["native_session"],
@@ -3116,6 +3132,21 @@ def cmd_verify_foreman(args, client=None, warn=None, trace=None):
     if client is not None and getattr(getattr(client, "context", None), "mode", None) == "attested-remote":
         from .command_context import refuse
         raise refuse("native_foreman_tier_verifier_in_remote_context")
+    if getattr(args, "config_only", False) and getattr(args, "reset_ready", False):
+        raise UsageError("Select --config-only or --reset-ready; a config declaration cannot prove native readiness.", {})
+    if getattr(args, "reset_ready", False):
+        data = supervision.load(_state_path(args))
+        bound_pane = (data.get("binding") or {}).get("identity", {}).get("pane_id")
+        pane = args.pane or (os.environ.get("HERDR_PANE_ID") if "HERDR_ENV" in os.environ else None)
+        if not pane or pane != bound_pane:
+            raise UsageError("Reset readiness requires the bound foreman's actual pane; preserve its binding and select that pane before preparing a handoff.", {})
+        client = client if client is not None else _client(args, trace=trace)
+        live = foreman_reset.live_preflight(client, load_config(_config_path(args)), pane, foreman_reset.bound_session(data),
+                                          expected_cwd=data["binding"]["identity"]["cwd"])
+        return {"pane": pane, "agent": live["agent"], "native_session_verified": True,
+                "effective_permissions": live.get("effective_permissions"),
+                "hook_review_required": False, "checked": "current visible native frame",
+                "coverage": "Read-only pre-handoff check; grants no reset, hook trust or tool permission. Scheduling rechecks the live pane."}, None
     if getattr(args, "config_only", False):
         # The preflight's view when headroom did not pass: whether the seat is
         # configured is independent of any measurement.
@@ -3465,6 +3496,35 @@ def cmd_progression_run(args, client=None, warn=None, trace=None):
                                            client if client is not None else _client(args, trace=trace), sleeper=time.sleep)
 
 
+def cmd_prepare_release_checkout(args, client=None, warn=None, trace=None):
+    from .native_policy import executing_policy_root
+    return release_checkout.prepare(_state_path(args), args.task, args.source, args.target, args.head,
+        args.ledger, args.now or now_iso(), client if client is not None else _client(args, trace=trace),
+        executing_policy_root()), None
+
+
+def cmd_progression_adoption(args, client=None, warn=None, trace=None):
+    return workflow_adoption.run_command(args, _state_path(args),
+        client if client is not None else _client(args, trace=trace)), None
+
+
+def cmd_collect_deliveries(args, client=None, warn=None, trace=None):
+    return delivery_collection.collect(_state_path(args),
+        client if client is not None else _client(args, trace=trace), args.now or now_iso(),
+        task=args.task, limit=args.limit, offset=args.offset), None
+
+
+def cmd_progression_batch(args, client=None, warn=None, trace=None):
+    from . import workflow_batch
+    return workflow_batch.run_command(args, _state_path(args),
+        client if client is not None else _client(args, trace=trace), clock=now_iso)
+
+
+def cmd_explain_plan(args, client=None, warn=None, trace=None):
+    from . import plan_explanation
+    return plan_explanation.run_command(args, _state_path(args), _config_path(args)), None
+
+
 def cmd_supervision_gate(args, client=None, warn=None, trace=None):
     """Which pending supervision events need the foreman; see supervision_gate.py."""
     return supervision_gate.view(supervision.load(_state_path(args)), limit=args.limit, after=args.after), None
@@ -3503,6 +3563,11 @@ COMMANDS = {
     "load-set": cmd_load_set,
     **{command: cmd_progression_handoff for command in ("progression-admit", "progression-return", "progression-reconcile", "progression-resume")},
     "progression-run": cmd_progression_run,
+    "prepare-release-checkout": cmd_prepare_release_checkout,
+    "progression-prepare-adoption": cmd_progression_adoption,
+    "collect-deliveries": cmd_collect_deliveries,
+    "progression-batch": cmd_progression_batch,
+    "explain-plan": cmd_explain_plan,
     **{command: cmd_recovery for command in ("task", "checkpoint", "authorize-corrections", "authorize-approach", "recover-context", "recover-role-clear", "record-report", "record-refusal", "authorize-refused-dispatch", "diagnose", "reconcile", "recover-no-work", "reconcile-bootstrap", "record-release-clear", "import-correction", "record-historical-review", "recover-report", "assess-specialist", "close-task")},
     "detect-triggers": cmd_detect_triggers,
     "finding-churn": cmd_finding_churn,
@@ -3613,11 +3678,11 @@ def main(argv=None, stdout=None, stderr=None, client=None, *, service_capability
             home.require_current(defaults)
             # Commands that may migrate or write state share its canonical lock.
             # Dry runs, probes, and retrospective reads remain read-only.
-            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "github-context", "check-member", "verify-foreman", "report-gate-status"} or (getattr(args, "dry_run", False) and args.command != "quarantine-context-evidence")
+            readonly = args.command in {"probe-report", "probe-unavailable", "marker-fit", "detect-triggers", "finding-churn", "validate-partition", "verify-oracle", "verify-ruling", "retro-check", "retro-list", "retro-show", "capability-check", "capability-show", "supervision-gate", "foreman-queue", "workflow-readiness", "role-context", "cost-report", "github-context", "check-member", "verify-foreman", "report-gate-status", "explain-plan"} or (getattr(args, "dry_run", False) and args.command != "quarantine-context-evidence")
             # The deliverer starts while `foreman-reset` still holds the state lock;
             # it serializes on the reset record's own lock instead. close-member
             # writes only through the supervision owner's own lock.
-            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run"}
+            separate_owner = args.command in memory.COMMANDS | attention.COMMANDS | report_gates.COMMANDS | SUPERVISION_COMMANDS | restoration.COMMANDS | {"foreman-reset-deliver", "foreman-reset-reconcile", "foreman-reset-status", "close-member", "progression-run", "progression-batch", "progression-prepare-adoption", "collect-deliveries", "prepare-release-checkout", "progression-resume"}
             authority_transaction = service_capability is not None
             lock = nullcontext() if (readonly or separate_owner) and not authority_transaction else state_lock(retrospective.canonical_state(_state_path(args)))
             with lock:

@@ -1025,10 +1025,9 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertEqual([row for row in self.case.owner.state()["recovery"]["events"] if row["kind"] == "task_closed"], [])
         self.fail_helper = None
         packet = self.case.progress()["exception"]
-        with state_lock(self.path):
-            workflow_recovery.resume(self.path, {"task": "one", "expected_generation": 1,
-                "exception": supervision.digest(packet), "authorization": fixture.owner_fixture.AUTH},
-                self.case.now(), self.case.owner.client, fixture.ROOT)
+        workflow_recovery.resume(self.path, {"task": "one", "expected_generation": 1,
+            "exception": supervision.digest(packet), "authorization": fixture.owner_fixture.AUTH},
+            self.case.now(), self.case.owner.client, fixture.ROOT)
         with self.case.owner.session() as capability:
             runner = self.runner(capability)
             self.case.advance(runner, lambda: self.case.progress()["phase"] == "complete")

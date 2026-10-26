@@ -311,7 +311,7 @@ def dispatch_attempts(store, end):
 
 
 def export(owner, supervision, start, end, native, assessment, *, closure):
-    versions = ((owner.get("schema_version"), (11,)), (owner["recovery"].get("schema_version"), (18, 19)),
+    versions = ((owner.get("schema_version"), (11,)), (owner["recovery"].get("schema_version"), (18, 19, 20)),
                 (supervision.get("schema_version"), (1,)))
     if any(type(value) is not int or value not in accepted for value, accepted in versions):
         raise ValueError("unsupported owner evidence schema; preserve it and update this reader")

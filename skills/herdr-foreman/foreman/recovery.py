@@ -61,7 +61,17 @@ RECOVERY_SCHEMA_VERSION = 1
 #: Version 18 owns closed no-work recovery receipts and their retry bindings.
 #: Version 19 owns version-2 task records with current service authority.
 #: Historical version-1 tasks stay legacy; migration never delegates a task.
-RECOVERY_STORE_VERSION = 19
+RECOVERY_STORE_VERSION = 20
+DEPLOYED_RECOVERY_STORE_VERSION = 19
+
+
+def writable_version():
+    from .release_activation import enabled
+    return RECOVERY_STORE_VERSION if enabled() else min(DEPLOYED_RECOVERY_STORE_VERSION, RECOVERY_STORE_VERSION)
+
+
+def readable_versions():
+    return frozenset(range(min(DEPLOYED_RECOVERY_STORE_VERSION, RECOVERY_STORE_VERSION), RECOVERY_STORE_VERSION + 1))
 #: Three confirmed pre-input service/preflight failures buy no further identical start.
 #: Scope binds task/role/brief/account/template/model/effort, not pane, fresh
 #: identity or report destination. Exhaustion routes to causal diagnosis,
@@ -150,7 +160,7 @@ SHA_RE = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")
 
 
 def empty_recovery():
-    return {"schema_version": RECOVERY_STORE_VERSION, "tasks": {}, "checkpoints": [],
+    return {"schema_version": writable_version(), "tasks": {}, "checkpoints": [],
             "plans": [], "dispatches": [], "context_permissions": [], "events": [],
             "hand_clearances": [], "historical_attempts": [], "role_clearances": [], "delivery_recoveries": [],
             "refusal_authorizations": [], "diagnoses": [], "legacy_ruling_recoveries": [],
@@ -284,6 +294,8 @@ def _refuse_unowned_legacy(store, version):
         raise UsageError("Older recovery contains a task closure this version never wrote; preserve it for owner recovery.", {})
     if version < 17 and any(isinstance(row, dict) and row.get("kind") == "launch_transient_failure" for row in events):
         raise UsageError("Older recovery contains an unowned launch retry gate; preserve it for owner recovery.", {})
+    if version < 20 and any(isinstance(row, dict) and row.get("kind") == "progression_measurement_reconciled" for row in events):
+        raise UsageError("Older recovery contains an unowned measurement reconciliation; preserve it for owner recovery.", {})
     if version == 3:
         deliveries = store.get("delivery_recoveries")
         if not isinstance(deliveries, list):
@@ -329,8 +341,9 @@ def migrate_store(store):
         return migrated
     assert added is not None
     store.update({name: [] for name in added})
-    store["schema_version"] = RECOVERY_STORE_VERSION
-    return True
+    target = max(version, writable_version())
+    store["schema_version"] = target
+    return migrated or target != version or bool(added)
 
 
 def text(value, label):
@@ -728,16 +741,16 @@ def checkpoint(store, assignments, data, at, judge_agent):
     return record
 
 
-def accepted(assessments):
+def accepted(assessments, dispatches, assignments=None, *, task=None):
     """The report-sourced assessments stating every criterion met and no blocking verdict (#625).
 
     A migrated foreman assessment, a report with an `unmet` criterion, or one
     recording `VERDICT: blocking` never satisfies the diagnose or
     judge-investigation gate, which rely on the investigation's outcome.
     """
-    from .engagement import investigated
+    from .engagement import eligible_assessments, investigated
 
-    return [row for row in assessments if investigated(row)]
+    return [row for row in eligible_assessments(assessments, dispatches, assignments, task=task) if investigated(row)]
 
 
 def investigated_after(assignments, row, task, developer_index):
@@ -810,7 +823,7 @@ def require_investigation_before_judge(store, assignments, task, investigations,
     developer = latest_assignment(assignments, task=task, role="developer", status="applied")
     if developer is None:
         return None
-    if not any(investigated_after(assignments, row, task, developer[0]) for row in accepted(investigations)):
+    if not any(investigated_after(assignments, row, task, developer[0]) for row in accepted(investigations, store["dispatches"], assignments, task=task)):
         raise UsageError("Task {} sits at an exhausted allowance: consult the investigator and record `{}` on its report, every criterion met, before dispatching the judge, which rules on that assessment.".format(
             task, runnable.command("assess-specialist")), {})
     return None
@@ -1010,7 +1023,7 @@ def diagnose(store, assignments, data, at, judge_agent, enrolled_report, supervi
     # it. The assessment time is what matters: an investigator dispatched early
     # and assessed after the judge finished is not what the judge read (#408).
     judge_at = timestamp(assignments[judge[0]].get("at"), "Judge assignment chronology")
-    consulted = [row for row in accepted(investigations)
+    consulted = [row for row in accepted(investigations, store["dispatches"], assignments, task=data["task"])
                  if investigated_after(assignments, row, data["task"], developer[0])
                  and timestamp(row["at"], "Investigator assessment chronology") < judge_at]
     if not consulted:
@@ -1411,14 +1424,14 @@ def _validate_dispatch_metadata(record):
 
 def reserve(store, record, at):
     version = _dispatch_version(record)
-    if version >= SPECIALIST_DISPATCH_VERSION and store.get("schema_version") != RECOVERY_STORE_VERSION:
+    if version >= SPECIALIST_DISPATCH_VERSION and store.get("schema_version") not in readable_versions():
         raise UsageError("Composition dispatch metadata needs the owner-migrated recovery store; load the current state before reserving this assignment.", {})
     # A seat in the dispatch role is what store version 10 added. Appending one
     # to an older store leaves it carrying a row its version never wrote, which
     # the next load refuses as unowned newer data -- the whole ledger, not the
     # row (#434).
     if (isinstance(record.get("role"), str) and SEAT_SEPARATOR in record["role"]
-            and store.get("schema_version") != RECOVERY_STORE_VERSION):
+            and store.get("schema_version") not in readable_versions()):
         raise UsageError(
             "A seated dispatch needs the owner-migrated recovery store; load the current state "
             "before reserving {!r}, or the next load refuses the whole ledger.".format(record["role"]),
@@ -1646,7 +1659,7 @@ def record_refusal(store, data, at, provider, report, aliases=(), *, binding=Non
         return prior
     if "unavailability" in payload:
         from .model_unavailability import verify_refusal
-        if store["schema_version"] != RECOVERY_STORE_VERSION:
+        if store["schema_version"] not in readable_versions():
             raise UsageError("Native refusal needs the owner-migrated recovery store; load it before recording.", {})
         timestamp(at, "Native refusal")
         verify_refusal(payload["unavailability"], record, binding, provider, report)
@@ -2062,8 +2075,10 @@ def validate_store(store, assignments):
     Reading validates recorded relationships, never fetches historical reports
     or treats an old pane observation as a live readiness check.
     """
-    if not isinstance(store, dict) or type(store.get("schema_version")) is not int or store["schema_version"] != RECOVERY_STORE_VERSION:
+    if not isinstance(store, dict) or type(store.get("schema_version")) is not int or store["schema_version"] not in readable_versions():
         raise UsageError("Unsupported recovery schema; update the owner skill before using this ledger.", {})
+    if store["schema_version"] < 20:
+        _refuse_unowned_legacy(store, store["schema_version"])
     try:
         if not isinstance(store["tasks"], dict):
             raise UsageError("Recovery tasks must be an object; restore the owner-written ledger.", {})

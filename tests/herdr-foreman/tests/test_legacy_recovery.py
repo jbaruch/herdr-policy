@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 from foreman.cli import COMMANDS, build_parser, main
 from foreman.errors import UsageError
-from foreman.recovery import RECOVERY_STORE_VERSION, checkpoint, register_task, validate_store, validate_work
+from foreman.recovery import RECOVERY_STORE_VERSION, writable_version, checkpoint, register_task, validate_store, validate_work
 from foreman.state import add_assignment, empty_state, load_state_checked
 
 AT = "2026-02-03T12:00:00+00:00"
@@ -99,7 +99,7 @@ class SchemaNineCompatibilityTests(unittest.TestCase):
         restored, usable = load_state_checked(self.path)
         self.assertTrue(usable)
         expected = copy.deepcopy(before)
-        expected["recovery"]["schema_version"] = RECOVERY_STORE_VERSION
+        expected["recovery"]["schema_version"] = writable_version()
         expected["recovery"]["legacy_ruling_recoveries"] = []
         expected["recovery"]["approaches"] = []
         expected["recovery"]["no_work_recoveries"] = []
@@ -119,7 +119,7 @@ class SchemaNineCompatibilityTests(unittest.TestCase):
         restored, usable = load_state_checked(self.path)
         self.assertTrue(usable)
         expected = copy.deepcopy(before)
-        expected["recovery"]["schema_version"] = RECOVERY_STORE_VERSION
+        expected["recovery"]["schema_version"] = writable_version()
         expected["recovery"]["approaches"] = []
         expected["recovery"]["no_work_recoveries"] = []
         self.assertEqual(restored, expected)

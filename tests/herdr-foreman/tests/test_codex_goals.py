@@ -269,7 +269,7 @@ class CodexGoalRPCTest(unittest.TestCase):
                 control_socket()
 
     def test_unknown_or_incompatible_protocol_version_refuses_during_read_only_discovery(self):
-        for version in (None, "0.162.0", "0.164.0", [], True):
+        for version in (None, "0.162.0", "0.165.0", [], True):
             with self.subTest(version=version):
                 class Result:
                     returncode = 0

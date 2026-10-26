@@ -380,7 +380,7 @@ class NoWorkRecoveryTests(NoWorkFixture):
         save_state(self.path, old)
         loaded, usable = load_state_checked(self.path)
         self.assertTrue(usable)
-        self.assertEqual(loaded["recovery"]["schema_version"], recovery.RECOVERY_STORE_VERSION)
+        self.assertEqual(loaded["recovery"]["schema_version"], recovery.writable_version())
         self.assertEqual(loaded["assignments"], old["assignments"])
         self.assertEqual(loaded["recovery"]["dispatches"], old["recovery"]["dispatches"])
         self.assertEqual(json.loads(self.path.read_text())["recovery"]["no_work_recoveries"], [])

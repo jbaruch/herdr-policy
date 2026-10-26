@@ -119,6 +119,7 @@ def evidence(store, now, *, hours=168, agent=None):
             "total_metrics": totals, "by_role": group_rows(rows, "role"),
             "retention": store.get("meta", "retention", {}) if agent is None else {}, "earliest_retained_bucket": min((r["at"] for r in rows), default=None),
             "by_provider": group_rows(rows, "provider"), "by_hour": hours_view, "comparisons": comparisons,
+            "coverage_diagnostics": sources.coverage_diagnostics(current.get("coverage", [])),
             "comparison_omitted": comparison_omitted,
             "by_agent": agents[:MAX_VIEW_ROWS], "profiles": all_profiles[:MAX_VIEW_ROWS],
             "source_locators": locators[-MAX_VIEW_ROWS:], "current": current,

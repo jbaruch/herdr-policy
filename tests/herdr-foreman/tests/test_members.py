@@ -98,6 +98,19 @@ def seed_contract(case):
 
 
 class CloseMemberTest(MembersCase):
+    def test_an_unresolved_dispatch_cannot_accept_and_close_its_enrollment(self):
+        state = empty_state()
+        recovery.reserve(state["recovery"], {"id": "dispatch-a", "fingerprint": "a" * 64, "task": "task-a",
+            "role": "release", "agent": "codex-a", "fix_round": None, "plan": None, "work": None}, AT)
+        save_state(self.path, state)
+        self.write_ledger("accepted", fields={"role": "release"})
+        before = self.path.read_bytes()
+        supervised = store.load(self.path)
+        with self.assertRaisesRegex(UsageError, "Dispatch dispatch-a is unresolved"):
+            members.close(self.path, "dispatch-a", self.ledger, LATER)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(store.load(self.path), supervised)
+
     def test_post_send_exit_six_needs_unavailable_ledger_then_closes_old_member(self):
         # Controlled native boundary, real wait-input/ledger/supervision owners.
         # The failed applied transport remains history; it is not a refusal

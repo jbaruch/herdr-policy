@@ -44,7 +44,7 @@ denominators by assertion. Fixtures prove calculations, not observed ROI.
 
 Freeze private copies of the owner and its supervision sidecar before exporting.
 Keep the originals, copies, transcripts, ledgers and source maps outside Git.
-The exporter reads state schema 11, recovery-store schemas 18/19 and supervision
+The exporter reads state schema 11, recovery-store schemas 18/19/20 and supervision
 schema 1; an unsupported version fails without migrating or writing an owner.
 Select a trusted extracted Herdr source checkout for its existing native and
 task-ledger readers. The default is this repository after extraction.

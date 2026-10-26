@@ -303,7 +303,7 @@ class QuarantineTests(unittest.TestCase):
     def test_action_router_exposes_the_guarded_unreadable_owner_recovery(self):
         skill = Path(__file__).resolve().parents[3] / "skills/herdr-foreman"
         router = (skill / "SKILL.md").read_text()
-        self.assertIn("quarantine contradictory context evidence", router)
+        self.assertIn("quarantine contradictory context evidence", " ".join(router.split()))
         self.assertIn("owner_state_unreadable", router)
         self.assertIn("## Step 10 — Quarantine Context Evidence", router)
         reference = (skill / "references/context-quarantine.md").read_text()

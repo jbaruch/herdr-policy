@@ -252,9 +252,17 @@ def close(state_path, enrollment, ledger, at, client=None):
     state, usable = load_state_checked(state_path, persist_migration=False)
     if not usable:
         raise StateError("The dispatch state at {} is unusable, so assignment lifecycle evidence cannot be read; restore it before closing.".format(state_path), {})
+    from .task_evidence import require_clear
+    require_clear(state, {assignment["task"]})
     dispatch = next((row for row in state["recovery"]["dispatches"] if row.get("id") == enrollment), None)
     result = dispatch.get("result") if isinstance(dispatch, dict) else None
     result_record = result if isinstance(result, dict) else {}
+    if event["decision"] == "accepted" and member["active"] and dispatch is not None:
+        if dispatch.get("status") != "applied":
+            raise UsageError("Dispatch {} is unresolved; reconcile its actual send through references/dispatch-recovery.md before accepting or closing its enrollment. Preserve unknown delivery instead of retrying it.".format(enrollment),
+                             {"enrollment": enrollment, "dispatch_status": dispatch.get("status")})
+        from .report_delivery import require_primary_delivery
+        require_primary_delivery(dispatch, state["assignments"][dispatch["assignment_index"]], assignment, assignment["report"])
     # A reconcile can reconstruct an older-shaped result from transport
     # evidence, but the owner-written dispatch version still durably marks the
     # assignment as short-lived through its worker kind.

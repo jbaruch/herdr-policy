@@ -44,7 +44,8 @@ Version 10 adds the non-counting `maintenance` status for a verified worker
 relaunch that creates no dispatch.
 Version 6 adds specialist requirements and assessed contribution receipts.
 Each assessment record carries its own schema; `foreman/engagement.py`
-`migrate_assessments` upgrades a schema-1 record to 2 here, and the document
+`migrate_assessments` upgrades a schema-1 record to the release's writable
+assessment version (2 before shared activation, 4 afterward), and the document
 version is unchanged (#625).
 Version 5 adds recovery history without inventing original authorization or
 session proof. Version 4 adds verified model-tier evidence.
@@ -70,6 +71,9 @@ Reading follows one rule per direction:
 * **Corrupt** file: no usable prior state, same treatment. Discarding a
   snapshot ring costs one re-measure; overwriting an unread file costs the
   ledger.
+* **Attributable contradictory context pair**: retain the original row under
+  its derived task hold (`task_evidence.py`). Every other invariant still
+  validates; independent tasks keep the same owner and authority checks.
 """
 
 import json
@@ -152,7 +156,7 @@ def _maintenance_tier_is_valid(tier):
         return False
     try:
         parse_tiers({"build": {"model": tier.get("model"), "effort": tier.get("effort")}}, tier.get("kind"),
-                    no_effort_rows=frozenset({"build"}))
+                    no_effort_rows=frozenset({"build"}), saved=True)
         launch_args = parse_launch_args(tier.get("launch_args"), tier.get("kind"))
         verify_argv(tier.get("kind"), tier, proof.get("argv"), launch_args)
     except (ConfigError, HerdrError, UsageError):
@@ -541,7 +545,7 @@ def _apply_migrations(payload, table, label, target_version=STATE_SCHEMA_VERSION
     return payload, migrated
 
 
-def _validate(payload, path):
+def _validate(payload, path, *, isolate_task_evidence=False):
     """Return (state, migrated?) or raise _NoUsableState.
 
     Every rejection here is a no-usable-prior-state signal, never an
@@ -561,7 +565,7 @@ def _validate(payload, path):
             raise _NoUsableState("{!r} is not an array".format(key))
 
     rows = []
-    for record in payload["assignments"]:
+    for index, record in enumerate(payload["assignments"]):
         if not isinstance(record, dict):
             raise _NoUsableState("an assignment row is not a JSON object")
         record, row_migrated = _apply_migrations(record, RECORD_MIGRATIONS, "an assignment row")
@@ -598,7 +602,9 @@ def _validate(payload, path):
         cleared = record.get("cleared")
         reason = record.get("clear_reason")
         if not valid_context_evidence(cleared, reason):
-            raise _NoUsableState("an assignment row has invalid context evidence")
+            from .task_evidence import context_fault
+            if not isolate_task_evidence or context_fault(payload, index) is None:
+                raise _NoUsableState("an assignment row has invalid context evidence")
         if record.get("task") is not None and (
             not isinstance(record["task"], str) or not record["task"].strip()
         ):
@@ -633,7 +639,7 @@ def _validate(payload, path):
                 # authorization. Exact process argv proves the omitted flag;
                 # apply still rechecks current config and live fact owners.
                 parse_tiers({"build": {"model": tier["model"], "effort": tier.get("effort")}}, tier["kind"],
-                            no_effort_rows=frozenset({"build"}))
+                            no_effort_rows=frozenset({"build"}), saved=True)
                 launch_args = parse_launch_args(tier.get("launch_args", []), tier["kind"])
                 verify_argv(tier["kind"], tier, proof.get("argv"), launch_args)
             except (ConfigError, HerdrError, UsageError):
@@ -703,6 +709,10 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
     ledger it just preserved. A missing file is usable: there is nothing to
     lose, and an empty document is the honest starting point.
 
+    Usable does not clear derived task evidence holds. Effect owners must call
+    task_evidence.require_clear for the actual task scope; ordinary CLI and
+    service authority boundaries do this before dependent transitions.
+
     A missing file and a never-written file are the same thing: no prior state.
     So is a corrupt one, and so is one written by a newer build -- in both of
     those the file is left exactly as found, and the caller gets an empty
@@ -749,7 +759,7 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
     from . import workflow_upgrade
     delivery_upgrade = workflow_upgrade.delivery_migration_pending(payload)
     try:
-        state, migrated = _validate(payload, path)
+        state, migrated = _validate(payload, path, isolate_task_evidence=True)
     except _NoUsableState as exc:
         warn(
             "state file {}: {} - starting from an empty ledger; the file is left "
@@ -759,6 +769,10 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
 
     if delivery_upgrade:
         workflow_upgrade.require_compatible_services(state, path)
+    from .task_evidence import faults
+    isolated = faults(state)
+    if isolated:
+        warn("State retains {} contradictory assignment context row(s) under task-local evidence holds. Inspect `{}`; affected outcomes stay unknown and unrelated valid tasks may continue through their existing owner.".format(len(isolated), runnable.command("status --task <task>")))
     if migrated and not persist_migration:
         raise StateError("This read-only preview needs an owner migration. Run `{}` with the same --state path, then retry the preview; the original file is unchanged.".format(
             runnable.command("state --migrate-only")), {"path": str(path)})
@@ -797,6 +811,8 @@ def save_state(path, state):
             "regular file, or pass --state at the real location.".format(path),
             {"path": str(path)},
         )
+    from .task_evidence import preserve
+    preserve(path, state)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except (PermissionError, FileExistsError, NotADirectoryError) as exc:

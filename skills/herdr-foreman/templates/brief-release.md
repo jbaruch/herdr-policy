@@ -14,6 +14,12 @@ before any repository or GitHub write. This role grants no additional permission
 Your worktree is `{{WORKTREE}}`, on branch `{{BRANCH}}`, already pushed. The
 foreman created it. You do not.
 
+Keep the native launcher's existing project context. A recorded workflow
+checkout handoff starts in its verified retained source so project-local hooks
+and policy load normally. Change to the assigned worktree for business Git and
+read its applicable AGENTS.md/project policy. Preserve the retained source and
+its local setup; every untracked file in the selected checkout still blocks.
+
 1. Confirm where you are before anything else:
 
    ```bash

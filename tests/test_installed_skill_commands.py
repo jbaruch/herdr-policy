@@ -25,9 +25,9 @@ class InstalledSkillCommandsTest(unittest.TestCase):
         (self.skill / "release.sh").write_text("exit 91\n")
         self.markdown = self.skill / "SKILL.md"
 
-    def write_command(self, selected, target="release.sh"):
+    def write_command(self, selected, target="release.sh", interpreter="bash"):
         self.markdown.write_text('```bash\nKS="' + selected + '"; [ -d "$KS" ] || exit 1\n'
-                                 'bash "$KS/' + target + '"\n```\n')
+                                 + interpreter + ' "$KS/' + target + '"\n```\n')
 
     def verify(self):
         return CHECK.verify_skill_commands(self.project, ".codex", "coding-policy", "KS", ("release",), CHECK.runtime_environment())
@@ -35,6 +35,26 @@ class InstalledSkillCommandsTest(unittest.TestCase):
     def test_native_root_with_spaces_resolves_without_running_the_business_command(self):
         self.write_command(self.native + "/")
         self.assertEqual(self.verify(), {"release": 1})
+
+    def test_isolated_python_target_is_verified_without_running_it(self):
+        (self.skill / "prepare-briefs.py").write_text("raise SystemExit(91)\n")
+        self.write_command(self.native + "/", "prepare-briefs.py", "python3 -I")
+        self.assertEqual(self.verify(), {"release": 1})
+
+    def test_isolated_python_keeps_owned_target_and_interpreter_checks(self):
+        (self.skill.parent / "outside.py").write_text("raise SystemExit(92)\n")
+        for target in ("missing.py", "../outside.py", "release.sh"):
+            with self.subTest(target=target):
+                self.write_command(self.native + "/", target, "python3 -I")
+                with self.assertRaises(CHECK.BehaviorFailure):
+                    self.verify()
+
+    def test_unrecognized_interpreter_flags_still_fail(self):
+        for interpreter in ("bash -I", "python3 -c", "python3 -I -c"):
+            with self.subTest(interpreter=interpreter):
+                self.write_command(self.native + "/", interpreter=interpreter)
+                with self.assertRaises(CHECK.BehaviorFailure):
+                    self.verify()
 
     def test_commands_can_select_another_owned_skill_in_the_same_package(self):
         other = self.skill.with_name("acr__jbaruch__coding-policy__onboard-repo")

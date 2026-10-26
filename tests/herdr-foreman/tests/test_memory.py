@@ -69,6 +69,43 @@ class MemoryTest(unittest.TestCase):
         memory.location(self.state).parent.mkdir(exist_ok=True)
         memory.location(self.state).write_text(json.dumps(document), encoding="utf-8")
 
+    def test_reuse_stow_preserves_capture_and_original_receipts_without_new_authority(self):
+        self.stow()
+        before = self.raw()["records"][0]
+        result = memory.reuse_stow(self.state, "stow-1", "retry-1", LATER)
+        records = self.raw()["records"]
+        self.assertEqual(records[0], before)
+        self.assertEqual(result["record"]["id"], "retry-1")
+        for key in ("capture", "unresolved_work", "gaps", "required_reads"):
+            self.assertEqual(records[1][key], before[key])
+        self.assertTrue(result["record"]["reset_ready"])
+        self.assertEqual(result["record"]["readiness_scope"], "local_capture_only")
+        self.assertFalse(self.state.exists())
+        self.assertFalse(Path(str(self.state) + ".foreman-reset.json").exists())
+
+    def test_reuse_refuses_changed_or_missing_sources_and_preserves_original(self):
+        self.stow()
+        before = memory.location(self.state).read_bytes()
+        self.source.write_text("changed source")
+        with self.assertRaisesRegex(UsageError, "unchanged reset-ready"):
+            memory.reuse_stow(self.state, "stow-1", "retry-1", LATER)
+        self.assertEqual(memory.location(self.state).read_bytes(), before)
+        self.source.unlink()
+        with self.assertRaises(UsageError):
+            memory.reuse_stow(self.state, "stow-1", "retry-1", LATER)
+        self.assertEqual(memory.location(self.state).read_bytes(), before)
+
+    def test_reuse_refuses_a_source_changed_between_observation_and_append(self):
+        self.stow()
+        before = memory.location(self.state).read_bytes()
+        append = memory._append
+        def changed(*args, **kwargs):
+            self.source.write_text("changed after readiness")
+            return append(*args, **kwargs)
+        with patch.object(memory, "_append", side_effect=changed), self.assertRaisesRegex(UsageError, "changed during reuse"):
+            memory.reuse_stow(self.state, "stow-1", "retry-1", LATER)
+        self.assertEqual(memory.location(self.state).read_bytes(), before)
+
     def test_missing_readers_create_no_files(self):
         before = sorted(self.root.rglob("*"))
         with patch.object(memory, "state_lock", side_effect=AssertionError("reader must not lock")):

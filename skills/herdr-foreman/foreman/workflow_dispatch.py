@@ -14,6 +14,13 @@ from .state import add_assignment
 
 
 def reserve(state, task, generation, round_number, job, template, common, at):
+    from .workflow_planning import correction_authority
+    confirmed = recovery.confirmed_fix(state["assignments"], task)
+    expected = round_number - 1 if job["role"] == "developer" and round_number else round_number
+    if confirmed != expected:
+        raise UsageError("The task's cumulative correction history changed during preparation; preserve its actual counter and obtain a current task-local decision before dispatch.",
+                         {"reason": "task_correction_counter_changed", "confirmed_fixes": confirmed})
+    plan, work = correction_authority(state, task, round_number, job["role"])
     paths = {"common": common, job["role"]: job["brief"]}
     identifier, fingerprint = recovery.dispatch_identity(task, job["role"], job["agent"], round_number or None,
         paths, supplied=job["id"].rsplit(":", 1)[0], options={"workflow_schema": 2,
@@ -23,7 +30,7 @@ def reserve(state, task, generation, round_number, job, template, common, at):
         raise UsageError("Use the workflow's original role-bound dispatch intent; a different identity cannot reserve this job.", {})
     record = {"id": identifier, "fingerprint": supervision.report_bound_fingerprint(fingerprint, job["report"]),
         "role": job["role"], "agent": job["agent"], "task": task, "fix_round": round_number or None,
-        "plan": None, "work": None, "common": common, "brief": job["brief"],
+        "plan": plan, "work": work, "common": common, "brief": job["brief"],
         "brief_identity": recovery.brief_identity(paths, job["role"], job["report"]),
         "provider": template.kind, "worker_kind": template.name,
         "launch_scope": model_unavailability.launch_scope(template)}

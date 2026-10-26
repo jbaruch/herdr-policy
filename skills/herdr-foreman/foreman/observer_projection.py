@@ -40,7 +40,8 @@ def view(path, section="current", *, offset=0, limit=50):
     else:
         data = _read(Path(path))
         if (not isinstance(data, dict) or data.get("schema_version") != 11
-                or data.get("recovery", {}).get("schema_version") != 19):
+                or type(data.get("recovery", {}).get("schema_version")) is not int
+                or data["recovery"]["schema_version"] not in (19, 20)):
             raise StateError("Restore the supported state/recovery owner before observing this factory; no migration was attempted.", {})
         if section == "current":
             active = [row for row in supervised.get("members", []) if row.get("active")]

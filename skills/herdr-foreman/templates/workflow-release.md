@@ -1,5 +1,11 @@
 # Native release responsibility
 
+Native startup retains the existing project context. After a checkout handoff,
+the owner proves its original retained source as the startup cwd, preserving
+project-local hooks and policy discovery. Change to repository.worktree in the
+admitted task for business Git and read its applicable AGENTS.md/project policy.
+Preserve the retained source; any untracked file in the selected checkout blocks.
+
 Run the complete selected coding-policy release skill and all of its binding
 step references. This assignment owns the authorized release outcome, through
 actual merge and each selected publication. The executor owns local task

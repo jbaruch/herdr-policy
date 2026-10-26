@@ -28,7 +28,7 @@ SCHEMA_VERSION = 1
 STOW_VERSION = 2
 STOW_VERSIONS = frozenset({SCHEMA_VERSION, STOW_VERSION})
 GAP_RECOVERIES = ("reread", "ask", "accept")
-COMMANDS = frozenset({"memory-record", "memory-list", "memory-show", "memory-stow"})
+COMMANDS = frozenset({"memory-record", "memory-list", "memory-show", "memory-stow", "memory-reuse-stow"})
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 SOURCE_CHUNK_BYTES = 65_536
 
@@ -253,7 +253,7 @@ def _load(path):
         raise StateError(str(exc), {}) from None
 
 
-def _append(path, data, kind, at):
+def _append(path, data, kind, at, *, expected_reads=None):
     _require(isinstance(data, dict), "Memory input must be a JSON object; supply the documented record fields.")
     at = _utc(at)
     common = {"id"}
@@ -287,6 +287,8 @@ def _append(path, data, kind, at):
         source_key = "sources" if kind == "lesson" else "required_reads"
         _require(_names(data[source_key], nonempty=True), "Memory {} must list distinct evidence locations.".format(source_key))
         row[source_key] = [_source(value) if kind == "lesson" else _receipt(value) for value in data[source_key]]
+        _require(expected_reads is None or row[source_key] == expected_reads,
+                 "Saved checkpoint sources changed during reuse; preserve the original stow and capture the actual changed knowledge before another handoff.")
         _require(all(source.get("path") != str(location(path)) for source in row[source_key]),
                  "Do not receipt memory's own changing index; replacement foremen read memory_path automatically, then required_reads.")
         _validate_record(row)
@@ -314,6 +316,19 @@ def record(path, data, at):
 def stow(path, data, at):
     """Capture local handoff knowledge without claiming task or fleet reconciliation."""
     return _append(path, data, "stow", at)
+
+
+def reuse_stow(path, name, new_id, at):
+    """Reuse unchanged saved knowledge, without claiming reset retry authority."""
+    original = show(path, at, name)["record"]
+    _require(original["kind"] == "stow" and original["reset_ready"],
+             "Reuse requires an unchanged reset-ready stow; preserve its original knowledge and resolve its named gaps first.")
+    _require(new_id != original["id"], "Use a new stow id for the new attempt; the original reset evidence stays immutable.")
+    data = {key: original[key] for key in ("capture", "unresolved_work", "gaps")}
+    data.update(id=new_id, required_reads=[row["path"] for row in original["required_reads"]])
+    expected = [{key: value for key, value in row.items() if key != "observation"}
+                for row in original["required_reads"]]
+    return _append(path, data, "stow", at, expected_reads=expected)
 
 
 def _source_status(source):
@@ -417,6 +432,9 @@ def register_commands(sub, common):
         parser.add_argument("--now", metavar="ISO", help="Injected observation or recording time (default: current UTC).")
         if command in {"memory-record", "memory-stow"}:
             parser.add_argument("--record", required=True, metavar="FILE", help="Foreman-authored JSON record; see references/working-memory.md.")
+        elif command == "memory-reuse-stow":
+            parser.add_argument("--id", required=True, help="Existing unchanged reset-ready stow.")
+            parser.add_argument("--new-id", required=True, help="New attempt's stow id; reuse grants no reset authority.")
         elif command == "memory-list":
             parser.add_argument("--scope", action="append", dest="scopes")
             parser.add_argument("--include-archived", action="store_true")
@@ -430,6 +448,8 @@ def register_commands(sub, common):
 
 def run_command(args, state_path, now):
     """Return a JSON payload; call before config or Herdr setup, with no outer lock."""
+    if args.command == "memory-reuse-stow":
+        return reuse_stow(state_path, args.id, args.new_id, now)
     if args.command == "memory-record":
         return record(state_path, _json(args.record), now)
     if args.command == "memory-stow":

@@ -126,7 +126,28 @@ skills/herdr-foreman/references/model-tiers.md
 skills/herdr-foreman/references/dispatch-recovery.md
 ```
 
-Save the plan and rationale.
+Save the plan and rationale. Before launching a batch, give one compact
+explanation of selected providers, measured alternatives and each exclusion or
+eligibility boundary. Use the existing planner facts through
+`explain-plan --plan FILE [--snapshot FILE] --constraint-source SOURCE
+--constraint-scope task|project|session|standing [--refresh]` on the resolved
+`skills/herdr-foreman/foreman.sh` owner. Preserve that plan's observation time
+and pagination; a later snapshot cannot rewrite an earlier selection.
+
+Keep an operator constraint's actual source link/reference and scope in the
+existing handoff or task input. On a full refresh, read that real source and
+reconcile its scope; retain valid standing instructions across recovery. A
+formatter reference is not verified authority. Never promote an opaque
+historical owner string into a new instruction or erase an inherited constraint
+without that reconciliation. If source or scope remains ambiguous, ask one
+concise clarification while independent eligible work continues. The diagnostic
+names unknown provenance and preserves the original exclusion.
+
+A question about available providers is diagnostic until the operator actually
+changes the constraint. `explain-plan`, including `--refresh`, changes no plan,
+configuration, owner, preference or authorization. It adds no preference store,
+dashboard, approval or additional worker gate.
+
 Assign whole-suite execution to the tester, with exact-head artifacts available
 to the reviewer and specialists. Stagger expensive gates sharing a constrained
 CPU, memory, container service or host; keep code review and independent work

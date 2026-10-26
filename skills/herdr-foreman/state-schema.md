@@ -22,6 +22,23 @@ fields. Sections are binding, current and closures. The private observer reads
 these projections instead of complete historical state/supervision documents.
 This interface writes no owner, gate or replacement store.
 
+### Shared Writer Activation
+
+`skills/herdr-foreman/foreman/release_activation.py` owns the single release
+activation for pending owner formats. Compatibility readers accept recovery
+19/20 and assessment 2/3/4 while ordinary new writes retain recovery 19 and
+assessment 2. Existing newer records remain readable and are never downgraded.
+Legacy assessment writes omit `native_delivery`; no new field or event is
+silently written under a deployed version.
+
+The activation release changes the one shared release-owned constant only after
+both Tessl and ACR compatibility publication are confirmed. Environment, command
+input and owner records cannot activate it. A staged native-proof or measurement
+reconciliation write refuses with `owner_writes_staged`, preserving pending
+evidence and supported legacy work. No per-task approval, timer or extra
+migration command is introduced. Tests patch this same constant for the activated
+writer paths and separately exercise default compatibility behavior.
+
 | Path | Owner | Purpose |
 | ---- | ----- | ------- |
 | `$XDG_STATE_HOME/foreman/state.json` (default `~/.local/state/foreman/state.json`, override `--state FILE`) | `skills/herdr-foreman/foreman/state.py` and its `skills/herdr-foreman/foreman/recovery.py` helper, within the same owner skill | Snapshots, append-only assignments, and audited task recovery |
@@ -31,7 +48,77 @@ This interface writes no owner, gate or replacement store.
 | `<canonical-state-path>.foreman-reset.json` | `skills/herdr-foreman/foreman/foreman_reset.py` | One record per explicitly requested foreman maintenance reset; see Foreman Reset Record below |
 | `<canonical-state-path>.bootstrap.json` | `skills/herdr-foreman/foreman/bootstrap_recovery.py` | Original Codex launch provenance and durable bootstrap transport/cleanup receipts |
 | `<state-path>.context-evidence/` | `skills/herdr-foreman/foreman/context_evidence.py` | Immutable original ledgers and schema-1 quarantine intent journals for the known fresh/no-clear contradiction |
+| `<state-path>.task-evidence/` | `skills/herdr-foreman/foreman/task_evidence.py` | Immutable original-owner backups and schema-1 preservation receipts for derived task-local evidence holds |
+| `<canonical-state>.release-<sha256(task)>.json` | `skills/herdr-foreman/foreman/release_flight.py` reader; `release_checkout.py` is its sole gated transaction writer | Bounded task-local locator for an immutable Git-owned checkout intent; no file inventory or release approval |
 | Controller-configured private remote owner JSON | `skills/herdr-foreman/foreman/remote_owner.py` | Attested command context, current single-controller lease, indeterminate intent and task ingress; schema and writer/reader contract in `skills/herdr-foreman/references/remote-context.md` |
+
+## Release checkout flight reader
+
+`release_flight.py` reads only the selected task's deterministic private locator;
+it performs no Git/native call, directory scan, mutation or migration. Locator
+schema 1 has exact fields `schema_version`, `state_path`, `task`, `intent`
+(`{path, sha256}`), `ready`, `generation`, and `task_sha256`. The latter is the
+exported `task_fingerprint(task_row, binding)`: canonical SHA-256 over immutable
+registration `task`, `base_revision`, `scope`, `allowed_paths`, `authorization`
+and registration `at`, plus the exact original intent binding generation/digest.
+Mutable task schema/authority/progression are excluded. Readers recompute this
+against the selected current task; same-generation scope/authorization changes
+cannot replay a ready record. A workflow intent's binding also equals its
+original grant binding. The private owned
+regular file is bounded to 4 KiB. `intent` names an immutable private Git
+`foreman-release-<sha256(successor-path)>.json`, bounded to 64 KiB and binding
+the same state/task/original base, source/successor paths, branch/head,
+provision schema-1 provenance, binding, evidence and `authorizes_release: false`.
+Evidence is either a bounded ready-ledger receipt or the original workflow
+grant/progress, report receipts and successor contract receipt. Unknown shapes,
+versions, changed hashes, aliases/links and unreadable evidence hold only that
+selected task. Original bytes and all other task owners remain untouched.
+
+`ready` is exactly the intent path plus `.ready`. Its schema-1 exact fields are
+`schema_version`, `state_path`, `task`, `intent`, `generation`, `task_sha256`, and
+`authorizes_progression: false`; it is private, owned, regular and at most
+4 KiB. It must bind the original intent and exact current legacy generation or
+expected successor workflow grant/generation/contract. A copied, malformed or
+unbound ready record cannot clear the fence. A valid ready record proves only
+absence of this in-flight fence; actual role, Git/head/branch/source, policy,
+holds, native effects and evidence checks still run. The transaction owner
+alone retires its exact settled locator; this reader never deletes it.
+
+The 0.19.0 compatibility release ships these readers, selected legacy-command
+and native-capability gates, and the full transaction writer with new writes
+disabled. `release_checkout.py` owns that writer, which requires
+the one shared `release_activation.NEW_OWNER_WRITES_ENABLED` for every new
+locator/ready/Git handoff. Both package channels must publish the readers before
+the activation release enables that flag. Existing ordinary legacy work remains usable. Pending
+handoffs resume only through their exact verified owner intent, never a caller
+flag, empty-ledger reset or generic catch-and-drop.
+
+## Task-Local Evidence Holds
+
+`skills/herdr-foreman/foreman/task_evidence.py` owns the narrow classification
+and preservation contract. The state reader can retain an attributable assignment
+context-pair contradiction as a derived task hold while validating every other
+owner invariant. Unattributable rows, other invalid evidence, ambiguous dispatch
+ownership and invalid task authority remain whole-owner refusals. No row, status,
+context proof, counter, contributor, native identity or unknown send is removed or
+changed by isolation. The owner and current task/grant schemas are unchanged.
+
+`status --task <task>` includes bounded `task_evidence` diagnostics when the owner
+contains isolated rows: affected assignment indexes, digests, dispatches, unknown
+outcomes, explicit omissions and coverage. Task transitions and service effects
+refuse the affected scope. Independent valid tasks retain their existing owner
+checks; global operator holds and global binding validation still apply.
+
+Before an unrelated owner write, the state owner preserves the exact original
+owner bytes immutably in its private task-evidence directory. Each preservation
+receipt carries `schema_version: 1`, the derived `fault` and
+`original_state_sha256`; its filename binds the assignment index and row digest.
+`<sha256>.original.json` retains the corresponding owner bytes. Only this module
+writes or reads these files; no reader migrates them. Unsupported versions,
+changed originals, foreign files and failed preservation refuse the write.
+Version 1 is the first accepted receipt schema. Receipts preserve evidence and
+never establish authority or clear a task hold; every read derives the hold again
+from the unchanged row. No extra operator phase or bookkeeping command is needed.
 
 ## Contradictory Context Evidence
 
@@ -723,7 +810,8 @@ document and arrives already stamped.
 
 ## Recovery records
 
-The recovery document uses `schema_version: 19`; individual records retain their
+The recovery reader accepts `schema_version: 19` and `20`; ordinary writes retain
+19 until Shared Writer Activation permits 20. Individual records retain their
 independent versions. Version 6 adds the dispatch fields `brief_identity`, `refusal` and
 `refusal_move` and the `refusal_authorizations` collection; version 7 adds the
 dispatch's send-time `provider`; version 8 adds the `diagnoses` collection;
@@ -901,6 +989,35 @@ and each capability check verify the
 captured contract type. This explicit discriminator lets Stop ignore legacy
 historical contracts instead of opening them to infer an execution mode.
 
+An adopted source uses grant schema 3 with the same exact fields and
+`contract_schema: 3`. Its immutable contract is schema 3: the schema-2 task
+declaration plus `adoption`. That receipt is schema 1; its exact bounded fields
+and native evidence interpretation are owned by `FIELDS` and `validate` in
+`skills/herdr-foreman/foreman/workflow_adoption.py`. It references the original
+dispatch, enrollment identity, byte-bound report/native source, exact pushed
+head and cumulative correction. No copied report or fabricated worker claim is
+stored. The transfer resolution binds the report and immutable admitted
+contract, which retains the authenticated native-source receipt. Closed native
+logs may append or retire; current transitions use that canonical closure,
+original brief/report bytes and current gates. Native reported source keeps
+one schema-3 pending `adopt` intent, using
+the existing intent fields with null `job`, empty `argv`, the original single
+dispatch and report/native-source inputs. Its resolution is delivery transfer
+for verification; it is not an accepted implementation assessment. Progression
+keeps schema 2 and enters `verify` at the actual cumulative correction.
+
+The owner dual-reads grants 1/2/3 and contracts 1/2/3. Its schema-1 grant
+migration still derives prepared-chain authority only. No old record migrates
+into adoption. Admission 3 stays disabled by the source-controlled reader-first
+gate until compatible Tessl and ACR publications are verified; existing
+schema-3 recovery remains readable while the gate is false. Older readers must
+refuse the unsupported grant/contract/intent before effects. Task metadata,
+assignment, recovery and supervision schemas are unchanged. Reported delivery
+transfer uses existing observation/acknowledgment/resolution owners, without an
+extra event kind or second ledger. Native waits run outside the primary lock;
+each short transport checkpoint reloads the whole canonical owner and retains
+another task's appended assignments and actual indexes.
+
 An optional schema-1 `progression` record starts at the first dispatch intent. Its
 schema-1 fields are `schema_version`, `generation`, `cursor` and `pending`.
 `pending` is null or a schema-1 record with `step` and stable `intent` identity.
@@ -928,6 +1045,10 @@ removes it. Operations are `measure`, `apply`, `record`, `close`, `merge` and
 are `JOB_FIELDS` and `CLAIM_FIELDS` in the same owner module, with their human
 contract in `skills/herdr-foreman/references/task-workflow.md`. Claims never replace actual native
 delivery, independent identities, Git scope or existing gate evidence.
+New `measure` intents save their exact owner `--now` pair in `argv` before any
+effect. Its completed snapshot readback must carry that timestamp and the current
+native/config context digest. A pre-existing started intent with empty `argv`
+cannot adopt a later snapshot.
 
 `exception` is null or `{id, code, phase, sources, actions}`. `id` binds this
 occurrence to its task generation, phase, capture time and existing canonical
@@ -996,6 +1117,18 @@ its current plan, preserving generation, task, base, jobs and correction count.
 It requires settled enrollments and no report; a later execution plans a fresh
 native identity rather than reusing an uncertain attempt.
 
+After Shared Writer Activation, the same command records `progression_measurement_reconciled` for one exact
+schema-2 measure intent. Event details retain the task, generation, intent,
+authorization and schema-1 readback `{schema_version,kind,sha256}`. The digest
+must identify exactly one canonical durable intent, state snapshot or retained
+probe row. Completed snapshots bind the saved measurement timestamp, captured
+config, full configured worker set and native context. Closed-probe incomplete
+outcomes bind the original config/timestamp and require no pending or live
+disposable probe. They never claim `not_sent`; uncertain input remains an
+incomplete measurement owned by that receipt. Unknown launch/close/business-send
+effects retain their existing owners. Replay matches the whole event input and
+writes nothing.
+
 The kernel lease is a dedicated empty file, not a schema-bearing authority
 record. Its separate empty `.owner` sibling holds a process-associated lock;
 `F_GETLK` joins the exact PID to both actual inode identities. A live process
@@ -1019,6 +1152,14 @@ compatible CLI owners and native hooks before admission; never run an old
 sidecar against admitted tasks. Readers do not independently migrate grants.
 The command and initial-adapter limits are in `skills/herdr-foreman/references/progression.md`.
 
+Version 20 adds the `progression_measurement_reconciled` event and its
+operation-specific replay contract. Compatibility mode keeps version 19 and its
+deployed empty measurement argv; activated new intents retain the exact owner
+timestamp. Both intent forms remain readable and executable. The activated
+owner upgrades known older stores without inventing this event; a version below 20 already carrying it refuses
+as unowned data. Older owners reject the newer store instead of ignoring the
+reconciliation history.
+
 ## Specialist assessment records
 
 `assess-specialist` appends records to the main state's `specialist_assessments`.
@@ -1028,10 +1169,11 @@ Its input is exactly `id`, `dispatch`, `report` and `delivery`; `outcome`,
 `skills/herdr-foreman/foreman/report_contract.py`, whose module docstring holds
 the line formats and refusal classes.
 
-Each schema-2 record contains `schema_version: 2`, `id`, `at`, `dispatch`,
+Shared Writer Activation selects schema 4 for new assessments; compatibility
+writes retain schema 2 without `native_delivery`. Each schema-4 record contains `schema_version: 4`, `id`, `at`, `dispatch`,
 `assignment_index`, `task`, `role`, `agent`, `report`, `delivery`,
 `report_evidence`, `delivery_evidence`, `source`, `brief_evidence`, `criteria`,
-`acceptance`, `verdict`, `contribution`, `legacy` and `gap`. The evidence objects
+`acceptance`, `verdict`, `contribution`, `legacy`, `gap` and `native_delivery`. The evidence objects
 contain absolute `path` and SHA-256 `sha256`. The report is the supervised
 assignment's enrolled path; delivery is saved successful `wait-report` JSON for
 that worker and path, or the exact owner-recorded `recover-report` output for
@@ -1047,6 +1189,7 @@ that dispatch and the same report bytes.
 | `contribution` | The report's optional `CONTRIBUTION:` value or null; a migrated record keeps its old value |
 | `legacy` | `{outcome, summary}` on a migrated record, else null |
 | `gap` | `{message, gaps}` on a `contribution_only` record: the refusal it replays on an identical retry (same input, same report bytes); else null |
+| `native_delivery` | Versioned canonical native-prefix proof bound to the original Antigravity assignment/session and immutable dispatch; null for other providers or unproven migrated history |
 
 The role and specialty come from the owner dispatch, never from the caller. A
 report with a contract gap appends nothing, save a `contribution_only` entry
@@ -1055,7 +1198,25 @@ and satisfies no reader below. The utility verifies the original
 confirmed dispatch, assignment, enrollment and frozen brief before appending.
 Exact ID/input retries preserve the original receipt, including after source
 cleanup; changed input requires a new ID. Historical reads validate schema and
-relationships without reopening sources.
+relationships without reopening sources. Missing native sources do not erase
+history, contributors or exclusions, and establish no positive delivery authority.
+
+`skills/herdr-foreman/foreman/report_delivery.py` owns native proof schema 1.
+It records `provider`, the original `native_session`, canonical assignment and
+immutable-dispatch digests, the report receipt, and `source: {path, sha256, bytes}`.
+The prefix length and digest bind the exact completed canonical conversation at
+assessment time; later warm turns may append without invalidating that prefix.
+Only Antigravity report-sourced assessments carry this proof; every other
+provider requires null. `NATIVE_ASSESSMENT_FIELDS`, `validate_native_assessment`,
+`verify_native_assessment` and `MAX_ASSESSMENT_SOURCE_BYTES` own its fields,
+relationships and byte budget. Source schemas are never migrated by this reader.
+
+Positive evidence consumers verify the selected record/task's current canonical
+prefix, exact original assignment/request/report and captured model selection.
+An unrelated archive, session, provider or dispatch, a changed/truncated prefix,
+or missing proof supplies no authority. Reading one task does not reopen unrelated
+native history. A general gate-ledger inspection leaves native delivery unknown
+until a report scopes the affected task. No native content is copied into state.
 
 A report-sourced record gates three readers. `close-member` needs one matching
 the current report bytes before an `accepted` reviewer, tester or consultation
@@ -1069,12 +1230,19 @@ A `design` or `implementation` contribution on any record adds a same-task
 independence exclusion; nothing subtracts one. Missing, corrupt or unsupported
 assessment history follows the main state's preserve-and-refuse writer contract.
 
-Migration `1 → 2` runs in the owner while state loads, and is idempotent. It
+Migration `1 → 2` runs in compatibility mode; activated owners use `1 → 4`.
+Both are idempotent and preserve the same historical meaning. Migration
 moves `outcome` and `summary` under `legacy`, sets `source:
-foreman_assessment`, nulls the line fields and keeps `contribution`. A migrated
+foreman_assessment`, nulls the line fields and native delivery proof, and keeps `contribution`. A migrated
 record never satisfies `accepted`, a warm follow-up or the diagnose and judge
 gates; an in-flight consultation needs a fresh dispatch. A schema-1 record
-already carrying a schema-2 field is refused as corrupt. A record newer than 2
+already carrying newer fields is refused as corrupt. Schema-2/3 records remain
+readable without rewriting or inventing native proof. Schema 3 introduced an
+unbound generic native receipt; it cannot establish the newer canonical prefix
+and assignment proof. These historical Antigravity rows
+cannot supply delivery/approval authority; reassess the same report under a
+new assessment id after the owner can prove its canonical request and model.
+A record newer than 4
 takes the lagging-reader path: no usable prior state, the file left untouched.
 The document's own version is unchanged.
 
@@ -1498,7 +1666,7 @@ could not take.
 | `schema_version` | integer, always `4` | Row version |
 | `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before the first clear keystroke. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
-| `host_goal` | null or goal-receipt schema 1 | Legacy null grants no goal authority. New rows carry host preflight and the journal below. The input hook retires the source before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
+| `host_goal` | null or goal-receipt schema 1/2 | Legacy null grants no goal authority. The 0.19.0 compatibility release reads both versions and keeps new writes at schema 1. For schema 2 with an active automatic source goal, the claimed deliverer retires the source before waiting for idle, then the input hook verifies that retirement before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
 | `stow` | string | The stow id the resume prompt names |
 | `status` | one of `scheduled`, `delivering`, `delivered`, `failed`, `interrupted`, `reconciled` | `scheduled` → `delivering` → `delivered`; `failed` before any keystroke; `interrupted` after one; `reconciled` when the operator confirmed through `foreman-reset-reconcile` that the foreman resumed |
@@ -1508,18 +1676,28 @@ could not take.
 | `native_session` | `{"kind": "id" \| "path", "value": non-empty string}`, or null | Original native binding. Null is retained only from schema-1 migration and authorizes no input. The per-keystroke session/process contract is `skills/herdr-foreman/foreman/foreman_reset.py` (`deliver`); hook transfer is `skills/herdr-foreman/foreman/reset_input_hook.py` (`check`) |
 | `result` | null, the delivery object, or the failure object | `scheduled` and `delivering` hold null. `delivered` holds exactly `{"schema_version", "pane_id", "stow", "agent", "cleared": true, "resume": {"landed": true, "started": true}}`, whose `schema_version`, `pane_id` and `stow` equal the row's. `failed` and `interrupted` hold exactly `{"error": string, "message": string, "details": object, "resume_prompt": string}`; the saved prompt is used only when the recovery instruction requires operator input. `reconciled` holds exactly `{"outcome": "delivered", "reconciled_at": ISO-8601 string}` |
 
-The reset owner writes and reads goal-receipt schema 1 through
+The reset owner reads Codex goal-receipt schemas 1/2 through
 `skills/herdr-foreman/foreman/host_goals.py`; the host adapter is
 `skills/herdr-foreman/foreman/codex_goals.py`. Native Claude/Grok receipts contain
-only `schema_version`, `runtime` and `phase: not_applicable`: they create no
+only `schema_version: 1`, `runtime` and `phase: not_applicable`: they create no
 Codex goal and prove nothing about an external scheduler. Codex receipts contain:
+
+The readers-first rollout follows `rules/stateful-artifacts.md` Cross-Pipeline
+Schema Bumps. Release 0.19.0 keeps the shared
+`release_activation.NEW_OWNER_WRITES_ENABLED` false and ships dual-accept readers
+through both Tessl and ACR. Confirm both publications before the activation
+release changes that constant to true. No elapsed waiting
+period or new operator approval is required. Existing schema-2 receipts remain
+recoverable during the compatibility stage; a schema-1 receipt cannot enter
+targetless preclear until writer activation. Older schema-1-only owners refuse
+schema 2 without rewriting its history.
 
 | Field | Contract |
 | --- | --- |
-| `schema_version`, `runtime` | Integer `1`, literal `codex` |
+| `schema_version`, `runtime` | Integer `1` for new receipts during the compatibility stage, then `2` after writer activation. Both remain readable. Once activated, a claimed preclear upgrades its existing prepared receipt before effects, preserving its snapshot/accounting. Literal `codex` |
 | `socket` | Absolute existing daemon control socket selected during read-only preflight |
 | `source_thread`, `source_goal` | Original native ID and its authoritative host goal snapshot, or null when no goal exists. Snapshot fields are `threadId`, `objective`, `status`, nullable `tokenBudget`, `tokensUsed`, `timeUsedSeconds`, `createdAt`, `updatedAt`; additional host fields are preserved |
-| `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration |
+| `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration. Schema 2 also permits a null target while preclear is `quiescing`, `retiring` or `retired` |
 | `phase` | `prepared`, `quiescing`, `retiring`, `retired`, `restoring`, `restored`, `verified`; intermediate intent is never proof the corresponding host mutation succeeded |
 | `retiring_turn`, `resume_status` | Exact outgoing turn ID selected for host interruption, or null; original goal lifecycle restored on the successor, or null with no source goal. A real interruption may pause the outgoing host goal; it never changes the saved objective's intended lifecycle |
 | `carried_tokens`, `carried_seconds` | Nonnegative cumulative usage from prior executors of this goal. The successor's native counters remain native; its token cap is only the remaining allowance |
@@ -1536,8 +1714,10 @@ receipt under the per-response output bound; it prints no objective or
 history. A missing or ambiguous selection refuses. Its output is a receipt,
 not a substitute for live host/owner verification.
 Codex receipts bind `source_thread` to the row's original native session and
-any accepted session to `target_thread`. Non-prepared phases require a distinct
-target; restored/verified goals require their created generation. An absent
+any accepted session to `target_thread`. A selected target must be distinct;
+schema 1 requires it after `prepared`, while schema 2 permits targetless preclear.
+Restoring/restored/verified phases require the target, and restored/verified
+goals require their created generation. An absent
 source goal carries no generation, usage or interrupted-turn authority.
 Restoring/restored/verified Codex rows require native acceptance. Reconciliation
 matches that accepted identity to the live pane/runtime before host effects;
@@ -1656,8 +1836,9 @@ without the provenance placeholder retain their rendering-only contract.
 A first trigger consultation's `TRIGGER_DECLARATION` line is report content,
 not a new owner-state schema or acceptance record. Only a standalone line counts;
 fenced, quoted, indented and inline-code copies are examples
-(`skills/herdr-foreman/foreman/report_contract.py` `trigger_bindings`). Ordinary schema-2 specialist
-assessment receipts bind its exact bytes; the assessment owner checks its
+(`skills/herdr-foreman/foreman/report_contract.py` `trigger_bindings`). Ordinary
+schema-2/4 specialist assessment receipts follow [Shared Writer Activation](#shared-writer-activation)
+and bind its exact bytes; the assessment owner checks its
 absolute repository/artifact, exact task base and reviewed digest. The existing
 four-key writing shape is unchanged. Legacy review uses the separate five-key
 report-line input, adding `head_revision`, under "Classify an unchanged legacy
@@ -1665,6 +1846,83 @@ PR" in `skills/herdr-foreman/references/specialists.md`; it adds no assessment
 record fields or separate approval artifact. Detection
 reads all-met, non-blocking consultation records and rechecks the report digest
 before relying on that binding. No operator-written approval or receipt is read.
+
+## Clean release checkout handoff
+
+Owner: `foreman/release_checkout.py` and `foreman/release_rebind.py`. The actual
+bound native foreman invokes `prepare-release-checkout`, using a task lease
+(the existing admitted lease, or an empty task-local lease for legacy work)
+and short canonical state/supervision transactions. All Git/native I/O runs
+outside those shared transactions. This is a handoff within release authority,
+never file-ownership evidence or permission to discard local content.
+
+The common Git directory retains immutable schema-1
+`foreman-release-<sha256 of absolute successor path>.json`. After creation the
+successor's private Git directory retains the identical
+`foreman-release-checkout.json`. Exact fields are `schema_version`,
+`state_path`, `task`, `source`, `path`, `branch`, `head`, `base_revision`,
+`source_provenance`, `evidence`, `binding`, `at`, and
+`authorizes_release: false`. The source's original provision schema-1 receipt
+is copied into `source_provenance` and remains unchanged at its original path.
+The clean successor receives an ordinary provision schema-1 receipt with the
+same original base/default provenance and its actual new path. Existing
+private metadata, links, unknown schemas and occupied targets are preserved;
+unsupported or conflicting receipts refuse rather than reset. Metadata is
+owned, regular, private, immutable and bounded to 64 KiB; no transcripts or
+source-tree copies are exported.
+
+For legacy tasks, `evidence` is `{kind: ledger, receipt: {path, sha256, bytes}}`
+over the bounded owner-bound task ledger ending in same-head
+`ready_for_release`. Its original prefix stays verifiable as history appends.
+For admitted tasks, `evidence` is `{kind: workflow, grant, progress, reports,
+successor}`: the original current grant/progress, byte-bound report receipts
+and successor immutable contract receipt. The original grant retains its
+original contract receipt. The successor contract changes only
+`repository.worktree`; admission type, adoption receipt, all inputs and effect
+scope stay exact. The current grant keeps its existing schema 2/3 fields and
+increments generation; current progress remains schema 2 with the same jobs,
+head, round, blockers and publication state, while its consumed plan clears.
+Historical assignments/assessments/dispatches/grants/counters remain untouched.
+An existing exact pre-launch `workflow_owner_refused` packet is retained in the
+intent and resumed through the existing exception owner after actual clean
+Git readback. No new recovery field or event kind is written under an old
+schema. An interrupted Git creation resumes only this exact intent; it never
+force-checks out or deletes an occupied path.
+
+Before the first Git effect, the short owner commit checks a fresh selected-task
+snapshot and current binding/holds, then preserves the immutable intent and
+task-local flight locator described above. Pending flight blocks only that
+task's ordinary commands/capability and direct re-admission. Independent task
+checkpoints remain writable during fetch and worktree effects. The final short
+commit reloads fresh primary/supervision data, rechecks current other writer
+scopes and selected task facts, saves only the intended current task rebind,
+publishes the exact ready receipt and retires only its matching settled locator.
+The immutable Git intent, ready receipt and retained source remain preserved.
+A pre-effect intent with neither its original locator nor a matching ready
+receipt proves no previous Git outcome; preserve it and choose a fresh target
+through normal preparation. It never supplies a generic replay waiver.
+
+Adopted task readers use the versioned Git-owner bridge only after original
+brief/repository scope differs: both immutable intent copies, current task
+grant generation/binding, original/successor contract receipts and registered
+base must agree. The source remains detached at its original head in the same
+common repository; the clean successor matches current accepted task Git facts.
+Original transfer closure continues citing its original contract receipt.
+A copied branch, caller-supplied path, changed receipt or missing source proves
+no bridge. Earlier schema-3 readers refuse the changed source scope. All new
+checkout handoff intents/locators therefore follow the shared false activation flag;
+already recorded handoffs remain readable/replayable. No contract/adoption
+field is added under an older header.
+
+Native workflow release launches after a handoff use the exact retained source
+from the current owner-proved Git intent as startup cwd. Project-local
+Tessl/ACR hooks/config/policy remain discoverable there; owner routing environment
+alone does not install those hooks, and no global installation is assumed.
+The brief names the clean successor for business Git and requires its applicable
+project policy. Fresh/no-handoff and legacy launches keep their original cwd.
+No runtime directory store, copied setup or per-launch local history is created.
+The original source stays visible with its local files. Any unrelated private
+or untracked file in the clean successor still blocks the unchanged release gate.
 
 ## Trigger classification output
 
@@ -1676,7 +1934,8 @@ Its authority contains `kind: legacy_review`, canonical absolute `repo` and
 `path`, full `base_revision` and `head_revision`, artifact `sha256`, exact `task`,
 accepted `assessment` id and `report_evidence: {path, sha256}`.
 This is read-only command output, not a stored authorization or migration.
-Ordinary specialist assessments remain schema 2; older owner state takes its
+Ordinary specialist assessments use schema 2/4 per [Shared Writer Activation](#shared-writer-activation)
+and retain readable schema-2/3 history without Antigravity native authority; older owner state takes its
 existing migration refusal before classification and is left unchanged.
 
 ## Coding Policy Installation

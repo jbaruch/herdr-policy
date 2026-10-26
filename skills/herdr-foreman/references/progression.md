@@ -1,9 +1,10 @@
 # Admitted task progression
 
-Two explicitly admitted contracts share the existing task authority owner.
+Explicitly admitted contracts share the existing task authority owner.
 Schema 1 runs a fixed prepared assignment chain. Schema 2 executes a bounded
 or complex task through native implementation, independent verification,
-correction, release and local cleanup. Read
+correction, release and local cleanup. Schema 3 adopts an existing source
+assignment into that executor without resetting its history. Read
 `skills/herdr-foreman/references/task-workflow.md` before using schema 2.
 Installing this package starts neither contract and migrates no live team.
 Comparative cost, throughput and defect evidence still requires the real pilot
@@ -30,6 +31,8 @@ Run `skills/herdr-foreman/foreman.sh` through the selected installation's
 resolved skill root with explicit Bash. Only the actual bound native foreman or verified remote
 owner may hand off a registered, open and settled task. Admission refuses
 pending sends, active enrollments, another service grant and operator holds.
+Schema-3 admission may transfer only the original authenticated completed source
+enrollment; other active enrollments and unknown effects still refuse admission.
 It never changes an existing binding, resumes a hold or starts a worker.
 
 `progression-admit --state OWNER --record FILE` takes an object with `task`,
@@ -146,6 +149,63 @@ publisher). `acceptance` contains `kind` (`merge`, `deployment` or `operator`)
 and one to sixteen criteria. Only merge acceptance is automated currently;
 other kinds remain explicit exceptions until their actual evidence owner acts.
 
+## Adopt existing delivered source
+
+Prepare the ordinary schema-2 declaration with the existing task, original
+base, real risk facts and effects. Preserve complex and specialist profiles.
+`progression-prepare-adoption --state OWNER --contract FILE --dispatch ID
+--output ABSOLUTE_FILE` authenticates the latest applied developer enrollment,
+the original frozen prompt, exact native completed turn, report and current
+clean pushed Git head. It exclusively writes a new immutable schema-3 contract;
+it changes no task, gate, enrollment, launch or authorization. Missing native
+provenance, an unfinished source, another active enrollment, unpushed/changed
+head or unknown effect stays with its actual owner.
+
+Pass that contract to the existing `progression-admit` handoff. It preserves
+the task's original base, source assignments, contributor exclusions, correction
+counter, approach/allowance and report gates. A reported source receives one
+versioned `adopt` intent for its original enrollment. The executor verifies its
+provenance again and closes only that delivery obligation as
+`transferred_for_verification`. It creates no developer `WORKFLOW` claim or
+accepted assessment. Independent native verification reads the original report
+in full and supplies the substantive assessment. Already accepted closed source
+keeps its original resolution. Specialist/production boundaries remain explicit
+task-local exceptions and do not turn into bounded profiles.
+
+`NEW_OWNER_WRITES_ENABLED` in
+`skills/herdr-foreman/foreman/release_activation.py` remains false in the reader
+release. Publish and verify the compatible readers through Tessl and ACR first,
+then enable new admissions in the activation release. No waiting period or new
+operator approval is added. The reader release supports recovery of an existing
+schema-3 grant regardless of this admission flag. Older exact contract/grant
+readers refuse version 3; they cannot silently reinterpret it as fresh work.
+
+## Collect and advance a current page
+
+`collect-deliveries --state OWNER [--task TASK] [--limit N] [--offset N]`
+collects bounded current enrolled native completions independently of report
+assessment. Each canonical once-check and original source proof runs outside
+the primary owner transaction. Changed observations commit through the existing
+supervision owner; duplicate completions append no event. The result reports
+collected, waiting and task-local decisions with explicit pagination coverage.
+Collection never accepts the report or infers completion from an idle pane or
+file alone. Existing report/classifier gates remain for their actual owners.
+
+`progression-batch --state OWNER [--task TASK] [--limit N] [--offset N] --once`
+drives a bounded current page of admitted task executors through their next
+routine actions. Independent task preparation runs concurrently. Git inspection,
+planning, rendering and native startup/composer waits happen outside the shared
+primary transaction; short checkpoints reload canonical state before saving.
+Every task retains its original kernel lease, single writer and pending intent.
+One held decision or invalid preparation never discards another task's ready
+work. Busy owner transactions stay observational and retry after the concurrent
+preparation wave; no lock is removed or native send repeated. The current
+result names actual starts/waits/decisions and pagination. It creates no batch
+state or additional report archive. Omitting `--once` repeats current cycles
+through the command's retained execution handle; a page is never fleet-wide
+coverage. Use the existing individual `progression-run` lifetime when delegating
+continuous task supervision at Stop.
+
 ## Run and observe
 
 `progression-run --state OWNER --task TASK --generation N --service-id ID`
@@ -184,10 +244,11 @@ pending intent and stops progression. A dead process or free lease proves no
 effect outcome. Reconcile through the existing dispatch/native owners; the
 initial adapter does not automatically clear an ambiguous service intent.
 
-After the dispatch owners prove every expected member of a pending step
-`not_sent` and settle its enrollments, the verified bound foreman may run
+After the effect owner supplies its operation-specific canonical readback and
+settles its enrollments or retained probes, the verified bound foreman may run
 `progression-reconcile --state OWNER --record FILE`. The record contains `task`,
-actual `expected_generation`, exact `intent` and explicit `authorization`.
+actual `expected_generation`, exact `intent`, explicit `authorization` and,
+for measurement, a schema-1 `readback` with `kind` and canonical `sha256`.
 The service lease must be free. This clears only that pending intent, leaves
 the schema-1 cursor unchanged and records one owner reconciliation receipt. It does not
 dispatch, resume a hold or accept work. Missing, uncertain or partly applied
@@ -202,6 +263,33 @@ named dispatch is owner-proved `not_sent`, all task enrollments are settled and
 no report exists. It retires the intent and current plan, preserving the task,
 generation, original base and correction counter. Subsequent execution selects
 a fresh native identity; the old no-send row remains canonical evidence.
+
+New measurement reconciliation requires [Shared Writer Activation](../state-schema.md#shared-writer-activation);
+it is disabled in the 0.19.0 compatibility release. Existing reconciliation
+receipts remain readable and replayable without that activation.
+
+A schema-2 measurement uses `intent_not_started`, `snapshot_completed` or
+`probes_closed_incomplete`. The first hashes the durable intent and requires
+`effects_started: false`. A completed snapshot must hash to exactly one state-owner
+snapshot and match the intent's saved `--now`, current native measurement context,
+captured config and complete configured worker set. A probe readback must hash to
+one canonical closed startup/cleanup row, match the captured config and saved
+timestamp, leave no pending or live disposable probe, and records only an
+incomplete measurement outcome. Missing processes, dispatches, reports and timeouts
+are not readback. Legacy started measurements without a saved timestamp can use
+only one unambiguous exact probe/config receipt; a later snapshot is never adopted.
+Both completed-snapshot and closed-probe readbacks require unambiguous live
+native inventory without disposable probes. Cleanup can fail before its recovery
+row is retained; a snapshot or absent row never proves that native owner is gone.
+
+Use `--readback-current` on the existing `progression-reconcile` command to derive
+the measurement evidence from its owners. Its record needs only the task,
+expected generation, pending intent and existing authorization. The owner selects
+one exact snapshot or retained probe attempt and records its actual digest;
+callers need no ledger dump or handwritten hash. Ambiguous or missing evidence
+leaves the intent pending. Repeating a settled request reads its existing receipt.
+Policy-change refusals name the expected and observed version/digest in the
+current exception, without loading policy history.
 
 `progression-resume --state OWNER --record FILE` retries a restored schema-2
 observation or cleanup exception. The record contains `task`, actual
@@ -230,3 +318,8 @@ settled dispatches/enrollments, no pending service intent and a free lease.
 `expected_generation` and explicit `authorization`; it increments generation
 and clears service capabilities. Do not edit owner files, reset a cursor,
 delete a lease, duplicate dispatch or infer a successful outcome to recover.
+After return, a new schema-2 admission binds the actual loaded policy and a fresh
+artifact directory. It increments authority generation and preserves the existing
+task record, base, assignment/snapshot/event history and cumulative correction
+value; the original first-measurement counter remains zero rather than being
+reclassified as an attempt.

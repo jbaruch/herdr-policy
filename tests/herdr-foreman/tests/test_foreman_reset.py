@@ -23,11 +23,12 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
-from foreman import foreman_reset, retrospective, runnable, supervision_runtime
+from foreman import foreman_reset, retrospective, runnable, supervision_runtime, supervision
 from foreman.herdr import HerdrClient
 from foreman.state import state_lock
 from foreman.errors import HerdrError, StateError, UsageError
 from tests.test_cli import CliCase
+from tests.goal_fakes import GoalHost, goal
 
 PANE = "w9:p1"
 #: The foreman's native session as supervision-bind stores it.
@@ -45,7 +46,7 @@ def supervision_data(*, active=False, events=False, held=False, hold_kind="hando
     member = {"id": "d1", "active": active, "refinements": [],
               "assignment": {"id": "d1", "agent": "worker", "task": "t", "report": "/r.md", "pane_id": "w2:p1",
                              "native_session": None}}
-    data = {"binding": {"identity": {"pane_id": PANE, **SESSION}}, "members": [member],
+    data = {"binding": {"identity": {"pane_id": PANE, "cwd": str(Path.cwd()), **SESSION}}, "members": [member],
             "events": [{"id": "e1", "seq": 1, "member": "d1"}] if events else [], "acknowledgements": [], "holds": []}
     if held:
         data["holds"].append({"id": READY["id"], "kind": hold_kind, "resumed_at": None, "through": len(data["events"]),
@@ -174,6 +175,8 @@ class FakeClient:
         self.cleared = False
         self.prompt_started = False
         self.keystrokes = []
+        self.reported_session = None
+        self.session_reports = []
 
     def identify(self, pid):
         """Stands in for supervision_runtime.process_identity, which reads `ps`."""
@@ -195,12 +198,21 @@ class FakeClient:
         self.keystrokes.append(text)
 
     def pane_get(self, pane_id):
+        if self.reported_session is not None:
+            return {"pane_id": pane_id, "agent_session": {"source": "herdr:" + self.kind, "agent": self.kind,
+                                                          **self.reported_session}}
         if self.sessions is None:
             value = CLEARED if self.cleared else SESSION["value"]
         else:
             value = self.sessions.pop(0) if len(self.sessions) > 1 else self.sessions[0]
         return {"pane_id": pane_id, "agent_session": {"source": "herdr:" + self.kind, "agent": self.kind,
                                                       "kind": "id", "value": value}}
+
+    def pane_report_agent_session(self, pane_id, kind, session, seq, *, session_start_source):
+        self.session_reports.append((pane_id, kind, session.copy(), seq, session_start_source))
+        if session_start_source == "clear":
+            self.reported_session = session.copy()
+        return {}
 
     def pane_process_info(self, pane_id):
         pid = self.pids.pop(0) if len(self.pids) > 1 else self.pids[0]
@@ -212,12 +224,17 @@ class FakeClient:
         return [{"name": "other", "pane_id": "w2:p1", "agent_status": "idle", "agent": "codex"},
                 {"name": "foreman", "pane_id": PANE, "agent_status": status, "agent": self.kind}]
 
+    def agent_read(self, name, **_kwargs):
+        return {"claude": "❯ ", "codex": "› ", "grok": "│ ❯ "}[self.kind]
+
     def agent_wait(self, name, until=(), timeout_ms=None):
         self.waits.append(name)
 
 
 def worker(name, kind, delivery="type", enters=1):
-    return SimpleNamespace(name=name, kind=kind, clear_prompt="/clear", slash_delivery=delivery, slash_enter_count=enters)
+    return SimpleNamespace(name=name, kind=kind, clear_prompt="/clear", slash_delivery=delivery, slash_enter_count=enters,
+                           composer_glyph={"codex": "› ", "claude": "❯ ", "grok": "│ ❯ "}[kind],
+                           composer_placeholders=[], composer_ignore_dim=False)
 
 
 class ForegroundIdentityTest(unittest.TestCase):
@@ -637,7 +654,8 @@ class DeliverTest(unittest.TestCase):
             def pane_get(self, pane_id):
                 return {"pane_id": pane_id, "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "path", "value": "/loop/t.jsonl"}}
         with patch("foreman.foreman_reset.supervision.canonical", side_effect=RuntimeError("Symlink loop")):
-            self.assertIsNone(foreman_reset.pane_session(Looping(["idle"]), PANE))
+            with self.assertRaises(foreman_reset.SessionChanged):
+                foreman_reset.pane_session(Looping(["idle"]), PANE)
             with self.assertRaises(foreman_reset.SessionChanged):
                 self.run_deliver(Looping(["idle"]), native_session={"kind": "path", "value": "/loop/t.jsonl"})
 
@@ -645,7 +663,8 @@ class DeliverTest(unittest.TestCase):
         class Nul(FakeClient):
             def pane_get(self, pane_id):
                 return {"pane_id": pane_id, "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "path", "value": "/tmp/t\x00.jsonl"}}
-        self.assertIsNone(foreman_reset.pane_session(Nul(["idle"]), PANE))
+        with self.assertRaises(foreman_reset.SessionChanged):
+            foreman_reset.pane_session(Nul(["idle"]), PANE)
         with self.assertRaises(foreman_reset.SessionChanged):
             self.run_deliver(Nul(["idle"]), native_session={"kind": "path", "value": "/tmp/t.jsonl"})
 
@@ -698,7 +717,8 @@ class DeliverTest(unittest.TestCase):
                 class Foreign(FakeClient):
                     def pane_get(self, pane_id, ref=ref):
                         return {"pane_id": pane_id, "agent_session": {**ref, "kind": "id", "value": SESSION["value"]}}
-                self.assertIsNone(foreman_reset.pane_session(Foreign(["idle"]), PANE))
+                with self.assertRaises(foreman_reset.SessionChanged):
+                    foreman_reset.pane_session(Foreign(["idle"]), PANE)
                 with self.assertRaises(foreman_reset.SessionChanged):
                     self.run_deliver(Foreign(["idle"]))
 
@@ -733,9 +753,16 @@ class DeliverTest(unittest.TestCase):
         class Bare(FakeClient):
             def pane_get(self, pane_id):
                 return {"pane_id": "w2:p1", "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "id", "value": SESSION["value"]}}
-        self.assertIsNone(foreman_reset.pane_session(Bare(["idle"]), PANE))
+        with self.assertRaises(foreman_reset.SessionChanged):
+            foreman_reset.pane_session(Bare(["idle"]), PANE)
         with self.assertRaises(foreman_reset.SessionChanged):
             self.run_deliver(Bare(["idle"]))
+
+    def test_absent_native_hint_remains_distinct_from_invalid_metadata(self):
+        class Absent(FakeClient):
+            def pane_get(self, pane_id):
+                return {"pane_id": pane_id, "agent_session": None}
+        self.assertIsNone(foreman_reset.pane_session(Absent(["idle"]), PANE))
 
     def test_mechanics_copy_does_not_rename_the_template(self):
         template = worker("claude-a", "claude")
@@ -1108,14 +1135,125 @@ RESET_AT = "2026-09-24T10:00:00+00:00"
 
 
 class ResetCommandTest(CliCase):
-    def run_cli(self, argv, client=None, *, explicit_reset=True):
+    def codex_delivery_fixture(self):
+        host = GoalHost({SESSION["value"]: goal(SESSION["value"])})
+        host.active.add(SESSION["value"])
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True):
+            receipt = foreman_reset.host_goals.prepare("codex", SESSION, connect=host.connect,
+                                                      discover=lambda: "/fixture/codex.sock")
+        supervision.bind(self.state, supervision.identity(SESSION["value"], str(self.tmp), "1", pane_id=PANE),
+                         RESET_AT, root=self.tmp / "bindings")
+        foreman_reset.schedule(self.state, {"pane_id": PANE, "stow": "round-7"}, RESET_AT,
+                               os.getpid, native_session=SESSION, host_goal=receipt)
+        client = FakeClient(["working"], kind="codex")
+        identity = supervision_runtime.process_identity(os.getpid())
+        return host, client, lambda pid: identity if pid == os.getpid() else client.identify(pid)
+
+    def test_deliver_cli_retires_the_goal_before_entering_idle_or_composer_delivery(self):
+        host, client, identify = self.codex_delivery_fixture()
+        def before_delivery(*_args, **_kwargs):
+            self.assertNotIn(SESSION["value"], host.goals)
+            self.assertTrue(any(method == "turn/interrupt" for method, _ in host.calls))
+            self.assertEqual(client.keystrokes, [])
+            raise UsageError("Fixture stops after retirement, before native delivery.", {})
+        with patch("foreman.host_goals.AppServer", side_effect=host.connect), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=before_delivery):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual((row["status"], row["host_goal"]["phase"]), ("failed", "retired"))
+        self.assertEqual(client.keystrokes, [])
+
+    def test_preclear_rechecks_foreign_provenance_after_pinning_the_same_identity(self):
+        host, client, identify = self.codex_delivery_fixture()
+        original = client.pane_get
+        calls = []
+        def changed(pane):
+            value = original(pane)
+            calls.append(pane)
+            if len(calls) == 2:
+                value["agent_session"].update(agent="claude", source="herdr:claude")
+            return value
+        with patch.object(client, "pane_get", side_effect=changed), \
+                patch("foreman.host_goals.AppServer", side_effect=host.connect), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=AssertionError("must not type")):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual(row["host_goal"]["phase"], "prepared")
+        self.assertIsNotNone(row["foreground"])
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertIn(SESSION["value"], host.goals)
+        self.assertFalse(any(method in ("thread/goal/clear", "turn/interrupt") for method, _ in host.calls))
+        self.assertEqual(client.keystrokes, [])
+
+    def test_deliver_cli_preclear_failure_records_failure_without_entering_native_delivery(self):
+        _host, client, identify = self.codex_delivery_fixture()
+        with patch("foreman.host_goals.AppServer", side_effect=UsageError("Restore native host access.", {})), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=AssertionError("must not poll idle or type")):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual((row["status"], row["host_goal"]["phase"]), ("failed", "prepared"))
+        self.assertIn(foreman_reset.RESET_RECEIPT_PREFIX, row["result"]["resume_prompt"])
+        self.assertEqual(client.keystrokes, [])
+
+    def run_cli(self, argv, client=None, *, explicit_reset=True, permissions=None):
         # These fixtures exercise the opt-in maintenance owner, not the default
         # round checkpoint. The default-refusal test disables this fixture opt-in.
         if explicit_reset and "foreman-reset" in argv:
             argv = argv + ["--explicit-reset"]
         # Scheduling now observes a live name and bound native session. Keep
         # those reads isolated even when a test exercises non-default binaries.
-        return super().run_cli(argv, client=FakeClient(["working"]) if client is None else client)
+        with patch("foreman.native_permissions.source", return_value={"source": "owned fixture native config"}, side_effect=permissions):
+            return super().run_cli(argv, client=FakeClient(["working"]) if client is None else client)
+
+    def test_reset_readiness_catches_hook_modal_before_any_handoff_artifact(self):
+        client = FakeClient(["idle"], kind="codex")
+        frame = "Hooks need review\n1 hook is new or changed.\n› 1. Review hooks\n2. Trust all and continue"
+        with patch.object(client, "agent_read", return_value=frame), \
+                patch("foreman.cli.supervision.load", return_value=supervision_data()[0]), \
+                patch("foreman.cli.memory.show", side_effect=AssertionError("no checkpoint required")), \
+                patch("foreman.cli._spawn_detached", side_effect=AssertionError("must not spawn")):
+            code, out, err = self.run_cli(self.base() + ["verify-foreman", "--reset-ready", "--pane", PANE], client=client)
+        self.assertEqual((code, out), (1, ""))
+        details = json.loads(err)["details"]
+        self.assertEqual(details["failure_kind"], "hook_review_required")
+        self.assertIn("each exact changed command", details["recovery"]["condition"])
+        self.assertFalse(self.state.exists())
+        self.assertFalse(foreman_reset.record_path(self.state).exists())
+        self.assertEqual(client.keystrokes, [])
+
+    def test_reset_readiness_refuses_unverified_permissions_without_changing_the_session(self):
+        from foreman.native_permissions import refusal
+        client = FakeClient(["idle"], kind="codex")
+        with patch("foreman.cli.supervision.load", return_value=supervision_data()[0]):
+            code, out, err = self.run_cli(self.base() + ["verify-foreman", "--reset-ready", "--pane", PANE],
+                                         client=client, permissions=refusal("native_permission_profile_interactive_or_restricted"))
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("native_permission_profile_interactive_or_restricted", err)
+        self.assertFalse(foreman_reset.record_path(self.state).exists())
+        self.assertEqual(client.keystrokes, [])
+
+    def test_reset_readiness_is_read_only_and_unknown_modals_do_not_claim_readiness(self):
+        for frame, expected in (("› ", 0), ("› 1. Approve command", 1), ("Unknown overlay", 1)):
+            with self.subTest(frame=frame), \
+                    patch("foreman.cli.supervision.load", return_value=supervision_data()[0]):
+                client = FakeClient(["idle"], kind="codex")
+                with patch.object(client, "agent_read", return_value=frame):
+                    code, out, err = self.run_cli(self.base() + ["verify-foreman", "--reset-ready", "--pane", PANE], client=client)
+                self.assertEqual(code, expected, err)
+                self.assertFalse(foreman_reset.record_path(self.state).exists())
+                self.assertEqual(client.keystrokes, [])
+                if code == 0:
+                    self.assertTrue(json.loads(out)["native_session_verified"])
+                self.out, self.err = io.StringIO(), io.StringIO()
 
     def test_reset_status_cli_prints_only_the_selected_receipt(self):
         foreman_reset.schedule(self.state, {"pane_id": PANE, "stow": "round-7"}, RESET_AT,

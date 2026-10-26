@@ -49,6 +49,7 @@ from .composer import (
     DispatchSession,
     send_command,
     send_message,
+    startup_pending_error,
 )
 from .errors import AgentBusyError, HerdrError, UsageError, owner_recovery
 from .herdr import (
@@ -62,7 +63,7 @@ from .composer import COMPOSER_READ_LINES, COMPOSER_READ_SOURCE, checkable
 from .probe import PROBE_READ_LINES, PROBE_READ_SOURCE, resolve_status, stderr_warn
 from .chronology import latest_assignment
 from .recovery import JUDGE_MODES, briefing_bytes, empty_recovery, fresh_transition, native_refusal_retry, task_record, validate_work
-from .launch import foreground_agent, restart_worker, verify_running, verify_running_permissions
+from .launch import foreground_agent, restart_worker, verify_native_model, verify_running, verify_running_permissions
 from .tiers import EFFORT_RANK, canonical_role, launch_flags, require_seatable, still_de_escalated, worker_launch_args
 from .report_delivery import marker_columns
 from .composition import normalize_requirement, parse_requirements, seat_holds
@@ -1183,9 +1184,7 @@ def apply(client, assignments, agents_by_name, paths, at, no_clear=False, settle
                     "The apply owner must close only its proved pre-send surface and record not_sent before retrying the unchanged plan.")
             startup_identity = identity
             if live.get("agent_status") == "blocked":
-                raise owner_recovery(HerdrError("Fresh worker is blocked at native startup; nothing was sent.",
-                    {"agent": name, "pane_id": step["pane_id"]}), "startup_dialog_pending", runnable.command("apply"),
-                    "The owner must inspect and resolve this retained native dialog under Runtime Dialogs before retrying.")
+                raise startup_pending_error(agent, step["pane_id"], client=client)
             return identity
 
         if not tier:
@@ -1267,6 +1266,8 @@ def apply(client, assignments, agents_by_name, paths, at, no_clear=False, settle
         def before_prompt():
             if fresh and assignment_scoped:
                 startup_observe()
+            if tier_record is not None:
+                verify_native_model(client, agent, step["pane_id"], tier)
             if on_before_send is not None:
                 before = {"cleared": cleared, "clear_reason": clear_reason,
                       "context_session": context_session, "tier": tier_record,

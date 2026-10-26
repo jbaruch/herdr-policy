@@ -3,6 +3,10 @@ name: Tests
 on:
   pull_request:
   workflow_call:
+    inputs:
+      reuse_runtime:
+        type: boolean
+        default: false
     secrets:
       TESSL_REVIEW_TOKEN:
         required: true
@@ -13,6 +17,10 @@ permissions:
 
 jobs:
   extraction:
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7; Dependabot weekly
@@ -22,7 +30,7 @@ jobs:
       - uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2; Dependabot weekly
       # Compatibility source: review monthly with the baseline install, in a dedicated PR.
       - uses: jbaruch/coding-policy/.github/actions/setup-diagnostics@9101b94c189c265ea61c82c071cb34b0e1c9fc32
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6; Dependabot weekly
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7; Dependabot weekly
         with:
           # Match the pinned ACR module; review monthly with the ACR revision below.
           go-version: '1.27.0'
@@ -51,10 +59,22 @@ jobs:
         run: tessl plugin lint .
       - name: Validate ACR package
         run: PATH="$RUNNER_TEMP/acr-bin:$PATH" acr validate . --json
-      - name: Run runtime regression suites
+      - name: Run runtime regression suites or verify identical-tree PR evidence
+        id: runtime
         env:
           HERDR_CODING_POLICY_ROOT: ${{ runner.temp }}/herdr-test-policy/.tessl/plugins/jbaruch/coding-policy
-        run: python3 scripts/run-tests.py
+          HERDR_REUSE_RUNTIME: ${{ inputs.reuse_runtime && '1' || '0' }}
+          # Read-only evidence lookup; the runtime child receives no CI token.
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci-runtime-gate.py --evidence "$RUNNER_TEMP/herdr-runtime-evidence/runtime-evidence.json"
+      - name: Retain immutable runtime evidence for this PR attempt
+        if: github.event_name == 'pull_request' && steps.runtime.outputs.evidence_written == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6; Dependabot weekly
+        with:
+          name: runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/herdr-runtime-evidence/runtime-evidence.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Check actual ACR upgrade, native execution and removal
         # Confirmed 0.5.0 release source; review monthly alongside compatible manifests.
         env:

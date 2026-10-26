@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, policy_paths, progression_owner as authority, supervision
-from . import context_output, progression_runtime, recovery
+from . import context_output, progression_runtime, recovery, task_evidence
 from . import workflow_capacity, workflow_contract, workflow_dispatch, workflow_planning
 from . import workflow_workspace as workspace
 from .errors import ForemanError, PlanError, UsageError
@@ -24,8 +24,9 @@ MEASUREMENT_MAX_AGE = workflow_planning.MEASUREMENT_MAX_AGE
 
 def current_inputs(state, state_path, task_name, supervised, policy_root, *, policy_identity=None) -> dict[str, Any]:
     """Read the same pinned task inputs used by the executing owner; no lease claim."""
+    task_evidence.require_clear(state, {task_name})
     grant = authority.current_grant(state, task_name)
-    if grant is None or grant["mode"] != "service" or grant.get("contract_schema", 1) != 2:
+    if grant is None or grant["mode"] != "service" or grant.get("contract_schema", 1) not in (2, 3):
         raise UsageError("Admit the registered task through its verified owner before native execution.",
                          {"reason": "task_not_admitted"})
     version, digest = policy_identity if policy_identity is not None else authority.loaded_policy(policy_root)
@@ -75,13 +76,20 @@ def current_inputs(state, state_path, task_name, supervised, policy_root, *, pol
             "by_kind": {agent.name: agent for agent in agents}}
 
 
-def dependencies(state, supervised, document, progress, role):
+def dependencies(state, supervised, document, progress, role, *, state_path=None):
     """Current byte-bound prerequisites, shared by the preview and compiled brief."""
     head = workspace.inspect(document, state["recovery"]["tasks"][document["task"]], built=role != "developer")
     if role != "developer" and head != progress["head"]:
         raise UsageError("The writer changed after the prerequisite source was accepted; preserve the changed head for its owner.",
                          {"reason": "current_head_changed"})
     reports = []
+    adopted = document.get("adoption")
+    adopted_report = None
+    if adopted is not None:
+        from .workflow_adoption import dependencies as adoption_dependencies
+        if state_path is None:
+            raise UsageError("Use the actual selected owner path before reading adopted report gates.", {})
+        adopted_report = adoption_dependencies(state_path, state, supervised, document)
     if role in ("reviewer", "tester", "release"):
         for responsibility, identifier in progress["jobs"].items():
             if responsibility not in (("developer", "reviewer", "tester") if role == "release" else ("developer",)):
@@ -89,6 +97,11 @@ def dependencies(state, supervised, document, progress, role):
             prior = workflow_dispatch.current_job(state, supervised, identifier)
             member = next(row for row in supervised["members"] if row["id"] == identifier)
             receipt, _ = workspace.capture(prior["report"], limit=workspace.REPORT_LIMIT)
+            if adopted is not None and identifier == adopted["dispatch"]:
+                if receipt != adopted_report:
+                    raise UsageError("Restore the adopted developer report before dependent verification.", {})
+                reports.append({"responsibility": responsibility, "report": receipt})
+                continue
             if (prior["status"] != "closed" or member["resolution"] is None or not any(
                     item["path"] == receipt["path"] and item["sha256"] == receipt["sha256"]
                     for item in member["resolution"]["evidence"])):
@@ -116,7 +129,7 @@ def roles(profile, progress):
 def capacity_family(state, task):
     from . import progression_owner as authority, workflow_contract
     grant = authority.current_grant(state, task)
-    if grant is not None and grant.get("contract_schema", 1) == 2:
+    if grant is not None and grant.get("contract_schema", 1) in (2, 3):
         try:
             captured, document = capture_contract(grant["contract"]["path"])
             if captured != grant["contract"]:
@@ -135,7 +148,7 @@ def preparation(state, supervised, state_path, document, progress, selected_role
     if not missing:
         raise UsageError("Inspect the current jobs before requesting another worker assignment.",
                          {"reason": "current_jobs_require_observation"})
-    dependencies(state, supervised, document, progress, missing[0])
+    dependencies(state, supervised, document, progress, missing[0], state_path=state_path)
     capacity = None
     if policy is not None:
         capacity = workflow_capacity.evaluate(state, supervised, document["task"],

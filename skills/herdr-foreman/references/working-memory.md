@@ -163,6 +163,29 @@ host transfer. A new active goal alone never retires the outgoing executor.
 An unavailable or unfinished transfer remains recovery work; never emulate it
 with completion, a user pause, or blocked status.
 
+## Native Readiness and Checkpoint Reuse
+
+For an explicitly requested maintenance reset, run `verify-foreman --reset-ready`
+with the same owner flags before preparing its checkpoint or handoff hold. It
+reads the bound native session and current input surface without a write or key.
+Scheduling repeats that observation. A refusal preserves the current turn,
+workers and holds; it creates no reset or Stop authorization.
+
+`hook_review_required` identifies the captured native **Hooks need review** menu.
+Open **Review hooks** in its retained pane and inspect each exact changed command
+and source. The initial menu does not expose the definitions. Apply individual
+trust decisions under existing authority; never use **Trust all** or infer hook
+trust from YOLO. Fresh delivery workers and usage probes retain this same
+pre-input exception locally while unrelated work continues.
+
+After its owner proves a reset failure typed nothing and changed no goal or
+native context, reuse unchanged saved knowledge with
+`memory-reuse-stow --id <saved-stow> --new-id <next-attempt>` and the same owner
+flags. The owner rechecks the original source receipts before writing the new
+stow and preserves the original record. Do not reconstruct its enrollments or
+refresh changed evidence through a copy. New knowledge requires an actual new
+capture. Reuse grants no reset authority and clears no pending recovery or hold.
+
 ## Reset Outcome Routing
 
 This route is only for an explicit operator-requested maintenance reset, not
@@ -194,8 +217,8 @@ and native-session verification to perform before scheduling.
     - The failed reset supplies no Stop-authorizing continuation
     - Follow the recorded recovery instruction: a never-typed failure keeps
       its existing context, fixes the cause, and continues supervision without
-      clearing or pasting. Schedule a new stow only if the explicit maintenance
-      reset request still applies
+      clearing or pasting. Reuse the unchanged checkpoint through `memory-reuse-stow` only if the explicit maintenance
+      reset request still applies and its owner proves no goal or context changed
     - An interrupted or indeterminate delivery requires operator recovery
       under the Working Memory carve-out, first
       confirming the pane is not already running a resumed foreman

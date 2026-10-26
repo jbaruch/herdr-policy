@@ -290,10 +290,12 @@ def verify_skill_commands(project, host, package, variable, names, environment):
                 selected = selected.resolve()
                 if selected not in roots:
                     raise BehaviorFailure("{}: selector chose another installation; repair owned native references".format(package))
-                calls = re.findall(r'\b(bash|python3) "\$' + variable + r'/([^"\n]+)"', block)
+                calls = re.findall(r'\b(bash|python3)( -I)? "\$' + variable + r'/([^"\n]+)"', block)
                 if not calls:
                     raise BehaviorFailure("{}: selector has no quoted script target; repair the installed command".format(package))
-                for interpreter, relative in calls:
+                for interpreter, isolated, relative in calls:
+                    if isolated and interpreter != "python3":
+                        raise BehaviorFailure("{}: installed command has an unsupported interpreter flag; repair the Markdown invocation".format(package))
                     target = (selected / relative).resolve()
                     if not target.is_relative_to(selected) or not target.is_file():
                         raise BehaviorFailure("{}: installed command target is absent or outside its skill; repair the payload".format(package))

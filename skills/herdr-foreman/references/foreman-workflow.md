@@ -63,7 +63,7 @@ authorized work. Continue its next action under the original goal.
 
 ## Select the Applicable Contract
 
-An explicitly admitted schema-2 task uses `skills/herdr-foreman/references/task-workflow.md` and
+An explicitly admitted schema-2 or schema-3 task uses `skills/herdr-foreman/references/task-workflow.md` and
 `skills/herdr-foreman/references/progression.md`. Read `skills/herdr-foreman/references/workflow-capacity.md` when selecting
 native capacity limits. This does not require migrating an already authorized
 legacy task before it can continue.

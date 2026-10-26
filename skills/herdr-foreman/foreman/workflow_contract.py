@@ -60,7 +60,13 @@ def _sha(value, label):
 
 def contract(value, task):
     """Validate the immutable task declaration; return its responsibility profile."""
-    _object(value, CONTRACT_FIELDS, "task workflow")
+    version = value.get("schema_version") if isinstance(value, dict) else None
+    if type(version) is not int or version not in (2, 3):
+        raise UsageError("Use a supported task workflow contract version before admission.", {})
+    _object(value, CONTRACT_FIELDS | ({"adoption"} if version == 3 else set()), "task workflow", version=version)
+    if version == 3:
+        from .workflow_adoption import validate as validate_adoption
+        validate_adoption(value["adoption"])
     if value["task"] != task["task"]:
         raise UsageError("Admit the workflow under its original registered task identity and authorization.", {})
     profile = workflow_profiles.select_profile(value["risk"])
@@ -286,9 +292,12 @@ def validate_progress(value):
         _text(identifier, "canonical dispatch identity", 128)
     pending = value["pending"]
     if pending is not None:
-        _object(pending, {"schema_version", "id", "operation", "argv", "inputs", "effects_started", "dispatches", "job"}, "workflow intent")
+        intent_version = pending.get("schema_version") if isinstance(pending, dict) else None
+        if type(intent_version) is not int or intent_version not in (2, 3):
+            raise UsageError("Restore the original versioned workflow intent before continuation.", {})
+        _object(pending, {"schema_version", "id", "operation", "argv", "inputs", "effects_started", "dispatches", "job"}, "workflow intent", version=intent_version)
         _text(pending["id"], "intent identity", 128)
-        if (pending["operation"] not in ("measure", "apply", "record", "close", "merge", "cleanup")
+        if (pending["operation"] not in (("adopt",) if intent_version == 3 else ("measure", "apply", "record", "close", "merge", "cleanup"))
                 or type(pending["effects_started"]) is not bool
                 or not isinstance(pending["argv"], list) or len(pending["argv"]) > 96
                 or not isinstance(pending["inputs"], list) or len(pending["inputs"]) > 32
@@ -378,6 +387,15 @@ def validate_current(value, document):
         raise UsageError("Preserve one distinct canonical dispatch per current responsibility.", {})
     intent = value["pending"]
     if intent is not None:
+        if intent["operation"] == "adopt":
+            adoption = document.get("adoption")
+            if (document["schema_version"] != 3 or adoption is None or intent["schema_version"] != 3
+                    or value["phase"] not in ("verify", "exception") or intent["job"] is not None
+                    or intent["argv"] or intent["dispatches"] != [adoption["dispatch"]]
+                    or intent["inputs"] != [adoption["report"], adoption["native_source"]]
+                    or value["jobs"] != {"developer": adoption["dispatch"]}
+                    or value["head"] != adoption["head"] or value["round"] != adoption["correction"]):
+                raise UsageError("Preserve this adoption intent's exact original source, head and cumulative correction; it cannot authorize another native effect.", {})
         if intent["operation"] in ("apply", "close"):
             job = intent["job"]
             if job is None or intent["dispatches"] != [job["id"]]:

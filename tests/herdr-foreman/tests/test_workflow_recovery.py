@@ -7,23 +7,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 
 import io
 import json
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from tests import test_workflow_service as fixture
 from tests import test_report_gates as gate_fixture
-from foreman import cli, process_lease, progression_owner as authority
-from foreman import recovery, supervision, workflow_recovery, workflow_service
+from foreman import cli, config, measurement_retry, probe_recovery, process_lease, progression_owner as authority
+from foreman import recovery, release_activation, supervision, workflow_recovery, workflow_service
 from foreman.errors import ForemanError, UsageError
-from foreman.state import add_snapshot, latest_snapshot, save_state, state_lock
+from foreman.state import add_snapshot, latest_snapshot, load_state_checked, save_state, state_lock
 
 
 class WorkflowRecoveryTest(unittest.TestCase):
     def setUp(self):
+        activation = patch.object(release_activation, "NEW_OWNER_WRITES_ENABLED", True)
+        activation.start()
+        self.addCleanup(activation.stop)
         self.case = fixture.WorkflowServiceTest()
         self.case.setUp()
         self.addCleanup(self.case.doCleanups)
         self.case.admit()
+        self.case.owner.client.agent_list = lambda: []
 
     def exception(self, code="workflow_owner_refused", *, at=None):
         with self.case.owner.session() as capability:
@@ -36,8 +41,45 @@ class WorkflowRecoveryTest(unittest.TestCase):
                 "authorization": fixture.owner_fixture.AUTH}
 
     def resume(self, data):
-        with state_lock(self.case.path):
-            return workflow_recovery.resume(self.case.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+        return workflow_recovery.resume(self.case.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+
+    def pending_measurement(self):
+        state = self.case.owner.state()
+        state["snapshots"] = []
+        save_state(self.case.path, state)
+        with self.case.owner.session() as capability:
+            engine = self.case.runner(capability)
+            self.assertEqual(engine.tick()["data"]["status"], "prepared")
+            intent = self.case.progress()["pending"]
+            self.assertEqual(intent["operation"], "measure")
+            self.assertEqual(intent["argv"][0], "--now")
+            state = self.case.owner.state()
+            state["recovery"]["tasks"]["one"]["progression"]["pending"]["effects_started"] = True
+            save_state(self.case.path, state)
+            with state_lock(self.case.path):
+                engine._exception(self.case.owner.state(), "native_owner_refused", [intent["id"]])
+        return self.case.progress()["pending"]
+
+    def reconcile_measurement(self, intent, kind, evidence, *, via_cli=False):
+        data = {"task": "one", "expected_generation": 1, "intent": intent["id"],
+                "authorization": fixture.owner_fixture.AUTH,
+                "readback": {"schema_version": 1, "kind": kind,
+                             "sha256": supervision.digest(evidence)}}
+        if via_cli:
+            request = {key: value for key, value in data.items() if key != "readback"}
+            record = self.case.root / "measurement-recovery.json"
+            record.write_text(json.dumps(request))
+            before = record.read_bytes()
+            out, err = io.StringIO(), io.StringIO()
+            self.assertEqual(cli.main(["progression-reconcile", "--state", str(self.case.path),
+                "--record", str(record), "--readback-current", "--now", self.case.now()],
+                stdout=out, stderr=err, client=self.case.owner.client), 0, err.getvalue())
+            result = json.loads(out.getvalue())
+            self.assertEqual(record.read_bytes(), before)
+        else:
+            with state_lock(self.case.path):
+                result = authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
+        return data, result
 
     def test_resume_preserves_phase_task_counter_and_is_idempotent(self):
         data = self.exception()
@@ -121,6 +163,162 @@ class WorkflowRecoveryTest(unittest.TestCase):
                 "intent": intent, "authorization": data["authorization"]}, self.case.now(), self.case.owner.client)
         self.assertEqual(self.case.path.read_bytes(), before)
 
+    def test_started_measurement_requires_operation_specific_owner_readback(self):
+        intent = self.pending_measurement()
+        data = {"task": "one", "expected_generation": 1, "intent": intent["id"],
+                "authorization": fixture.owner_fixture.AUTH}
+        before = self.case.path.read_bytes()
+        with state_lock(self.case.path), self.assertRaisesRegex(UsageError, "native launch intent"):
+            authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
+        data["readback"] = {"schema_version": 1, "kind": "snapshot_completed", "sha256": "0" * 64}
+        with state_lock(self.case.path), self.assertRaisesRegex(UsageError, "missing or ambiguous"):
+            authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
+        self.assertEqual(self.case.path.read_bytes(), before)
+
+    def test_pre_effect_measurement_refusal_uses_only_the_durable_intent(self):
+        state = self.case.owner.state()
+        state["snapshots"] = []
+        save_state(self.case.path, state)
+        with self.case.owner.session() as capability:
+            engine = self.case.runner(capability)
+            engine.tick()
+            intent = self.case.progress()["pending"]
+            with state_lock(self.case.path):
+                engine._exception(self.case.owner.state(), "native_owner_refused", [intent["id"]])
+        data, result = self.reconcile_measurement(intent, "intent_not_started", intent)
+        self.assertEqual(result["outcome"], "intent_not_started")
+        self.assertIsNone(self.case.progress()["pending"])
+        with state_lock(self.case.path):
+            self.assertTrue(authority.reconcile_intent(
+                self.case.path, data, self.case.now(), self.case.owner.client)["replayed"])
+
+    def test_completed_snapshot_reconciles_then_changed_policy_handoff_preserves_owner_history(self):
+        intent = self.pending_measurement()
+        templates = config.load_config(self.case.configuration)
+        snapshot = {"schema_version": 6,
+            "measurement_context_sha256": measurement_retry.context_digest(templates, self.case.owner.client),
+            "reused_agents": [], "measured_at": intent["argv"][1],
+            "agents": {worker.name: {"kind": worker.kind, "state": "idle", "headroom_pct": 90.0}
+                       for worker in templates}, "failed_agents": [], "skipped_agents": []}
+        state = self.case.owner.state()
+        add_snapshot(state, snapshot)
+        preserved = {"task": state["recovery"]["tasks"]["one"]["task"],
+                     "base": state["recovery"]["tasks"]["one"]["base_revision"],
+                     "other": state["recovery"]["tasks"]["two"].copy(),
+                     "assignments": list(state["assignments"]), "round": self.case.progress()["round"]}
+        save_state(self.case.path, state)
+        # Cleanup plus failed retention can leave a completed snapshot with no
+        # saved probe row. Live inventory, not that absence, decides readiness.
+        self.assertEqual(probe_recovery.load(self.case.path)["records"], [])
+        before = self.case.path.read_bytes()
+        for inventory in ([{"name": "probe-untracked"}], None, [None], [{"name": ""}],
+                          [{"name": "worker"}, {"name": "worker"}]):
+            with self.subTest(inventory=inventory), patch.object(self.case.owner.client, "agent_list", return_value=inventory):
+                with self.assertRaisesRegex(UsageError, "still live or native inventory is ambiguous"):
+                    self.reconcile_measurement(intent, "snapshot_completed", snapshot)
+                self.assertEqual(self.case.path.read_bytes(), before)
+        data, result = self.reconcile_measurement(intent, "snapshot_completed", snapshot, via_cli=True)
+        self.assertEqual(result["outcome"], "snapshot_completed")
+        self.assertIsNone(self.case.progress()["pending"])
+        saved = self.case.path.read_bytes()
+        with patch("foreman.recovery.RECOVERY_STORE_VERSION", 19):
+            _old_reader, usable = load_state_checked(self.case.path, warn=lambda _: None, persist_migration=False)
+        self.assertFalse(usable)
+        self.assertEqual(self.case.path.read_bytes(), saved)
+        _data, replay = self.reconcile_measurement(intent, "snapshot_completed", snapshot, via_cli=True)
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(self.case.path.read_bytes(), saved)
+        with patch("foreman.progression_owner.loaded_policy", return_value=("0.17.0", "f" * 64)):
+            with state_lock(self.case.path):
+                authority.handoff(self.case.path, {"task": "one", "expected_generation": 1,
+                    "authorization": fixture.owner_fixture.AUTH}, self.case.now(), self.case.owner.client,
+                    fixture.ROOT, returning=True)
+            replacement_document = json.loads(json.dumps(self.case.document))
+            replacement_document["artifact_directory"] = str(self.case.root / "current-policy-artifacts")
+            replacement_contract = self.case.root / "current-policy-contract.json"
+            replacement_contract.write_text(json.dumps(replacement_document))
+            replacement = {**self.case.owner.data, "expected_generation": 2,
+                           "service_id": "fixture-current-policy", "contract": str(replacement_contract)}
+            with state_lock(self.case.path):
+                authority.handoff(self.case.path, replacement, self.case.now(), self.case.owner.client, fixture.ROOT)
+        after = self.case.owner.state()
+        self.assertEqual(after["recovery"]["tasks"]["one"]["authority"]["generation"], 3)
+        self.assertEqual(after["recovery"]["tasks"]["one"]["authority"]["policy"],
+                         {"version": "0.17.0", "digest": "f" * 64})
+        self.assertEqual(after["recovery"]["tasks"]["one"]["task"], preserved["task"])
+        self.assertEqual(after["recovery"]["tasks"]["one"]["base_revision"], preserved["base"])
+        self.assertEqual(after["recovery"]["tasks"]["two"], preserved["other"])
+        self.assertEqual(after["assignments"], preserved["assignments"])
+        self.assertEqual(after["recovery"]["tasks"]["one"]["progression"]["round"], preserved["round"])
+
+    def test_closed_probe_can_settle_incomplete_measurement_but_live_probe_refuses(self):
+        self.pending_measurement()
+        state = self.case.owner.state()
+        state["recovery"]["tasks"]["one"]["progression"]["pending"]["argv"] = []
+        save_state(self.case.path, state)
+        intent = self.case.progress()["pending"]
+        template = config.load_config(self.case.configuration)[0]
+        probe = SimpleNamespace(name="probe-fixture", kind=template.kind)
+        native = {"source": "herdr:" + template.kind, "agent": template.kind,
+                  "kind": "id", "value": "fixture-native"}
+        probe_recovery.retain(self.case.path, template, probe, "fixture-pane", template.tiers["coordination"],
+            ("fixture-pane", native, {"source": "process_argv", "pid": 42, "pane_id": "fixture-pane"}),
+            self.case.now(), config_path=self.case.configuration)
+        gates = probe_recovery.load(self.case.path)
+        with self.assertRaisesRegex(UsageError, "partial"):
+            self.reconcile_measurement(intent, "probes_closed_incomplete", gates["records"][0])
+        gates["records"][0].update(status="closed", closure={"closed": True, "pane_id": "fixture-pane"})
+        save_state(probe_recovery.store_path(self.case.path), gates)
+        closed = gates["records"][0]
+        self.case.owner.client.agent_list = lambda: [{"name": "probe-still-live"}]
+        before = self.case.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "still live"):
+            self.reconcile_measurement(intent, "probes_closed_incomplete", closed)
+        self.assertEqual(self.case.path.read_bytes(), before)
+        self.case.owner.client.agent_list = lambda: []
+        original_at = closed["at"]
+        closed["at"] = "2020-01-01T00:00:00Z"
+        save_state(probe_recovery.store_path(self.case.path), gates)
+        with self.assertRaisesRegex(UsageError, "No single measurement attempt"):
+            workflow_recovery.current_measurement_readback(self.case.path, {
+                "task": "one", "expected_generation": 1, "intent": intent["id"],
+                "authorization": fixture.owner_fixture.AUTH})
+        with self.assertRaisesRegex(UsageError, "before task admission"):
+            self.reconcile_measurement(intent, "probes_closed_incomplete", closed)
+        self.assertEqual(self.case.path.read_bytes(), before)
+        closed["at"] = original_at
+        save_state(probe_recovery.store_path(self.case.path), gates)
+        _data, result = self.reconcile_measurement(intent, "probes_closed_incomplete", closed, via_cli=True)
+        self.assertEqual(result["outcome"], "probes_closed_incomplete")
+        self.assertIsNone(self.case.progress()["pending"])
+
+    def test_current_measurement_readback_never_infers_unknown_effects_from_absence(self):
+        intent = self.pending_measurement()
+        data = {"task": "one", "expected_generation": 1, "intent": intent["id"],
+                "authorization": fixture.owner_fixture.AUTH}
+        before = self.case.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "No single measurement attempt"):
+            workflow_recovery.current_measurement_readback(self.case.path, data)
+        self.assertEqual(self.case.path.read_bytes(), before)
+        for key, value in (("expected_generation", 2), ("intent", "foreign-intent")):
+            with self.subTest(field=key), self.assertRaises(UsageError):
+                workflow_recovery.current_measurement_readback(self.case.path, {**data, key: value})
+        self.assertEqual(self.case.path.read_bytes(), before)
+
+    def test_policy_refusal_reports_expected_and_observed_identities(self):
+        state = self.case.owner.state()
+        grant = authority.current_grant(state, "one")
+        assert grant is not None
+        expected = grant["policy"]
+        observed = {"version": "0.18.0", "digest": "f" * 64}
+        with self.case.owner.session() as capability, patch(
+                "foreman.progression_owner.loaded_policy", return_value=(observed["version"], observed["digest"])):
+            with self.assertRaises(UsageError) as caught:
+                capability.require_current(self.case.path, state, "one")
+        self.assertEqual(caught.exception.details, {"expected_policy": expected, "observed_policy": observed})
+        self.assertIn(expected["digest"], caught.exception.message)
+        self.assertIn(observed["digest"], caught.exception.message)
+
     def test_a_task_exception_does_not_prevent_an_unrelated_task_from_launching(self):
         self.exception("verification_decision_required")
         writer = self.case.root / "other-writer"
@@ -160,6 +358,11 @@ class WorkflowRecoveryTest(unittest.TestCase):
         data = {"task": "one", "expected_generation": 1, "intent": original["id"],
                 "authorization": fixture.owner_fixture.AUTH}
         for replay in (False, True):
+            before = self.case.path.read_bytes()
+            with state_lock(self.case.path), self.assertRaisesRegex(UsageError, "only to measurement"):
+                authority.reconcile_intent(self.case.path, {**data, "readback": {"unvalidated": "must not persist"}},
+                                           self.case.now(), self.case.owner.client)
+            self.assertEqual(self.case.path.read_bytes(), before)
             with state_lock(self.case.path):
                 result = authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
             self.assertEqual(result["replayed"], replay)

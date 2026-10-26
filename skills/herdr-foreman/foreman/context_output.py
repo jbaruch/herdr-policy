@@ -18,7 +18,7 @@ WARNING_BYTES = 4_096
 # Foreman-facing knowledge views. Native Stop/executor owners use their own
 # observation APIs; this exposure gate never changes their effect authority.
 READ_COMMANDS = frozenset({
-    "state", "status", "foreman-queue", "workflow-readiness", "cost-report",
+    "state", "status", "foreman-queue", "workflow-readiness", "cost-report", "explain-plan",
     "memory-list", "memory-show", "attention-list", "attention-show", "catch-up",
     "supervision-gate", "supervision-status", "supervision-drain", "supervision-watch",
     "retro-check", "retro-list", "retro-show", "capability-check", "capability-show",

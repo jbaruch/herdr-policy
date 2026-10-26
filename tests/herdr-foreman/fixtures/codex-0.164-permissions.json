@@ -1,0 +1,32 @@
+{
+  "capture": {
+    "cli_version": "0.164.0",
+    "date": "2026-10-25",
+    "source": "Owned native Codex CLI in a temporary project; two hook definitions reviewed individually. The UserPromptSubmit recorder blocked before a model request.",
+    "redactions": [
+      "session_id",
+      "turn_id",
+      "transcript_path",
+      "cwd"
+    ]
+  },
+  "SessionStart": {
+    "session_id": "00000000-0000-4000-8000-000000000047",
+    "transcript_path": "/owned-fixture/native.jsonl",
+    "cwd": "/owned-fixture",
+    "hook_event_name": "SessionStart",
+    "model": "gpt-6.1-sol",
+    "permission_mode": "bypassPermissions",
+    "source": "clear"
+  },
+  "UserPromptSubmit": {
+    "session_id": "00000000-0000-4000-8000-000000000047",
+    "turn_id": "00000000-0000-4000-8000-000000000048",
+    "transcript_path": "/owned-fixture/native.jsonl",
+    "cwd": "/owned-fixture",
+    "hook_event_name": "UserPromptSubmit",
+    "model": "gpt-6.1-sol",
+    "permission_mode": "bypassPermissions",
+    "prompt": "Owned permission capture. Do not use tools."
+  }
+}

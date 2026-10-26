@@ -67,6 +67,15 @@ hold evidence. Collector page limits remain explicit coverage gaps. Unsupported
 owners and oversized projected rows have distinct private coverage diagnostics;
 inspect the named section rather than increasing raw-history limits or replacing
 the owner. This protocol creates no cache store, migration or delivery authority.
+Binding receipt discovery excludes lock sidecars and deduplicates owners before
+its owner limit. Separate directory and receipt-scan safety bounds retain
+`factory_directory_scan_truncated` and `factory_receipt_scan_truncated` coverage
+gaps respectively. Explicit selected owner paths take priority within the owner
+bound; excess selected or discovered owners retain `factory_sources_truncated`.
+Selecting an owner does not claim the registry was fully inspected.
+`status` and fleet `evidence` expose `coverage_diagnostics` with the failed section,
+refusal class and recovery action. A failed current or closure section retains
+independently readable binding evidence; its counts and outcomes remain unknown.
 
 A precheck emits `wake_agent` and `data`. It saves the same payload as one pending
 job before waking only the exact registered idle observer. Wakes are coalesced
