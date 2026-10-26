@@ -31,7 +31,35 @@ This interface writes no owner, gate or replacement store.
 | `<canonical-state-path>.foreman-reset.json` | `skills/herdr-foreman/foreman/foreman_reset.py` | One record per explicitly requested foreman maintenance reset; see Foreman Reset Record below |
 | `<canonical-state-path>.bootstrap.json` | `skills/herdr-foreman/foreman/bootstrap_recovery.py` | Original Codex launch provenance and durable bootstrap transport/cleanup receipts |
 | `<state-path>.context-evidence/` | `skills/herdr-foreman/foreman/context_evidence.py` | Immutable original ledgers and schema-1 quarantine intent journals for the known fresh/no-clear contradiction |
+| `<state-path>.task-evidence/` | `skills/herdr-foreman/foreman/task_evidence.py` | Immutable original-owner backups and schema-1 preservation receipts for derived task-local evidence holds |
 | Controller-configured private remote owner JSON | `skills/herdr-foreman/foreman/remote_owner.py` | Attested command context, current single-controller lease, indeterminate intent and task ingress; schema and writer/reader contract in `skills/herdr-foreman/references/remote-context.md` |
+
+## Task-Local Evidence Holds
+
+`skills/herdr-foreman/foreman/task_evidence.py` owns the narrow classification
+and preservation contract. The state reader can retain an attributable assignment
+context-pair contradiction as a derived task hold while validating every other
+owner invariant. Unattributable rows, other invalid evidence, ambiguous dispatch
+ownership and invalid task authority remain whole-owner refusals. No row, status,
+context proof, counter, contributor, native identity or unknown send is removed or
+changed by isolation. The owner and current task/grant schemas are unchanged.
+
+`status --task <task>` includes bounded `task_evidence` diagnostics when the owner
+contains isolated rows: affected assignment indexes, digests, dispatches, unknown
+outcomes, explicit omissions and coverage. Task transitions and service effects
+refuse the affected scope. Independent valid tasks retain their existing owner
+checks; global operator holds and global binding validation still apply.
+
+Before an unrelated owner write, the state owner preserves the exact original
+owner bytes immutably in its private task-evidence directory. Each preservation
+receipt carries `schema_version: 1`, the derived `fault` and
+`original_state_sha256`; its filename binds the assignment index and row digest.
+`<sha256>.original.json` retains the corresponding owner bytes. Only this module
+writes or reads these files; no reader migrates them. Unsupported versions,
+changed originals, foreign files and failed preservation refuse the write.
+Version 1 is the first accepted receipt schema. Receipts preserve evidence and
+never establish authority or clear a task hold; every read derives the hold again
+from the unchanged row. No extra operator phase or bookkeeping command is needed.
 
 ## Contradictory Context Evidence
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, policy_paths, progression_owner as authority, supervision
-from . import context_output, progression_runtime, recovery
+from . import context_output, progression_runtime, recovery, task_evidence
 from . import workflow_capacity, workflow_contract, workflow_dispatch, workflow_planning
 from . import workflow_workspace as workspace
 from .errors import ForemanError, PlanError, UsageError
@@ -24,6 +24,7 @@ MEASUREMENT_MAX_AGE = workflow_planning.MEASUREMENT_MAX_AGE
 
 def current_inputs(state, state_path, task_name, supervised, policy_root, *, policy_identity=None) -> dict[str, Any]:
     """Read the same pinned task inputs used by the executing owner; no lease claim."""
+    task_evidence.require_clear(state, {task_name})
     grant = authority.current_grant(state, task_name)
     if grant is None or grant["mode"] != "service" or grant.get("contract_schema", 1) not in (2, 3):
         raise UsageError("Admit the registered task through its verified owner before native execution.",
