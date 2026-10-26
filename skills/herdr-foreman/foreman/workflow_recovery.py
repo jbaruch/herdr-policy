@@ -208,7 +208,7 @@ def reconcile_measurement(path, state, grant, supervised, document, data, at, cl
                 or any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
                        or not item["name"].strip() or item["name"].startswith("probe-") for item in agents)
                 or len({item["name"] for item in agents}) != len(agents)):
-            raise UsageError("A disposable probe is still live or native inventory is ambiguous; preserve it for its measurement owner. Inspect native inventory and finish the actual probe cleanup/recovery before rerunning progression-reconcile with the same record. The pending intent is preserved.", {})
+            raise UsageError("A disposable probe is still live or native inventory is ambiguous; preserve it for its measurement owner. Inspect native inventory and finish the actual probe cleanup/recovery before rerunning `{}` with the same record. The pending intent is preserved.".format(command("progression-reconcile --readback-current")), {})
 
     def change(current):
         authority._settled(state, current, data["task"])
