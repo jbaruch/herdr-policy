@@ -48,7 +48,7 @@ These limits are not measured throughput or token savings.
 
 ## Installation
 
-Use a compatible extracted pair: herdr-policy **0.16.2** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
+Use a compatible extracted pair: herdr-policy **0.18.0** with coding-policy **0.5.0** or **0.5.1**. Do not combine this package's team hooks with coding-policy 0.3.x team hooks. Keep running teams stopped during cutover, preserve their records, and follow [the migration procedure](docs/migration.md).
 
 Standup remains available from existing reports and the round log. The current
 ask entrypoint inspects readiness and refuses prompting with exit 5: Herdr
