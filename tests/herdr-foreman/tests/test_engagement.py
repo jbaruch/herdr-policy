@@ -337,7 +337,7 @@ class EngagementTest(unittest.TestCase):
         engagement.validate_assessments(self.state)
         dispatch = self.state["recovery"]["dispatches"][0]
         self.assertTrue(engagement.native_delivery_proven(record, dispatch))
-        dispatch["worker_kind"] = "agy"
+        dispatch.update(worker_kind="antigravity-template", provider="agy")
         engagement.validate_assessments(self.state)
         self.assertFalse(engagement.native_delivery_proven(record, dispatch))
         with self.assertRaisesRegex(UsageError, "Reassess the existing report"):

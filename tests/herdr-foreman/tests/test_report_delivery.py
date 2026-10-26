@@ -517,7 +517,7 @@ class NativeDeliveryTests(unittest.TestCase):
         native = {"source": antigravity_native.SOURCE, "agent": "agy", "kind": "id", "value": session}
         document["assignments"][0]["context_session"] = {"pane_id": PANE, **native}
         dispatch = document["recovery"]["dispatches"][0]
-        dispatch["worker_kind"] = "agy"
+        dispatch.update(worker_kind="antigravity-template", provider="agy")
         dispatch["result"]["context_session"] = {"pane_id": PANE, **native}
         pane = {**self.pane, "agent_session": native}
         Path(data["pane"]).write_text(json.dumps({"result": {"pane": pane}}))

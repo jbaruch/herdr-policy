@@ -117,7 +117,7 @@ class RecheckTest(VerdictCase):
     def test_legacy_antigravity_assessment_never_becomes_native_model_approval(self):
         self.verdict()
         self.dispatch("d-agy", "reviewer", "antigravity", self.reread, AFTER, observed=AFTER)
-        self.dispatches[-1]["worker_kind"] = "agy"
+        self.dispatches[-1].update(worker_kind="antigravity-template", provider="agy")
         self.parsed(self.reread, "d-agy")
         self.assessments[-1]["schema_version"] = 2
         with self.assertRaisesRegex(UsageError, "no owner-parsed"):

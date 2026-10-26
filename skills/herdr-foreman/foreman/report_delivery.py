@@ -360,7 +360,10 @@ def native_model_matches(body, session, path, tier):
 def require_primary_delivery(dispatch, assignment, enrolled, report):
     """Bind Antigravity acceptance to the actual completed model and request."""
     tier = (dispatch.get("result") or {}).get("tier")
-    if dispatch.get("worker_kind") != "agy" and (not isinstance(tier, dict) or tier.get("kind") != "agy"):
+    from .engagement import requires_native_delivery
+    enrolled_native = enrolled.get("native_session")
+    if (not requires_native_delivery(dispatch)
+            and (not isinstance(enrolled_native, dict) or enrolled_native.get("agent") != "agy")):
         return
     identity = native_identity({"agent_session": enrolled.get("native_session")})
     original = native_identity({"agent_session": assignment.get("context_session")})

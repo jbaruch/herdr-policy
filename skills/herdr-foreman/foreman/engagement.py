@@ -61,7 +61,7 @@ PREVIOUS_FIELDS = RECORD_FIELDS - {"native_delivery"}
 
 def requires_native_delivery(dispatch):
     tier = (dispatch.get("result") or {}).get("tier")
-    return dispatch.get("worker_kind") == "agy" or isinstance(tier, dict) and tier.get("kind") == "agy"
+    return dispatch.get("provider") == "agy" or isinstance(tier, dict) and tier.get("kind") == "agy"
 
 
 def native_delivery_proven(record, dispatch):
