@@ -1,6 +1,6 @@
 """Reset-owned transfer of a Codex host goal, with no invented goal status.
 
-The claimed deliverer retires the outgoing goal before waiting for native idle;
+For schema 2, the claimed deliverer retires the outgoing goal before native idle;
 the input hook authenticates the incoming owner before selecting its target.
 Retire the old scheduler before activating the new one: a failure can leave
 zero executors, never two admitted executors. Persist intent before each RPC;
@@ -21,6 +21,9 @@ from .codex_goals import AppServer, control_socket, unavailable, valid_goal
 
 QUIESCE_BUDGET_SEC = 30
 QUIESCE_POLL_SEC = 0.2
+# Reader-first release: publish dual readers through Tessl and ACR before the
+# activation release flips new receipts to 2. Existing schema-2 recovery works.
+WRITE_SCHEMA_VERSION = 1
 PHASES = {"prepared", "quiescing", "retiring", "retired", "restoring", "restored", "verified"}
 FIELDS = {"schema_version", "runtime", "socket", "source_thread", "source_goal", "target_thread",
           "target_created_at", "phase", "carried_tokens", "carried_seconds", "retiring_turn", "resume_status"}
@@ -95,7 +98,7 @@ def prepare(runtime, session, previous=(), *, connect=None, discover=None):
                 and receipt["source_goal"]["objective"] == goal["objective"]):
             carried_tokens, carried_seconds = receipt["carried_tokens"], receipt["carried_seconds"]
             break
-    return {"schema_version": 2, "runtime": runtime, "socket": path, "source_thread": session["value"],
+    return {"schema_version": WRITE_SCHEMA_VERSION, "runtime": runtime, "socket": path, "source_thread": session["value"],
             "source_goal": copy.deepcopy(goal), "target_thread": None, "target_created_at": None, "phase": "prepared",
             "retiring_turn": None, "resume_status": goal["status"] if goal else None,
             "carried_tokens": carried_tokens + (goal["tokensUsed"] if goal else 0),
@@ -210,12 +213,20 @@ def _retire(receipt, host, persist, sleep, clock):
         raise unavailable("source_goal_reactivated")
 
 
+def preclear_enabled(receipt):
+    """Continue an existing v2 journal or use the activated new-writer protocol."""
+    return (receipt is not None and receipt["runtime"] == "codex"
+            and (receipt["schema_version"] == 2 or WRITE_SCHEMA_VERSION == 2))
+
+
 def preclear(receipt, persist, *, connect=None, sleep=time.sleep, clock=time.monotonic):
     """Settle an explicit reset's outgoing scheduler before waiting for pane idle."""
     if not valid(receipt) or receipt is None:
         raise unavailable("missing_goal_preflight")
     if receipt["runtime"] != "codex":
         return
+    if not preclear_enabled(receipt):
+        raise unavailable("goal_reader_rollout_pending")
     if receipt["target_thread"] is not None:
         raise unavailable("preclear_target_already_bound")
     with (connect or AppServer)(receipt["socket"]) as host:

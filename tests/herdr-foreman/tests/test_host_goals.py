@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 
 import copy
 import unittest
+from unittest.mock import patch
 
 from foreman import host_goals as transfer
 from foreman.codex_goals import GoalError, unavailable
@@ -15,6 +16,9 @@ from tests.goal_fakes import GoalHost, goal
 
 class HostGoalTest(unittest.TestCase):
     def setUp(self):
+        activated = patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 2)
+        activated.start()
+        self.addCleanup(activated.stop)
         self.host = GoalHost({"old": goal()})
         self.saved = []
         self.receipt = transfer.prepare("codex", {"kind": "id", "value": "old"},
@@ -22,6 +26,20 @@ class HostGoalTest(unittest.TestCase):
 
     def persist(self):
         self.saved.append(copy.deepcopy(self.receipt))
+
+    def test_reader_first_release_writes_one_and_can_read_and_recover_two(self):
+        with patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 1):
+            legacy = transfer.prepare("codex", {"kind": "id", "value": "old"},
+                                      connect=self.host.connect, discover=lambda: "/fixture/codex.sock")
+            self.assertEqual(legacy["schema_version"], 1)
+            self.assertFalse(transfer.preclear_enabled(legacy))
+            self.assertTrue(transfer.valid(self.receipt))
+            self.assertTrue(transfer.preclear_enabled(self.receipt))
+            with self.assertRaisesRegex(GoalError, "goal_reader_rollout_pending"):
+                transfer.preclear(legacy, self.persist, connect=self.host.connect)
+            self.assertEqual(self.saved, [])
+            transfer.preclear(self.receipt, self.persist, connect=self.host.connect)
+            self.assertEqual(self.receipt["phase"], "retired")
 
     def deliver(self, **options):
         transfer.transfer(self.receipt, "new", self.persist, connect=self.host.connect, **options)

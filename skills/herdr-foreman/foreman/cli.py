@@ -2409,7 +2409,7 @@ def cmd_foreman_reset_deliver(args, client=None, warn=None, trace=None):
         # Setup runs after the claim, so its failure must finish the row too.
         client = client if client is not None else _client(args, trace=trace)
         goal = claimed.get("host_goal")
-        if goal is not None and goal["runtime"] == "codex":
+        if foreman_reset.host_goals.preclear_enabled(goal):
             foreman_reset.quiesce_host_goal(state_path, plan, client, now_iso())
         result = foreman_reset.deliver(
             client, load_config(_config_path(args)), args.pane, args.stow, str(state_path), warn=_log_safe(warn), options=options,

@@ -23,11 +23,12 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
-from foreman import foreman_reset, retrospective, runnable, supervision_runtime
+from foreman import foreman_reset, retrospective, runnable, supervision_runtime, supervision
 from foreman.herdr import HerdrClient
 from foreman.state import state_lock
 from foreman.errors import HerdrError, StateError, UsageError
 from tests.test_cli import CliCase
+from tests.goal_fakes import GoalHost, goal
 
 PANE = "w9:p1"
 #: The foreman's native session as supervision-bind stores it.
@@ -1118,6 +1119,50 @@ RESET_AT = "2026-09-24T10:00:00+00:00"
 
 
 class ResetCommandTest(CliCase):
+    def codex_delivery_fixture(self):
+        host = GoalHost({SESSION["value"]: goal(SESSION["value"])})
+        host.active.add(SESSION["value"])
+        with patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 2):
+            receipt = foreman_reset.host_goals.prepare("codex", SESSION, connect=host.connect,
+                                                      discover=lambda: "/fixture/codex.sock")
+        supervision.bind(self.state, supervision.identity(SESSION["value"], str(self.tmp), "1", pane_id=PANE),
+                         RESET_AT, root=self.tmp / "bindings")
+        foreman_reset.schedule(self.state, {"pane_id": PANE, "stow": "round-7"}, RESET_AT,
+                               os.getpid, native_session=SESSION, host_goal=receipt)
+        client = FakeClient(["working"], kind="codex")
+        identity = supervision_runtime.process_identity(os.getpid())
+        return host, client, lambda pid: identity if pid == os.getpid() else client.identify(pid)
+
+    def test_deliver_cli_retires_the_goal_before_entering_idle_or_composer_delivery(self):
+        host, client, identify = self.codex_delivery_fixture()
+        def before_delivery(*_args, **_kwargs):
+            self.assertNotIn(SESSION["value"], host.goals)
+            self.assertTrue(any(method == "turn/interrupt" for method, _ in host.calls))
+            self.assertEqual(client.keystrokes, [])
+            raise UsageError("Fixture stops after retirement, before native delivery.", {})
+        with patch("foreman.host_goals.AppServer", side_effect=host.connect), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=before_delivery):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual((row["status"], row["host_goal"]["phase"]), ("failed", "retired"))
+        self.assertEqual(client.keystrokes, [])
+
+    def test_deliver_cli_preclear_failure_records_failure_without_entering_native_delivery(self):
+        _host, client, identify = self.codex_delivery_fixture()
+        with patch("foreman.host_goals.AppServer", side_effect=UsageError("Restore native host access.", {})), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=AssertionError("must not poll idle or type")):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual((row["status"], row["host_goal"]["phase"]), ("failed", "prepared"))
+        self.assertIn(foreman_reset.RESET_RECEIPT_PREFIX, row["result"]["resume_prompt"])
+        self.assertEqual(client.keystrokes, [])
+
     def run_cli(self, argv, client=None, *, explicit_reset=True):
         # These fixtures exercise the opt-in maintenance owner, not the default
         # round checkpoint. The default-refusal test disables this fixture opt-in.

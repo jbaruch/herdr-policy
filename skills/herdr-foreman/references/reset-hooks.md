@@ -29,13 +29,20 @@ The transfer never starts another app-server or changes the user's goal status
 to represent executor retirement. Native Claude/Grok retain their session reset
 without creating an external host goal; external schedulers need their own
 supported integration before a reset can claim that goal's handoff.
-Before waiting for idle, the claimed deliverer pins the original runtime and
+For schema 2, before waiting for idle the claimed deliverer pins the original runtime and
 retires its Codex goal. An already-running outgoing continuation is interrupted
 by its exact turn ID; final usage is retained. This prevents the active goal
 from repeatedly starting another turn while the deliverer waits. Its schema-2
 receipt can reach `retired` before any incoming session is selected. A failed
 preclear preserves that receipt and guarded recovery instead of scheduling a
 second reset for the same pane.
+This protocol uses a readers-first rollout: 0.18.0 publishes schema-1/schema-2
+readers through both Tessl and ACR while new receipts remain schema 1. After
+both publications are confirmed, the activation release enables new schema-2
+writes and preclear. Existing schema-2 recovery already works in the compatible
+reader. Until activation, ordinary schema-1 resets retain their existing host
+handoff order; reader publication alone does not fix active-goal idle starvation.
+No waiting period or new approval ceremony is part of this rollout.
 The input hook creates no successor goal: it verifies source retirement, commits the
 incoming binding/acceptance, and admits the saved continuation. That continuation
 reads its scope and holds, then uses `foreman-reset-reconcile --outcome delivered`

@@ -1525,7 +1525,7 @@ could not take.
 | `schema_version` | integer, always `4` | Row version |
 | `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before the first clear keystroke. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
-| `host_goal` | null or goal-receipt schema 1/2 | Legacy null grants no goal authority. New Codex rows use schema 2: the claimed deliverer retires the source before waiting for idle, then the input hook verifies that retirement before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
+| `host_goal` | null or goal-receipt schema 1/2 | Legacy null grants no goal authority. The 0.18.0 compatibility release reads both versions and keeps new writes at schema 1. For schema 2, the claimed deliverer retires the source before waiting for idle, then the input hook verifies that retirement before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
 | `stow` | string | The stow id the resume prompt names |
 | `status` | one of `scheduled`, `delivering`, `delivered`, `failed`, `interrupted`, `reconciled` | `scheduled` → `delivering` → `delivered`; `failed` before any keystroke; `interrupted` after one; `reconciled` when the operator confirmed through `foreman-reset-reconcile` that the foreman resumed |
@@ -1535,15 +1535,24 @@ could not take.
 | `native_session` | `{"kind": "id" \| "path", "value": non-empty string}`, or null | Original native binding. Null is retained only from schema-1 migration and authorizes no input. The per-keystroke session/process contract is `skills/herdr-foreman/foreman/foreman_reset.py` (`deliver`); hook transfer is `skills/herdr-foreman/foreman/reset_input_hook.py` (`check`) |
 | `result` | null, the delivery object, or the failure object | `scheduled` and `delivering` hold null. `delivered` holds exactly `{"schema_version", "pane_id", "stow", "agent", "cleared": true, "resume": {"landed": true, "started": true}}`, whose `schema_version`, `pane_id` and `stow` equal the row's. `failed` and `interrupted` hold exactly `{"error": string, "message": string, "details": object, "resume_prompt": string}`; the saved prompt is used only when the recovery instruction requires operator input. `reconciled` holds exactly `{"outcome": "delivered", "reconciled_at": ISO-8601 string}` |
 
-The reset owner writes Codex goal-receipt schema 2 and reads schemas 1/2 through
+The reset owner reads Codex goal-receipt schemas 1/2 through
 `skills/herdr-foreman/foreman/host_goals.py`; the host adapter is
 `skills/herdr-foreman/foreman/codex_goals.py`. Native Claude/Grok receipts contain
 only `schema_version: 1`, `runtime` and `phase: not_applicable`: they create no
 Codex goal and prove nothing about an external scheduler. Codex receipts contain:
 
+The readers-first rollout follows `rules/stateful-artifacts.md` Cross-Pipeline
+Schema Bumps. Release 0.18.0 keeps `host_goals.WRITE_SCHEMA_VERSION` at 1 and
+ships dual-accept readers through both Tessl and ACR. Confirm both publications
+before the activation release changes that constant to 2. No elapsed waiting
+period or new operator approval is required. Existing schema-2 receipts remain
+recoverable during the compatibility stage; a schema-1 receipt cannot enter
+targetless preclear until writer activation. Older schema-1-only owners refuse
+schema 2 without rewriting its history.
+
 | Field | Contract |
 | --- | --- |
-| `schema_version`, `runtime` | Integer `2` for new Codex receipts; schema 1 remains readable. A claimed preclear upgrades its existing prepared receipt before effects, preserving its snapshot/accounting. Older readers refuse schema 2 without rewriting it. Literal `codex` |
+| `schema_version`, `runtime` | Integer `1` for new receipts during the compatibility stage, then `2` after writer activation. Both remain readable. Once activated, a claimed preclear upgrades its existing prepared receipt before effects, preserving its snapshot/accounting. Literal `codex` |
 | `socket` | Absolute existing daemon control socket selected during read-only preflight |
 | `source_thread`, `source_goal` | Original native ID and its authoritative host goal snapshot, or null when no goal exists. Snapshot fields are `threadId`, `objective`, `status`, nullable `tokenBudget`, `tokensUsed`, `timeUsedSeconds`, `createdAt`, `updatedAt`; additional host fields are preserved |
 | `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration. Schema 2 also permits a null target while preclear is `quiescing`, `retiring` or `retired` |

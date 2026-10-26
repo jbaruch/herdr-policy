@@ -7,8 +7,8 @@ as the native session binding before admitting its continuation.
 
 A foreman cannot type into its own composer mid-turn, so the reset is two
 commands. `foreman-reset` runs inside the turn: it checks the preconditions
-and starts a detached `foreman-reset-deliver`. Its claimed child first retires
-the outgoing Codex goal, interrupting only that executor's exact active turn.
+and starts a detached `foreman-reset-deliver`. For goal-receipt schema 2 its
+claimed child first retires the outgoing Codex goal, interrupting only that executor's exact active turn.
 It then waits until the
 foreman's pane is idle -- the turn has ended -- then sends the runtime's clear
 command and the resume prompt through the same composer checks used for
@@ -850,7 +850,8 @@ TERMINAL_FAILURES = frozenset({"failed", "interrupted"})
 def _goal_pending(row):
     goal = row["host_goal"]
     return (goal is not None and goal["runtime"] == "codex" and goal["phase"] != "verified"
-            and (row["accepted_session"] is not None or goal["target_thread"] is not None or goal["phase"] != "prepared"))
+            and (row["accepted_session"] is not None or goal["target_thread"] is not None or goal["phase"] != "prepared"
+                 or row["status"] in TERMINAL_FAILURES and row["foreground"] is not None))
 
 
 def outstanding(state_path, *, alive=_alive):

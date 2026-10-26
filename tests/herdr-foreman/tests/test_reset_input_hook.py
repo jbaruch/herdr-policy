@@ -29,6 +29,9 @@ FOREGROUND = [{"pid": 4242, "identity": "started-once"}]
 
 class ResetHookTest(unittest.TestCase):
     def setUp(self, kind="codex", source=None, arm=True):
+        activated = patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 2)
+        activated.start()
+        self.addCleanup(activated.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
@@ -113,6 +116,30 @@ class ResetHookTest(unittest.TestCase):
                 self.assertEqual(self.invoke(kind=kind, client=client)["decision"], "block")
                 self.assertEqual(client.session_reports, [])
                 self.assertEqual(store.load(self.state)["binding"], before)
+
+    def test_preclear_failure_while_prepared_keeps_guarded_recovery_visible(self):
+        self.setUp(source=goal(SESSION["value"]))
+        client = FakeClient(["idle"], kind="codex")
+        def identify(pid):
+            return CHILD if pid == os.getpid() else client.identify(pid)
+        with patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.host_goals.AppServer", side_effect=UsageError("Restore native host access before retrying.", {})):
+            with self.assertRaises(UsageError) as caught:
+                reset.quiesce_host_goal(self.state, self.plan, client, AT)
+        reset.finish(self.state, self.plan, "failed", reset.failure(caught.exception, "round-7", str(self.state)))
+        document, _ = reset._load(reset.record_path(self.state), migrate_legacy=False)
+        row = document["resets"][0]
+        self.assertEqual(row["host_goal"]["phase"], "prepared")
+        self.assertIn(reset.RESET_RECEIPT_PREFIX, row["result"]["resume_prompt"])
+        before = reset.record_path(self.state).read_bytes()
+        with self.assertRaisesRegex(UsageError, "unsettled reset"):
+            reset.schedule(self.state, {**self.plan, "stow": "different-stow"}, AT,
+                           lambda: self.fail("must not hide the older guarded recovery"), native_session=SESSION,
+                           alive=lambda _: False)
+        with self.assertRaisesRegex(UsageError, "previous host-goal handoff is unfinished"):
+            reset.prepare_host_goal(self.state, "codex", SESSION)
+        self.assertEqual(reset.record_path(self.state).read_bytes(), before)
+        self.assertEqual(client.keystrokes, [])
 
     def test_native_hint_acknowledgement_is_required_and_foreign_identity_is_preserved(self):
         client = FakeClient(["idle"], kind="codex")

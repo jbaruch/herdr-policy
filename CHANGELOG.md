@@ -2,9 +2,10 @@
 
 ## 0.18.0 — 2026-10-25
 
-- Retire an explicitly reset Codex executor before waiting for idle, so active-goal continuation cannot starve the claimed handoff (#52). Preserve exact-turn interruption, final usage, remaining budget and the original goal lifecycle; admit no successor work before the authenticated continuation receives its saved scope and holds.
+- Ship dual schema-1/schema-2 Codex goal readers before enabling new schema-2 writes (#52). New receipts remain schema 1 in this compatibility release. The following activation release enables preclear after both Tessl and ACR publications are confirmed; existing schema-2 recovery is already supported.
 - Keep the live Herdr session hint aligned with the authenticated reset input (#46). Require unchanged foreground identity and native session-report readback before admission. Refuse foreign or unacknowledged hints, preserve uncertain handoffs, and prevent a second reset from replacing their recovery evidence.
-- Version the Codex goal receipt to schema 2 for targetless preclear; keep schema-1 receipts readable and preserve native Claude/Grok behavior. Both plugin packages carry the shared implementation. Deterministic coverage includes two consecutive reset handoffs; live native validation remains a separate operator check.
+- Preserve prepared failures with guarded recovery as unsettled, so a later stow cannot hide or compete with their still-admissible continuation. Keep the same original receipt, scope and accounting until its owner completes recovery.
+- Implement schema-2 targetless preclear with exact-turn interruption, final usage and remaining budget, preserving native Claude/Grok behavior. Both plugin packages carry the shared readers and staged writer. Deterministic coverage includes two consecutive reset handoffs; live native validation remains a separate operator check.
 
 ## 0.17.0 — 2026-10-25
 
