@@ -66,10 +66,66 @@ def reconcile_not_sent(path, state, grant, supervised, document, data, at):
     return _commit(path, state, grant, supervised, data, at, "progression_intent_reconciled", change)
 
 
+def current_measurement_readback(path, data):
+    """Derive one request from retained owners, without model-written digests."""
+    from .progression_service import capture_contract
+    from . import probe_recovery
+    from .config import load_config
+    fields = {"task", "expected_generation", "intent", "authorization"}
+    if not isinstance(data, dict) or set(data) != fields:
+        raise UsageError("For --readback-current supply the original task, generation, intent and authorization; omit handwritten readback.", {})
+    recovery.text(data["task"], "task")
+    recovery.text(data["intent"], "pending intent")
+    recovery.authorization(data["authorization"])
+    state = authority._load(path)
+    grant = authority.current_grant(state, data["task"])
+    if (grant is None or grant["mode"] != "service" or grant.get("contract_schema") != 2
+            or type(data["expected_generation"]) is not int or data["expected_generation"] != grant["generation"]):
+        raise UsageError("Select the current schema-2 task service generation before deriving measurement evidence.", {})
+    captured, document = capture_contract(grant["contract"]["path"])
+    if captured != grant["contract"]:
+        raise UsageError("Restore the admitted contract before deriving its measurement readback.", {})
+    progress = state["recovery"]["tasks"][data["task"]]["progression"]
+    schema.validate_current(progress, document)
+    if progress["pending"] is None:
+        matches = [row["details"] for row in state["recovery"]["events"]
+                   if row["kind"] == "progression_measurement_reconciled" and row["task"] == data["task"]
+                   and all(row["details"].get(key) == value for key, value in data.items())]
+        if matches:
+            return deepcopy(matches[-1])
+        raise UsageError("No matching measurement intent or reconciled owner receipt exists; inspect this task's current exception.", {})
+    intent = _measurement_intent(progress, document, data)
+    if not intent["effects_started"]:
+        readback = {"kind": "intent_not_started", "sha256": supervision.digest(intent)}
+    else:
+        measured_at = None
+        if intent["argv"]:
+            if len(intent["argv"]) != 2 or intent["argv"][0] != "--now":
+                raise UsageError("Restore this measurement intent's supported owner timestamp; no effect was cleared.", {})
+            measured_at = intent["argv"][1]
+            timestamp(measured_at, "Measurement intent")
+        snapshots = [row for row in state["snapshots"] if measured_at is not None and row.get("measured_at") == measured_at]
+        if len(snapshots) > 1:
+            raise UsageError("Multiple snapshots match this measurement timestamp; preserve the intent and inspect its actual owner evidence.", {})
+        if snapshots:
+            readback = {"kind": "snapshot_completed", "sha256": supervision.digest(snapshots[0])}
+        else:
+            profiles = {item.name: probe_recovery.config_digest(item) for item in load_config(document["config"]["path"])}
+            rows = [row for row in probe_recovery.load(path)["records"]
+                    if row["config_path"] == document["config"]["path"]
+                    and profiles.get(row["worker_kind"]) == row["config_sha256"]
+                    and (row["at"] == measured_at if measured_at is not None
+                         else timestamp(row["at"], "Probe") >= timestamp(grant["at"], "Task authority"))]
+            if not rows or len({row["at"] for row in rows}) != 1:
+                raise UsageError("No single measurement attempt has retained canonical probe evidence. Preserve the unknown intent; process absence or timeout supplies no proof.", {})
+            readback = {"kind": "probes_closed_incomplete", "sha256": supervision.digest(rows[0])}
+    return {**data, "readback": {"schema_version": 1, **readback}}
+
+
 def _readback(data):
     value = data.get("readback")
     if (not isinstance(value, dict) or set(value) != READBACK_FIELDS
-            or value.get("schema_version") != 1 or value.get("kind") not in READBACK_KINDS
+            or type(value.get("schema_version")) is not int or value["schema_version"] != 1 or value.get("kind") not in READBACK_KINDS
             or not isinstance(value.get("sha256"), str)
             or len(value["sha256"]) != 64 or any(char not in "0123456789abcdef" for char in value["sha256"])):
         raise UsageError("Supply one exact canonical measurement/probe readback identity; partial or ambiguous evidence stays pending.", {})
@@ -137,8 +193,11 @@ def reconcile_measurement(path, state, grant, supervised, document, data, at, cl
                 if len(intent["argv"]) != 2 or intent["argv"] != ["--now", row["at"]]:
                     raise UsageError("The closed probe does not bind this measurement intent's exact owner timestamp.", {})
             else:
+                if timestamp(row["at"], "Probe") < timestamp(grant["at"], "Task authority"):
+                    raise UsageError("A probe from before task admission cannot settle this legacy measurement intent.", {})
                 same_inputs = [item for item in probe_rows if item["config_path"] == row["config_path"]
-                               and item["config_sha256"] == row["config_sha256"]]
+                               and item["config_sha256"] == row["config_sha256"]
+                               and timestamp(item["at"], "Probe") >= timestamp(grant["at"], "Task authority")]
                 if len(same_inputs) != 1:
                     raise UsageError("Legacy probe evidence is ambiguous across measurement attempts; preserve the original intent.", {})
             if any(item["status"] == "pending" for item in probe_rows):

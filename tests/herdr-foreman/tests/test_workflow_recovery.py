@@ -57,13 +57,25 @@ class WorkflowRecoveryTest(unittest.TestCase):
                 engine._exception(self.case.owner.state(), "native_owner_refused", [intent["id"]])
         return self.case.progress()["pending"]
 
-    def reconcile_measurement(self, intent, kind, evidence):
+    def reconcile_measurement(self, intent, kind, evidence, *, via_cli=False):
         data = {"task": "one", "expected_generation": 1, "intent": intent["id"],
                 "authorization": fixture.owner_fixture.AUTH,
                 "readback": {"schema_version": 1, "kind": kind,
                              "sha256": supervision.digest(evidence)}}
-        with state_lock(self.case.path):
-            result = authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
+        if via_cli:
+            request = {key: value for key, value in data.items() if key != "readback"}
+            record = self.case.root / "measurement-recovery.json"
+            record.write_text(json.dumps(request))
+            before = record.read_bytes()
+            out, err = io.StringIO(), io.StringIO()
+            self.assertEqual(cli.main(["progression-reconcile", "--state", str(self.case.path),
+                "--record", str(record), "--readback-current", "--now", self.case.now()],
+                stdout=out, stderr=err, client=self.case.owner.client), 0, err.getvalue())
+            result = json.loads(out.getvalue())
+            self.assertEqual(record.read_bytes(), before)
+        else:
+            with state_lock(self.case.path):
+                result = authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
         return data, result
 
     def test_resume_preserves_phase_task_counter_and_is_idempotent(self):
@@ -192,12 +204,11 @@ class WorkflowRecoveryTest(unittest.TestCase):
                      "other": state["recovery"]["tasks"]["two"].copy(),
                      "assignments": list(state["assignments"]), "round": self.case.progress()["round"]}
         save_state(self.case.path, state)
-        data, result = self.reconcile_measurement(intent, "snapshot_completed", snapshot)
+        data, result = self.reconcile_measurement(intent, "snapshot_completed", snapshot, via_cli=True)
         self.assertEqual(result["outcome"], "snapshot_completed")
         self.assertIsNone(self.case.progress()["pending"])
         saved = self.case.path.read_bytes()
-        with state_lock(self.case.path):
-            replay = authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
+        _data, replay = self.reconcile_measurement(intent, "snapshot_completed", snapshot, via_cli=True)
         self.assertTrue(replay["replayed"])
         self.assertEqual(self.case.path.read_bytes(), saved)
         with patch("foreman.progression_owner.loaded_policy", return_value=("0.17.0", "f" * 64)):
@@ -248,9 +259,48 @@ class WorkflowRecoveryTest(unittest.TestCase):
             self.reconcile_measurement(intent, "probes_closed_incomplete", closed)
         self.assertEqual(self.case.path.read_bytes(), before)
         self.case.owner.client.agent_list = lambda: []
-        _data, result = self.reconcile_measurement(intent, "probes_closed_incomplete", closed)
+        original_at = closed["at"]
+        closed["at"] = "2020-01-01T00:00:00Z"
+        save_state(probe_recovery.store_path(self.case.path), gates)
+        with self.assertRaisesRegex(UsageError, "No single measurement attempt"):
+            workflow_recovery.current_measurement_readback(self.case.path, {
+                "task": "one", "expected_generation": 1, "intent": intent["id"],
+                "authorization": fixture.owner_fixture.AUTH})
+        with self.assertRaisesRegex(UsageError, "before task admission"):
+            self.reconcile_measurement(intent, "probes_closed_incomplete", closed)
+        self.assertEqual(self.case.path.read_bytes(), before)
+        closed["at"] = original_at
+        save_state(probe_recovery.store_path(self.case.path), gates)
+        _data, result = self.reconcile_measurement(intent, "probes_closed_incomplete", closed, via_cli=True)
         self.assertEqual(result["outcome"], "probes_closed_incomplete")
         self.assertIsNone(self.case.progress()["pending"])
+
+    def test_current_measurement_readback_never_infers_unknown_effects_from_absence(self):
+        intent = self.pending_measurement()
+        data = {"task": "one", "expected_generation": 1, "intent": intent["id"],
+                "authorization": fixture.owner_fixture.AUTH}
+        before = self.case.path.read_bytes()
+        with self.assertRaisesRegex(UsageError, "No single measurement attempt"):
+            workflow_recovery.current_measurement_readback(self.case.path, data)
+        self.assertEqual(self.case.path.read_bytes(), before)
+        for key, value in (("expected_generation", 2), ("intent", "foreign-intent")):
+            with self.subTest(field=key), self.assertRaises(UsageError):
+                workflow_recovery.current_measurement_readback(self.case.path, {**data, key: value})
+        self.assertEqual(self.case.path.read_bytes(), before)
+
+    def test_policy_refusal_reports_expected_and_observed_identities(self):
+        state = self.case.owner.state()
+        grant = authority.current_grant(state, "one")
+        assert grant is not None
+        expected = grant["policy"]
+        observed = {"version": "0.18.0", "digest": "f" * 64}
+        with self.case.owner.session() as capability, patch(
+                "foreman.progression_owner.loaded_policy", return_value=(observed["version"], observed["digest"])):
+            with self.assertRaises(UsageError) as caught:
+                capability.require_current(self.case.path, state, "one")
+        self.assertEqual(caught.exception.details, {"expected_policy": expected, "observed_policy": observed})
+        self.assertIn(expected["digest"], caught.exception.message)
+        self.assertIn(observed["digest"], caught.exception.message)
 
     def test_a_task_exception_does_not_prevent_an_unrelated_task_from_launching(self):
         self.exception("verification_decision_required")

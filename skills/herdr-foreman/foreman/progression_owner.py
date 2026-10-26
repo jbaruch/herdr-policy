@@ -300,7 +300,10 @@ class ServiceCapability:
             raise UsageError("This task has an enrollment without a confirmed dispatch owner; reconcile it before service effects.", {})
         version, digest = loaded_policy(self.plugin_root)
         if grant["policy"] != {"version": version, "digest": digest}:
-            raise UsageError("Loaded service policy changed; stop effects and obtain an explicit new authority handoff.", {})
+            expected = grant["policy"]
+            raise UsageError("Loaded service policy changed (expected {} {}, observed {} {}); stop effects and obtain an explicit new authority handoff.".format(
+                expected["version"], expected["digest"], version, digest),
+                {"expected_policy": deepcopy(expected), "observed_policy": {"version": version, "digest": digest}})
         captured, _document = capture_contract(grant["contract"]["path"])
         if captured != grant["contract"]:
             raise UsageError("The admitted workflow contract changed; preserve the current task and hand it off explicitly.", {})
@@ -595,6 +598,9 @@ def register_commands(sub, common):
         parser = sub.add_parser(name, parents=[common], help="Explicit task authority handoff through the verified bound foreman.")
         parser.add_argument("--record", required=True, metavar="FILE")
         parser.add_argument("--now", metavar="ISO")
+        if name == "progression-reconcile":
+            parser.add_argument("--readback-current", action="store_true",
+                                help="Derive this measurement's canonical readback; unknown effects remain pending.")
 
 
 def run_command(args, state_path, at, client):
@@ -603,6 +609,9 @@ def run_command(args, state_path, at, client):
     except (OSError, ValueError):
         raise UsageError("Restore the complete authority handoff JSON record before retrying.", {}) from None
     if args.command == "progression-reconcile":
+        if getattr(args, "readback_current", False):
+            from .workflow_recovery import current_measurement_readback
+            data = current_measurement_readback(state_path, data)
         return reconcile_intent(state_path, data, at, client), None
     if args.command == "progression-resume":
         from .workflow_recovery import resume

@@ -215,6 +215,15 @@ incomplete measurement outcome. Missing processes, dispatches, reports and timeo
 are not readback. Legacy started measurements without a saved timestamp can use
 only one unambiguous exact probe/config receipt; a later snapshot is never adopted.
 
+Use `--readback-current` on the existing `progression-reconcile` command to derive
+the measurement evidence from its owners. Its record needs only the task,
+expected generation, pending intent and existing authorization. The owner selects
+one exact snapshot or retained probe attempt and records its actual digest;
+callers need no ledger dump or handwritten hash. Ambiguous or missing evidence
+leaves the intent pending. Repeating a settled request reads its existing receipt.
+Policy-change refusals name the expected and observed version/digest in the
+current exception, without loading policy history.
+
 `progression-resume --state OWNER --record FILE` retries a restored schema-2
 observation or cleanup exception. The record contains `task`, actual
 `expected_generation`, the current packet's `exception_digest` as `exception`,
