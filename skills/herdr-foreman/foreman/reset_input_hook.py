@@ -22,6 +22,8 @@ from .state import save_state, state_lock
 
 
 def refusal(cause="invalid_native_payload"):
+    if cause == "incoming_native_permission_mode_unverified":
+        return {"decision": "block", "reason": "Herdr reset input was not verified (incoming_native_permission_mode_unverified). Restore the existing operator-approved full-access mode in this native Codex session before using the saved guarded recovery input. Missing, interactive and restricted modes grant no takeover; preserve the same reset, foreground and scope, and never replay uncertain input."}
     return {"decision": "block", "reason": "Herdr reset input was not verified ({}). Preserve its reset record, restore the native hook/owner state, and continue foreground supervision; never repeat an uncertain reset input.".format(cause)}
 
 
@@ -96,6 +98,10 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
             live = reset._foreman_record(native, pane)
             if live.get("agent") not in reset.SESSION_AGENTS or reset.foreground_processes(native, pane) != receipt["foreground"]:
                 return refusal("foreground_replaced")
+            if live.get("agent") == "codex":
+                from . import native_permissions
+                if not native_permissions.incoming(payload):
+                    return refusal("incoming_native_permission_mode_unverified")
             goal = row["host_goal"]
             if live.get("agent") == "codex" and (goal is None or goal["runtime"] != "codex"
                     or goal["source_thread"] != row["native_session"]["value"] or who["kind"] != "id"):

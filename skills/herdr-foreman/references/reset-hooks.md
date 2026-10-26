@@ -70,6 +70,25 @@ connection to the saved socket. An unknown version or changed daemon refuses
 before goal RPCs. Renew the supported set with the installed app-server JSON
 schema, existing protocol/handoff regressions and an owned paused-goal smoke;
 never start, upgrade or restart a daemon as reset recovery.
+Codex 0.164.0 is covered by the installed JSON schema, protocol regressions and
+an owned paused-goal create/read/clear/restore smoke with zero model turns.
+
+Before a Codex maintenance handoff, the owner verifies its already loaded bound
+thread's effective `approvalPolicy`, sandbox and workspace through metadata-only
+`thread/resume` without configuration overrides. An unloaded old session is
+never resumed for this check. The supported noninteractive coordination profile
+is `never` plus `dangerFullAccess`, with the original workspace and unrestricted
+write roots. A restricted or interactive profile refuses before the handoff;
+the check changes no native permission or task authority. The owner repeats it
+before active scheduler retirement.
+
+The incoming Codex hook must itself report `permission_mode: bypassPermissions`
+before binding or goal transfer. Startup argv alone does not prove an effective
+mode. The native workspace, foreground and scope checks still apply; missing or
+different modes retain the same guarded recovery. Hook trust remains separate.
+This uses the [native hook permission field](https://learn.chatgpt.com/docs/hooks)
+and [app-server settings response](https://learn.chatgpt.com/docs/app-server),
+with captured 0.164.0 clear/first-prompt payloads and owned live readback.
 The host protocol's transaction limits are owned by that module's docstring.
 The Herdr supervision lock serializes its handoff owners, and the transfer
 rechecks the live goal after its last journal write, immediately before clear.

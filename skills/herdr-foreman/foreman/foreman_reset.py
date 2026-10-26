@@ -1266,7 +1266,7 @@ def require_name(record, pane_id, phase):
     return name
 
 
-def live_preflight(client, agents, pane_id, native_session):
+def live_preflight(client, agents, pane_id, native_session, *, expected_cwd=None):
     """Read-only scheduling prerequisites; no child, record or runtime input yet."""
     record = _foreman_record(client, pane_id, scheduling=True)
     name = require_name(record, pane_id, "schedule_preflight")
@@ -1282,6 +1282,9 @@ def live_preflight(client, agents, pane_id, native_session):
     if not ansi or not composer.visible or composer.occupied:
         raise HerdrError("The foreman's native input surface is not a verified empty composer. Inspect its retained pane and resolve its modal or draft under existing authority before preparing or scheduling this handoff; nothing was typed.",
                          {"pane_id": pane_id, "reason": "native_input_not_ready", "phase": "schedule_preflight"})
+    if record["agent"] == "codex":
+        from . import native_permissions
+        return {**record, "effective_permissions": native_permissions.source(native_session, expected_cwd)}
     return record
 
 
@@ -1318,6 +1321,8 @@ def quiesce_host_goal(state, plan, client, at):
                 or pane_session(client, pane, expected_agent="codex") != before):
             raise SessionChanged("The claimed reset's source or foreground pins changed. Preserve its receipt; no scheduler retirement was authorized.", {})
         preflight(memory.show(state, at, plan["stow"])["record"], data, pane)
+        from . import native_permissions
+        native_permissions.source(before, data["binding"]["identity"]["cwd"])
         host_goals.preclear(row["host_goal"], lambda: save_state(path, document))
 
 

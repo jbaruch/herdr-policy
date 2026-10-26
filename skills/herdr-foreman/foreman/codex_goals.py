@@ -29,7 +29,7 @@ SESSION_BUDGET_SEC = 45
 MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_HEADER_BYTES = 16384
 MAX_NOTIFICATIONS = 128
-SUPPORTED_CODEX_VERSIONS = ("0.163.0",)
+SUPPORTED_CODEX_VERSIONS = ("0.163.0", "0.164.0")
 # An explicit ingress rejection proves the request was not admitted. Never
 # replay a transport failure or any other response with uncertain effects.
 OVERLOAD_CODE = -32001

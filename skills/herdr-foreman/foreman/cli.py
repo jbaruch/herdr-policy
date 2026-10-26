@@ -2311,7 +2311,8 @@ def cmd_foreman_reset(args, client=None, warn=None, trace=None, spawn=None):
     plan = foreman_reset.preflight(stow, data, caller)
     native_session = foreman_reset.bound_session(data)
     client = client if client is not None else _client(args, trace=trace)
-    live = foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session)
+    live = foreman_reset.live_preflight(client, load_config(_config_path(args)), plan["pane_id"], native_session,
+                                      expected_cwd=data["binding"]["identity"]["cwd"])
     host_goal = foreman_reset.prepare_host_goal(state_path, live["agent"], native_session)
     log = Path(str(state_path) + ".foreman-reset.log")
     # The deliverer runs from the package directory, so every path it gets is absolute.
@@ -3138,8 +3139,10 @@ def cmd_verify_foreman(args, client=None, warn=None, trace=None):
         if not pane or pane != bound_pane:
             raise UsageError("Reset readiness requires the bound foreman's actual pane; preserve its binding and select that pane before preparing a handoff.", {})
         client = client if client is not None else _client(args, trace=trace)
-        live = foreman_reset.live_preflight(client, load_config(_config_path(args)), pane, foreman_reset.bound_session(data))
+        live = foreman_reset.live_preflight(client, load_config(_config_path(args)), pane, foreman_reset.bound_session(data),
+                                          expected_cwd=data["binding"]["identity"]["cwd"])
         return {"pane": pane, "agent": live["agent"], "native_session_verified": True,
+                "effective_permissions": live.get("effective_permissions"),
                 "hook_review_required": False, "checked": "current visible native frame",
                 "coverage": "Read-only pre-handoff check; grants no reset, hook trust or tool permission. Scheduling rechecks the live pane."}, None
     if getattr(args, "config_only", False):

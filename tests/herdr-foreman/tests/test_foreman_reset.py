@@ -46,7 +46,7 @@ def supervision_data(*, active=False, events=False, held=False, hold_kind="hando
     member = {"id": "d1", "active": active, "refinements": [],
               "assignment": {"id": "d1", "agent": "worker", "task": "t", "report": "/r.md", "pane_id": "w2:p1",
                              "native_session": None}}
-    data = {"binding": {"identity": {"pane_id": PANE, **SESSION}}, "members": [member],
+    data = {"binding": {"identity": {"pane_id": PANE, "cwd": str(Path.cwd()), **SESSION}}, "members": [member],
             "events": [{"id": "e1", "seq": 1, "member": "d1"}] if events else [], "acknowledgements": [], "holds": []}
     if held:
         data["holds"].append({"id": READY["id"], "kind": hold_kind, "resumed_at": None, "through": len(data["events"]),
@@ -232,7 +232,9 @@ class FakeClient:
 
 
 def worker(name, kind, delivery="type", enters=1):
-    return SimpleNamespace(name=name, kind=kind, clear_prompt="/clear", slash_delivery=delivery, slash_enter_count=enters)
+    return SimpleNamespace(name=name, kind=kind, clear_prompt="/clear", slash_delivery=delivery, slash_enter_count=enters,
+                           composer_glyph={"codex": "› ", "claude": "❯ ", "grok": "│ ❯ "}[kind],
+                           composer_placeholders=[], composer_ignore_dim=False)
 
 
 class ForegroundIdentityTest(unittest.TestCase):
@@ -1202,14 +1204,15 @@ class ResetCommandTest(CliCase):
         self.assertIn(foreman_reset.RESET_RECEIPT_PREFIX, row["result"]["resume_prompt"])
         self.assertEqual(client.keystrokes, [])
 
-    def run_cli(self, argv, client=None, *, explicit_reset=True):
+    def run_cli(self, argv, client=None, *, explicit_reset=True, permissions=None):
         # These fixtures exercise the opt-in maintenance owner, not the default
         # round checkpoint. The default-refusal test disables this fixture opt-in.
         if explicit_reset and "foreman-reset" in argv:
             argv = argv + ["--explicit-reset"]
         # Scheduling now observes a live name and bound native session. Keep
         # those reads isolated even when a test exercises non-default binaries.
-        return super().run_cli(argv, client=FakeClient(["working"]) if client is None else client)
+        with patch("foreman.native_permissions.source", return_value={"source": "owned fixture native config"}, side_effect=permissions):
+            return super().run_cli(argv, client=FakeClient(["working"]) if client is None else client)
 
     def test_reset_readiness_catches_hook_modal_before_any_handoff_artifact(self):
         client = FakeClient(["idle"], kind="codex")
@@ -1224,6 +1227,17 @@ class ResetCommandTest(CliCase):
         self.assertEqual(details["failure_kind"], "hook_review_required")
         self.assertIn("each exact changed command", details["recovery"]["condition"])
         self.assertFalse(self.state.exists())
+        self.assertFalse(foreman_reset.record_path(self.state).exists())
+        self.assertEqual(client.keystrokes, [])
+
+    def test_reset_readiness_refuses_unverified_permissions_without_changing_the_session(self):
+        from foreman.native_permissions import refusal
+        client = FakeClient(["idle"], kind="codex")
+        with patch("foreman.cli.supervision.load", return_value=supervision_data()[0]):
+            code, out, err = self.run_cli(self.base() + ["verify-foreman", "--reset-ready", "--pane", PANE],
+                                         client=client, permissions=refusal("native_permission_profile_interactive_or_restricted"))
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("native_permission_profile_interactive_or_restricted", err)
         self.assertFalse(foreman_reset.record_path(self.state).exists())
         self.assertEqual(client.keystrokes, [])
 

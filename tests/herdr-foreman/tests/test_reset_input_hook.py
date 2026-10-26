@@ -29,6 +29,9 @@ FOREGROUND = [{"pid": 4242, "identity": "started-once"}]
 
 class ResetHookTest(unittest.TestCase):
     def setUp(self, kind="codex", source=None, arm=True):
+        permission_check = patch("foreman.native_permissions.source", return_value={"source": "owned fixture native config"})
+        permission_check.start()
+        self.addCleanup(permission_check.stop)
         activated = patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True)
         activated.start()
         self.addCleanup(activated.stop)
@@ -52,7 +55,7 @@ class ResetHookTest(unittest.TestCase):
         if arm:
             with patch("foreman.foreman_reset.process_identity", return_value=CHILD):
                 reset.arm_resume(self.state, PANE, "round-7", SESSION, FOREGROUND)
-        self.payload = {"session_id": CLEARED, "cwd": str(self.directory),
+        self.payload = {"session_id": CLEARED, "permission_mode": "bypassPermissions", "cwd": str(self.directory),
                         "prompt": reset.guarded_resume("round-7", self.state, SESSION, FOREGROUND)}
         self.env = {"HERDR_ENV": "1", "HERDR_PANE_ID": PANE}
 
@@ -70,6 +73,17 @@ class ResetHookTest(unittest.TestCase):
         native = client or FakeClient(["idle"], kind="codex")
         native.cleared = True
         return reset.reconcile(self.state, self.plan, "delivered", AT, alive=alive, client=native)
+
+    def test_first_codex_turn_requires_authenticated_effective_bypass_mode(self):
+        before = store.load(self.state)["binding"]
+        for mode in (None, "default", "dontAsk", "plan", "acceptEdits", True):
+            payload = {**self.payload, "permission_mode": mode}
+            client = FakeClient(["idle"], kind="codex")
+            result = self.invoke(payload=payload, client=client)
+            self.assertEqual(result["decision"], "block")
+            self.assertIn("incoming_native_permission_mode_unverified", result["reason"])
+            self.assertEqual(store.load(self.state)["binding"], before)
+            self.assertEqual(client.session_reports, [])
 
     def test_all_three_agents_transfer_the_same_verified_owner_and_refuse_replay(self):
         # Each subtest has independent owner files and a fixed native payload.
@@ -207,7 +221,7 @@ class ResetHookTest(unittest.TestCase):
         reset.claim(self.state, plan, CHILD)
         with patch("foreman.foreman_reset.process_identity", return_value=CHILD):
             reset.arm_resume(self.state, PANE, "round-8", before, FOREGROUND)
-        payload = {"session_id": "third-native-session", "cwd": str(self.directory),
+        payload = {"session_id": "third-native-session", "permission_mode": "bypassPermissions", "cwd": str(self.directory),
                    "prompt": reset.guarded_resume("round-8", self.state, before, FOREGROUND)}
         second = FakeClient(["idle"], kind="codex", sessions=[CLEARED])
         self.assertEqual(self.invoke(payload=payload, client=second), hook.acceptance())
