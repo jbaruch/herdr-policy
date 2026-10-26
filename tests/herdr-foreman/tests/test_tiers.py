@@ -655,10 +655,9 @@ class AntigravityEffortGrammarTest(unittest.TestCase):
     def test_high_risk_work_gets_no_invented_effort_step(self):
         context = {"risk_flags": ["network", "persistence"]}
         for role, round_type in (("developer", "build"), ("developer", "fix")):
-            with self.subTest(round_type=round_type), self.assertRaisesRegex(MissingTierError, "effort step"):
-                select_tier(self.worker(), role, round_type, context)
-        declined = select_tier(self.worker(), "developer", "build", context, headroom=5)
-        self.assertEqual((declined["effort"], declined["de_escalated"]), (None, True))
+            for headroom in (None, 5, 100):
+                with self.subTest(round_type=round_type, headroom=headroom), self.assertRaisesRegex(MissingTierError, "effort step"):
+                    select_tier(self.worker(), role, round_type, context, headroom=headroom)
 
     def test_a_saved_launch_keeps_its_recorded_effort_readable(self):
         saved = parse_tiers({"build": {"model": "claude-sonnet-4-6", "effort": "high"}}, "agy",

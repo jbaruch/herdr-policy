@@ -179,7 +179,7 @@ def reconcile_measurement(path, state, grant, supervised, document, data, at, cl
             if (snapshot.get("measured_at") != measured_at or expected_context is None
                     or snapshot.get("measurement_context_sha256") != expected_context
                     or set(snapshot.get("agents", {})) != {template.name for template in templates}):
-                raise UsageError("The completed snapshot does not bind this intent's timestamp, exact configuration and native measurement context.", {})
+                raise UsageError("The completed snapshot does not bind this intent's timestamp, exact configuration and native measurement context. Restore the captured configuration/native context and rerun progression-reconcile with --readback-current; preserve the pending intent if that evidence cannot be restored.", {})
             if any(row["status"] == "pending" and row["at"] == measured_at for row in probe_rows):
                 raise UsageError("The snapshot retains an unresolved probe owner; close that exact probe before settling measurement.", {})
         else:

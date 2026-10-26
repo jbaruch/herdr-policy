@@ -642,6 +642,8 @@ def select_tier(agent, role, round_type=None, context=None, fix_round=None, head
     pressure = measured_pressure(headroom)
     de_escalated = False
     if needs_xhigh:
+        if tier["model"] in NATIVE_NO_EFFORT_MODELS.get(agent.kind, frozenset()):
+            raise MissingTierError("Agent {} has no proven effort step for high-risk work; choose a qualified worker whose native model supports the required effort, regardless of remaining headroom.".format(agent.name), {})
         escalated = _escalated(agent, tier, chosen_round)
         # A row already at the top model and effort, or a kind with no effort
         # above its configured one, has no step to decline. Recording one would
