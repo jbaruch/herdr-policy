@@ -68,6 +68,16 @@ def native_delivery_proven(record, dispatch):
     """Legacy Antigravity assessments never imply the newer native-model proof."""
     return (not requires_native_delivery(dispatch)
             or record.get("schema_version") == ASSESSMENT_SCHEMA_VERSION and record.get("native_delivery") is not None)
+
+
+def eligible_assessments(assessments, dispatches):
+    """Positive evidence only; retain unfiltered history for contributor exclusions."""
+    by_id = {row["id"]: row for row in dispatches}
+    return [row for row in assessments if row.get("source") == "report"
+            and (dispatch := by_id.get(row.get("dispatch"))) is not None
+            and dispatch["status"] == "applied" and native_delivery_proven(row, dispatch)]
+
+
 #: Line fields a migrated or contribution-only record holds as null.
 _LINE_FIELDS = ("brief_evidence", "criteria", "acceptance", "verdict")
 
@@ -376,7 +386,8 @@ def accepted_investigations(state):
     These gates rely on the investigation's outcome, not only its acceptance:
     an investigator seated with a verdict specialty can record `blocking`.
     """
-    return [row for row in state["specialist_assessments"] if row["role"] == "investigator" and investigated(row)]
+    return [row for row in eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])
+            if row["role"] == "investigator" and investigated(row)]
 
 
 def investigated(record):
@@ -423,15 +434,16 @@ def require_accepted(state, dispatch_id, report):
 
 def require_followup(state, state_path, assignments):
     """Require report-assessed prior work and retired observation ownership, not idle."""
+    eligible = eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])
     for role, name in assignments.items():
         prior = latest_assignment(state["assignments"], agent=name)
         if prior is None:
             raise UsageError("No previous specialist assignment exists; dispatch a fresh consultation first.", {})
         index, row = prior
-        assessment = next((item for item in reversed(state["specialist_assessments"])
+        assessment = next((item for item in reversed(eligible)
                            if item["assignment_index"] == index and item["source"] == "report"), None)
         if assessment is None or row["role"] != canonical_role(role):
-            raise UsageError("Retained specialist needs the preceding assignment's report-contract assessment; a migrated foreman assessment never qualifies. Run `{}` before following up.".format(
+            raise UsageError("Retained specialist needs the preceding assignment's eligible report-contract assessment; migrated foreman and unproven native assessments never qualify. Reassess the existing report with `{}` under a new id before following up.".format(
                 runnable.command("assess-specialist")), {})
         for key in ("report_evidence", "delivery_evidence"):
             current, _body = receipt(assessment[key]["path"])
