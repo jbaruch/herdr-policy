@@ -546,6 +546,8 @@ def reconcile_intent(state_path, data, at, client):
                                  and event["details"] == data for event in state["recovery"]["events"])
         if "readback" in data and (measurement_replay or pending is not None and pending["operation"] == "measure"):
             return reconcile_measurement(state_path, state, grant, supervised, document, data, at, client)
+        if "readback" in data:
+            raise UsageError("Readback belongs only to measurement reconciliation. For an owner-proved no-send intent, submit only task, expected_generation, intent and authorization; preserve the original pending operation.", {})
         replay = any(event["kind"] == "progression_intent_reconciled" and event["task"] == data["task"]
                      and event["details"] == data for event in state["recovery"]["events"])
         if replay:

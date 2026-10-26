@@ -345,6 +345,11 @@ class WorkflowRecoveryTest(unittest.TestCase):
         data = {"task": "one", "expected_generation": 1, "intent": original["id"],
                 "authorization": fixture.owner_fixture.AUTH}
         for replay in (False, True):
+            before = self.case.path.read_bytes()
+            with state_lock(self.case.path), self.assertRaisesRegex(UsageError, "only to measurement"):
+                authority.reconcile_intent(self.case.path, {**data, "readback": {"unvalidated": "must not persist"}},
+                                           self.case.now(), self.case.owner.client)
+            self.assertEqual(self.case.path.read_bytes(), before)
             with state_lock(self.case.path):
                 result = authority.reconcile_intent(self.case.path, data, self.case.now(), self.case.owner.client)
             self.assertEqual(result["replayed"], replay)

@@ -23,6 +23,11 @@ SOURCE = "herdr:antigravity_cli"
 #: Flash; without the flag both models below ran as requested. Their effort is
 #: never displayed, so it stays unknown rather than measured.
 NO_EFFORT_MODELS = frozenset({"claude-opus-4-6-thinking", "claude-sonnet-4-6"})
+#: Renew these unscanned model/flag/label/envelope captures on every Antigravity
+#: CLI upgrade and the monthly capability refresh. Recapture exact native
+#: launches, effective-model footers and completed-turn settings/request shapes;
+#: a catalog entry alone grants no qualification. Current capture: CLI 1.4.7,
+#: 2026-10-25. Keep uncaptured model/effort pairs unadmitted.
 #: The label each captured model shows once selected: in the live footer and
 #: in its first turn's model selection. A model or effort without a captured
 #: label has no native proof of what runs and is refused before input (#73).
