@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: write
-  actions: read
-  pull-requests: read
 
 concurrency:
   group: publish-herdr-policy
@@ -16,6 +14,11 @@ concurrency:
 
 jobs:
   gates:
+    # Only the reusable runtime gate looks up prior PR runs and artifacts.
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     uses: ./.github/workflows/tests.yml
     with:
       reuse_runtime: true

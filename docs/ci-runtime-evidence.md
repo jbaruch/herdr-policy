@@ -6,6 +6,9 @@ secret scanning, diagnostics, package validation, the published policy baseline,
 actual ACR install/upgrade/native execution/removal, skill review, Tessl and ACR
 publication, and moderation/channel confirmation retain their independent gates.
 This CI optimization grants no runtime, installation or publication authority.
+Actions and pull-request read permissions are scoped to the caller's `gates`
+job and the reusable `extraction` job. Publisher jobs retain their existing
+contents-write permission; the isolated skill review retains contents-read.
 
 `scripts/ci-runtime-gate.py` owns the producer and consumer contract. The producer
 records a successful complete suite result in `runtime-evidence.json`, uploaded
