@@ -241,6 +241,20 @@ def initial_progress(generation, at):
     return value
 
 
+def validate_head(head):
+    """One current Git identity, shared with immutable adoption receipts."""
+    if not isinstance(head, dict) or set(head) != {"commit", "tree", "paths"}:
+        raise UsageError("Restore the actual implementation commit, tree and affected paths before verification.", {})
+    _sha(head["commit"], "implementation head")
+    _sha(head["tree"], "implementation tree")
+    if not isinstance(head["paths"], list) or not 0 < len(head["paths"]) <= 256:
+        raise UsageError("Keep the current implementation's affected-path set bounded; scope changes require owner judgment.", {})
+    for path in head["paths"]:
+        _text(path, "changed path", 4096)
+        if Path(path).is_absolute() or ".." in Path(path).parts:
+            raise UsageError("Bind changed paths inside the authorized repository before verification.", {})
+
+
 def validate_progress(value):
     """Only the current stage and effect intent; prior dispatch owners retain provenance."""
     _object(value, PROGRESS_FIELDS, "task progression")
@@ -313,16 +327,7 @@ def validate_progress(value):
             validate_job(pending["job"])
     head = value["head"]
     if head is not None:
-        if not isinstance(head, dict) or set(head) != {"commit", "tree", "paths"}:
-            raise UsageError("Restore the actual implementation commit, tree and affected paths before verification.", {})
-        _sha(head["commit"], "implementation head")
-        _sha(head["tree"], "implementation tree")
-        if not isinstance(head["paths"], list) or not 0 < len(head["paths"]) <= 256:
-            raise UsageError("Keep the current implementation's affected-path set bounded; scope changes require owner judgment.", {})
-        for path in head["paths"]:
-            _text(path, "changed path", 4096)
-            if Path(path).is_absolute() or ".." in Path(path).parts:
-                raise UsageError("Bind changed paths inside the authorized repository before verification.", {})
+        validate_head(head)
     if value["phase"] not in ("implement", "exception") and head is None:
         raise UsageError("Restore the actual implementation head before verification, release, publication or cleanup.", {})
     if value["phase"] == "complete" and (value["delivery"]["cleanup_step"] != 5 or pending is not None):

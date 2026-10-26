@@ -94,11 +94,12 @@ class WorkflowAdoptionTest(unittest.TestCase):
         return receipt
 
     def admit(self):
-        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True), state_lock(self.fx.path):
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", True):
             # Activation performs the existing normal owner migration once;
             # a read-only capability cannot invent or silently persist it.
-            load_state_checked(self.fx.path)
-            return authority.handoff(self.fx.path, self.fx.owner.data, self.fx.now(), self.fx.native,
+            with state_lock(self.fx.path):
+                load_state_checked(self.fx.path)
+            return authority.admit(self.fx.path, self.fx.owner.data, self.fx.now(), self.fx.native,
                                      Path(__file__).resolve().parents[3])
 
     def test_reader_release_refuses_new_admission_without_owner_mutation(self):

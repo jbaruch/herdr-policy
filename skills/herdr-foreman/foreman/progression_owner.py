@@ -164,9 +164,7 @@ def _unresumed_hold(supervised):
     return any(row["resumed_at"] is None for row in supervised["holds"])
 
 
-def handoff(state_path, data, at, client, plugin_root, *, returning=False):
-    """Called under the canonical state lock; never bind, resume or start a worker."""
-    from .progression_service import capture_contract
+def _handoff_request(data, at, returning):
     fields = {"task", "expected_generation", "authorization"} | (set() if returning else {"service_id", "lease_path", "contract"})
     if not isinstance(data, dict) or set(data) != fields:
         raise UsageError("Supply the complete task authority handoff record and explicit authorization.", {})
@@ -175,6 +173,25 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         raise UsageError("Use the existing concise task identity; put narrative scope in its GitHub issue.", {})
     recovery.authorization(data["authorization"])
     supervision.timestamp(at)
+
+
+def admit(state_path, data, at, client, plugin_root):
+    """Own admission's short commit after any legacy native/Git verification."""
+    from .progression_service import capture_contract
+    _handoff_request(data, at, False)
+    _captured, document = capture_contract(data["contract"])
+    prepared = None
+    if isinstance(document, dict) and document.get("schema_version") == 3:
+        from .workflow_adoption import prepare_admission
+        prepared = prepare_admission(state_path, data, at, client, plugin_root)
+    with state_lock(state_path):
+        return handoff(state_path, data, at, client, plugin_root, adoption_prepared=prepared)
+
+
+def handoff(state_path, data, at, client, plugin_root, *, returning=False, adoption_prepared=None):
+    """Called under the canonical state lock; schema-3 proof is prepared outside."""
+    from .progression_service import capture_contract
+    _handoff_request(data, at, returning)
     state = _load(state_path)
     task_evidence.require_clear(state, {data["task"]})
     from .release_flight import require_clear
@@ -189,16 +206,25 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     if (returning and (old is None or old["mode"] != "service")
             or not returning and old is not None and old["mode"] == "service"):
         raise UsageError("This task already belongs to the selected authority; use its existing owner instead of creating another dispatcher.", {})
-    supervised = verify_foreman(state_path, client)
+    if adoption_prepared is not None:
+        from .workflow_adoption import _Admission
+        if returning or not isinstance(adoption_prepared, _Admission):
+            raise UsageError("Use only this owner's in-process adoption preparation; serialized evidence cannot admit a task.", {})
+        adoption_prepared.require_request(state_path, data, at, plugin_root)
     transferring = None
     if not returning:
-        _receipt, preview = capture_contract(data["contract"])
+        _receipt, preview = ((adoption_prepared.contract, adoption_prepared.document) if adoption_prepared is not None
+                             else capture_contract(data["contract"]))
         if isinstance(preview, dict) and type(preview.get("schema_version")) is int and preview["schema_version"] == 3:
             from . import workflow_adoption
             from . import release_activation
             release_activation.require("legacy task adoption")
+            if adoption_prepared is None:
+                raise UsageError("Admit this existing task through its owner-managed preflight; native source verification cannot run inside a shared transaction.", {})
             workflow_adoption.validate(preview.get("adoption"))
             transferring = preview["adoption"]["dispatch"]
+    supervised = (supervision.load(state_path) if adoption_prepared is not None
+                  else verify_foreman(state_path, client))
     _settled(state, supervised, data["task"], transferring=transferring)
     if row.get("progression", {}).get("pending") is not None:
         raise UsageError("Reconcile the service's pending transition before returning or replacing its authority; process exit proves no effect outcome.", {})
@@ -210,8 +236,9 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
              "authorization": deepcopy(data["authorization"]), "at": at}
     workflow, artifact_directory = None, None
     if not returning:
-        version, digest = loaded_policy(plugin_root)
-        captured, _document = capture_contract(data["contract"])
+        version, digest = (adoption_prepared.policy if adoption_prepared is not None else loaded_policy(plugin_root))
+        captured, _document = ((adoption_prepared.contract, adoption_prepared.document) if adoption_prepared is not None
+                               else capture_contract(data["contract"]))
         if (not isinstance(_document, dict) or type(_document.get("schema_version")) is not int
                 or _document["schema_version"] not in (1, 2, 3)):
             raise UsageError("Admit an explicitly supported prepared-chain or task-workflow contract; unknown types grant no continuation.", {})
@@ -227,17 +254,23 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
             adopted = _document["schema_version"] == 3
             if not adopted and any(item.get("task") == data["task"] and item.get("status") == "applied" for item in state["assignments"]):
                 raise UsageError("Admit new coherent tasks to the outcome workflow; preserve and finish existing assignments through their current owner instead of resetting their history.", {})
-            workflow_workspace.inputs(_document)
-            initial = workflow_workspace.inspect(_document, row)
+            if not adopted:
+                workflow_workspace.inputs(_document)
+            initial = (adoption_prepared.source["head"] if adopted and adoption_prepared is not None
+                       else workflow_workspace.inspect(_document, row))
             if not adopted and (initial["commit"] != row["base_revision"] or initial["paths"]):
                 raise UsageError("A new outcome workflow starts at its registered clean base; existing implementation needs its recorded contributor and migration owner rather than assumed independence.", {})
-            from . import policy_paths
-            policy_paths.brief_inputs(Path(__file__).resolve().parents[1], workflow_workspace.base_checkout(_document),
-                Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None, workflow=True)
+            if not adopted:
+                from . import policy_paths
+                policy_paths.brief_inputs(Path(__file__).resolve().parents[1], workflow_workspace.base_checkout(_document),
+                    Path.home() / ".tessl", os.environ.get("HERDR_CODING_POLICY_ROOT") or None, workflow=True)
             workflow = workflow_contract.initial_progress(generation + 1, at)
             if adopted:
                 from . import workflow_adoption
-                source = workflow_adoption.require_current(state_path, state, supervised, _document, client)
+                assert adoption_prepared is not None
+                if captured != adoption_prepared.contract or _document != adoption_prepared.document:
+                    raise UsageError("The adoption contract changed after its owner preflight; preserve it and prepare the same task again.", {})
+                source = adoption_prepared.source
                 workflow.update(phase="verify", round=source["correction"], head=source["head"],
                                 jobs={"developer": source["dispatch"]})
                 if source["source_status"] == "reported":
@@ -269,6 +302,8 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
         _settled(state, current, data["task"], transferring=transferring)
         if not returning and _unresumed_hold(current):
             raise UsageError("An operator hold arrived during admission; preserve its resume conditions.", {})
+        if adoption_prepared is not None:
+            adoption_prepared.recheck(state, current)
         with process_lease(lease_path):
             if artifact_directory is not None:
                 from .workflow_workspace import prepare_directory
@@ -683,5 +718,7 @@ def run_command(args, state_path, at, client):
     if args.command == "progression-resume":
         from .workflow_recovery import resume
         return resume(state_path, data, at, client, executing_policy_root()), None
+    if args.command == "progression-admit":
+        return admit(state_path, data, at, client, executing_policy_root()), None
     return handoff(state_path, data, at, client, executing_policy_root(),
                    returning=args.command == "progression-return"), None
