@@ -54,7 +54,10 @@ class ResetHookTest(unittest.TestCase):
         self.env = {"HERDR_ENV": "1", "HERDR_PANE_ID": PANE}
 
     def invoke(self, *, kind="codex", payload=None, env=None, client=None, probe=lambda pid: CHILD):
-        client = client or FakeClient(["idle"], kind=kind)
+        if client is None:
+            client = FakeClient(["idle"], kind=kind)
+            # Their deliverer requires native registration before submitting input.
+            client.cleared = kind != "codex"
         with patch("foreman.foreman_reset.process_identity", side_effect=client.identify), \
                 patch("foreman.host_goals.AppServer", side_effect=self.host.connect):
             return hook.check(self.payload if payload is None else payload, self.env if env is None else env,
@@ -100,6 +103,16 @@ class ResetHookTest(unittest.TestCase):
             reset.schedule(self.state, {**self.plan, "stow": "replacement"}, AT,
                            lambda: self.fail("must not spawn another reset"), native_session=SESSION,
                            alive=lambda _: True)
+
+    def test_other_runtimes_require_their_actual_eager_hint_without_inventing_a_clear(self):
+        for kind in ("claude", "grok"):
+            with self.subTest(kind=kind):
+                self.setUp(kind=kind)
+                client = FakeClient(["idle"], kind=kind)
+                before = store.load(self.state)["binding"]
+                self.assertEqual(self.invoke(kind=kind, client=client)["decision"], "block")
+                self.assertEqual(client.session_reports, [])
+                self.assertEqual(store.load(self.state)["binding"], before)
 
     def test_native_hint_acknowledgement_is_required_and_foreign_identity_is_preserved(self):
         client = FakeClient(["idle"], kind="codex")

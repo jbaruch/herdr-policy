@@ -79,15 +79,16 @@ setting is translated on the reset's copied mechanics, not written to config.
 No checkout picker or arbitrary modal response is automated.
 The deliverer permits that hint only for the planned continuation, under the
 unchanged foreground pins. The pre-prompt hook still refuses an old native
-session. After authenticating the incoming payload and unchanged foreground,
-the hook reports that verified native identity through Herdr's public session
+session. For Codex, after authenticating the incoming payload and unchanged
+foreground, the hook reports that verified native identity through Herdr's public session
 reporting API with the verified `session_start_source: clear` transition and
 requires matching readback before saving input acceptance. A plain identity
 report does not establish that transition.
 A foreign hint or unacknowledged report blocks admission; session metadata is
 never repaired from a guessed ID. An attested remote transport that lacks this
 reporting operation refuses a stale hint rather than falling back locally.
-Claude/Grok keep their eager-session check before input and use the
+Claude/Grok keep their eager-session check before input; this hook never
+invents a replacement transition for them. They use the
 same final hook gate. Unknown sends remain interrupted and are never repeated.
 After clearing, all runtimes must establish stable idle under the original
 process pins. That bounded read-only wait handles startup hooks after a stale

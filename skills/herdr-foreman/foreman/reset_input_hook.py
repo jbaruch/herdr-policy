@@ -103,8 +103,11 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
             if goal is not None and goal["runtime"] != live.get("agent"):
                 return refusal("host_goal_runtime_changed")
             incoming = {key: who[key] for key in ("kind", "value")}
-            if reset.pane_session(native, pane) not in (None, row["native_session"], incoming):
+            hint = reset.pane_session(native, pane)
+            if hint not in (None, row["native_session"], incoming):
                 return refusal("native_hint_changed")
+            if live["agent"] != "codex" and hint != incoming:
+                return refusal("native_hint_unacknowledged")
 
             def validate(data):
                 bound = (data["binding"] or {}).get("identity", {})
@@ -141,6 +144,8 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
                 if reported not in (None, row["native_session"], incoming):
                     return refusal("native_hint_changed")
                 if reported != incoming:
+                    if live["agent"] != "codex":
+                        return refusal("native_hint_unacknowledged")
                     if (reset.foreground_processes(native, pane) != row["foreground"]
                             or reset._foreman_record(native, pane).get("agent") != live["agent"]):
                         return refusal("foreground_replaced_before_session_report")
