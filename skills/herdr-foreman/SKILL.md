@@ -1,12 +1,11 @@
 ---
 name: herdr-foreman
 description: >
-  Coordinate Herdr workers in parallel, recover stalled sessions, and release
-  verified task changes through existing owners. Retrieve Herdr readiness,
-  task costs, saved attention/memory, GitHub evidence and retrospectives.
-  Use for Herdr requests: "assign work", "recover a worker", "show readiness",
-  "check task cost", "find saved notes", "inspect this task's GitHub evidence",
-  "run a postmortem", or "quarantine contradictory context evidence".
+  Coordinate Herdr workers in parallel and recover stalled sessions. Use to assign work,
+  collect coordination metrics/evidence, summarize a measurement snapshot,
+  inspect workflow readiness, retrieve saved attention, retrieve working memory,
+  retrieve retrospectives, check task cost, inspect GitHub evidence, quarantine
+  contradictory context evidence, or release verified task changes.
 ---
 
 # Herdr Foreman Skill
@@ -62,11 +61,13 @@ finish without replacing its store.
 
 ## Step 2 — Collect Coordination Evidence
 
-Return the frozen receipt and collection gaps:
+Return frozen receipt and gaps:
 
 ```text
 skills/herdr-foreman/references/coordination-metrics.md
 ```
+
+Finish here.
 
 ## Step 3 — Summarize a Measurement Snapshot
 
@@ -76,6 +77,8 @@ Return counts, deltas and limitations:
 skills/herdr-foreman/references/coordination-metrics.md
 ```
 
+Finish here.
+
 ## Step 4 — Inspect Workflow Readiness
 
 Return readiness, capacity, unknowns and coverage:
@@ -83,6 +86,8 @@ Return readiness, capacity, unknowns and coverage:
 ```text
 skills/herdr-foreman/references/workflow-capacity.md
 ```
+
+Finish here.
 
 ## Step 5 — Retrieve Saved Attention
 
@@ -92,29 +97,37 @@ Return attention with lifecycle, sources and coverage:
 skills/herdr-foreman/references/attention.md
 ```
 
+Finish here.
+
 ## Step 6 — Retrieve Working Memory
 
-Return the named memory with evidence, freshness and gaps:
+Return named memory: evidence, freshness and gaps:
 
 ```text
 skills/herdr-foreman/references/working-memory.md
 ```
 
+Finish here.
+
 ## Step 7 — Retrieve a Retrospective
 
-Return retrospective evidence with date, coverage and source:
+Return retrospective evidence: date, coverage and source:
 
 ```text
 skills/herdr-foreman/references/retrospectives.md
 ```
 
+Finish here.
+
 ## Step 8 — Inspect Task Cost
 
-Return task cost facts, unmeasured fields and page coverage:
+Return cost facts, unmeasured fields and page coverage:
 
 ```text
 skills/herdr-foreman/references/decision-context.md
 ```
+
+Finish here.
 
 ## Step 9 — Retrieve GitHub Evidence
 
@@ -123,6 +136,8 @@ Return GitHub identity, state, link and coverage:
 ```text
 skills/herdr-foreman/references/decision-context.md
 ```
+
+Finish here.
 
 ## Step 10 — Quarantine Context Evidence
 
@@ -133,5 +148,5 @@ skills/herdr-foreman/references/context-quarantine.md
 ```
 
 Confirm original native binding, explicit authorization and eligibility before
-writing. On refusal, preserve evidence and report why. After repair, return to
+writing. On refusal, preserve evidence and report why; finish here. After repair, return to
 Step 1's verified role and saved continuation.
