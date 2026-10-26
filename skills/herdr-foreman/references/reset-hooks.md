@@ -29,14 +29,17 @@ The transfer never starts another app-server or changes the user's goal status
 to represent executor retirement. Native Claude/Grok retain their session reset
 without creating an external host goal; external schedulers need their own
 supported integration before a reset can claim that goal's handoff.
-For schema 2, before waiting for idle the claimed deliverer pins the original runtime and
-retires its Codex goal. An already-running outgoing continuation is interrupted
-by its exact turn ID; final usage is retained. This prevents the active goal
+For schema 2 with an active automatic source goal, before waiting for idle the
+claimed deliverer pins the original runtime and retires its Codex goal. An
+already-running outgoing continuation is interrupted by its exact turn ID; final usage is retained. This prevents the active goal
 from repeatedly starting another turn while the deliverer waits. Its schema-2
 receipt can reach `retired` before any incoming session is selected. A failed
 preclear preserves that receipt and guarded recovery instead of scheduling a
 second reset for the same pane.
-This protocol uses a readers-first rollout: 0.18.0 publishes schema-1/schema-2
+Absent or inactive goals retain the ordinary native idle/clear/authenticated
+transfer path. A manual turn is not interrupted as an obsolete automatic
+executor. Already-started schema-2 recovery remains supported.
+This protocol uses a readers-first rollout: 0.19.0 publishes schema-1/schema-2
 readers through both Tessl and ACR while new receipts remain schema 1. After
 both publications are confirmed, the activation release enables new schema-2
 writes and preclear. Existing schema-2 recovery already works in the compatible

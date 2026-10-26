@@ -218,8 +218,13 @@ def _retire(receipt, host, persist, sleep, clock):
 
 
 def preclear_enabled(receipt):
-    """Continue an existing v2 journal or use the activated new-writer protocol."""
-    return (receipt is not None and receipt["runtime"] == "codex"
+    """Retire an automatic executor; preserve already-started v2 recovery."""
+    if receipt is None or receipt["runtime"] != "codex":
+        return False
+    if receipt["schema_version"] == 2 and receipt["phase"] != "prepared":
+        return True
+    source = receipt["source_goal"]
+    return (source is not None and source["status"] == "active"
             and (receipt["schema_version"] == 2 or write_schema_version() == 2))
 
 

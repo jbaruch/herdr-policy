@@ -44,6 +44,39 @@ class HostGoalTest(unittest.TestCase):
     def deliver(self, **options):
         transfer.transfer(self.receipt, "new", self.persist, connect=self.host.connect, **options)
 
+    def test_absent_or_inactive_goal_uses_idle_handoff_without_interrupting_manual_turn(self):
+        for status in (None, "paused", "blocked", "usageLimited", "budgetLimited"):
+            with self.subTest(status=status):
+                host = GoalHost({} if status is None else {"old": goal(status=status)})
+                receipt = transfer.prepare("codex", {"kind": "id", "value": "old"},
+                    connect=host.connect, discover=lambda: "/fixture/codex.sock")
+                host.active.add("old")
+                self.assertFalse(transfer.preclear_enabled(receipt))
+                self.assertEqual(host.calls, [])
+                # The ordinary native idle/clear path finishes this manual
+                # turn before the authenticated input hook transfers scope.
+                host.end_turn("old")
+                transfer.transfer(receipt, "new", lambda: None, connect=host.connect)
+                self.assertFalse(any(method in {"turn/interrupt", "thread/turns/list"} for method, _ in host.calls))
+                current = host.goal("new")
+                if status is None:
+                    self.assertIsNone(current)
+                else:
+                    assert current is not None
+                    self.assertEqual(current["status"], status)
+                self.assertEqual(receipt["phase"], "verified")
+
+    def test_started_schema_two_journal_recovers_even_for_inactive_goal_with_writer_disabled(self):
+        host = GoalHost({"old": goal(status="paused")})
+        receipt = transfer.prepare("codex", {"kind": "id", "value": "old"},
+            connect=host.connect, discover=lambda: "/fixture/codex.sock")
+        receipt["phase"] = "quiescing"
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", False):
+            self.assertTrue(transfer.preclear_enabled(receipt))
+            transfer.preclear(receipt, lambda: None, connect=host.connect)
+        self.assertEqual(receipt["phase"], "retired")
+        self.assertFalse(any(method == "turn/interrupt" for method, _ in host.calls))
+
     def test_transfer_retires_before_activation_and_preserves_the_objective_and_remaining_budget(self):
         self.host.goals["old"].update(tokensUsed=350, timeUsedSeconds=15)
         self.deliver()

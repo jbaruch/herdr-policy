@@ -1624,7 +1624,7 @@ could not take.
 | `schema_version` | integer, always `4` | Row version |
 | `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before the first clear keystroke. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
-| `host_goal` | null or goal-receipt schema 1/2 | Legacy null grants no goal authority. The 0.18.0 compatibility release reads both versions and keeps new writes at schema 1. For schema 2, the claimed deliverer retires the source before waiting for idle, then the input hook verifies that retirement before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
+| `host_goal` | null or goal-receipt schema 1/2 | Legacy null grants no goal authority. The 0.19.0 compatibility release reads both versions and keeps new writes at schema 1. For schema 2 with an active automatic source goal, the claimed deliverer retires the source before waiting for idle, then the input hook verifies that retirement before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
 | `stow` | string | The stow id the resume prompt names |
 | `status` | one of `scheduled`, `delivering`, `delivered`, `failed`, `interrupted`, `reconciled` | `scheduled` → `delivering` → `delivered`; `failed` before any keystroke; `interrupted` after one; `reconciled` when the operator confirmed through `foreman-reset-reconcile` that the foreman resumed |
@@ -1641,9 +1641,10 @@ only `schema_version: 1`, `runtime` and `phase: not_applicable`: they create no
 Codex goal and prove nothing about an external scheduler. Codex receipts contain:
 
 The readers-first rollout follows `rules/stateful-artifacts.md` Cross-Pipeline
-Schema Bumps. Release 0.18.0 keeps `host_goals.WRITE_SCHEMA_VERSION` at 1 and
-ships dual-accept readers through both Tessl and ACR. Confirm both publications
-before the activation release changes that constant to 2. No elapsed waiting
+Schema Bumps. Release 0.19.0 keeps the shared
+`release_activation.NEW_OWNER_WRITES_ENABLED` false and ships dual-accept readers
+through both Tessl and ACR. Confirm both publications before the activation
+release changes that constant to true. No elapsed waiting
 period or new operator approval is required. Existing schema-2 receipts remain
 recoverable during the compatibility stage; a schema-1 receipt cannot enter
 targetless preclear until writer activation. Older schema-1-only owners refuse
