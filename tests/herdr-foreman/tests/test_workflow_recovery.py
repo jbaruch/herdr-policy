@@ -41,8 +41,7 @@ class WorkflowRecoveryTest(unittest.TestCase):
                 "authorization": fixture.owner_fixture.AUTH}
 
     def resume(self, data):
-        with state_lock(self.case.path):
-            return workflow_recovery.resume(self.case.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
+        return workflow_recovery.resume(self.case.path, data, self.case.now(), self.case.owner.client, fixture.ROOT)
 
     def pending_measurement(self):
         state = self.case.owner.state()

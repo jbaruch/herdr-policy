@@ -130,6 +130,20 @@ return a blocking report; never fix it from the release seat. Required version
 edits therefore return to implementation too. The executor owns local cleanup
 after release; the release worker preserves the writer checkout.
 
+Native release startup keeps the existing project cwd. After a handoff it uses
+the owner-proved retained source, preserving project-local Tessl/ACR bootstrap;
+the brief selects the actual successor for business Git and its project policy. If
+local setup has already dirtied a settled, verified writer, the bound foreman
+uses `prepare-release-checkout` from round setup to preserve that source and
+prepare a clean same-head successor before release transport. The explicit
+owner handoff changes only the immutable contract's worktree and current grant
+generation. It preserves original jobs, native/adoption sources, verification,
+correction count and holds; it grants no release approval. Original adopted
+source scope and transfer evidence remain bound to their original contract
+through the versioned Git-owned checkout intent. Unsupported/changed evidence
+refuses the handoff. Normal cleanliness, independent verification, publication
+and acceptance gates still run on the selected successor.
+
 Before merge, save the canonical ready watcher output unchanged at the
 brief's `review_evidence` path and read every review and inline body in full,
 all authors and review states included. Use the co-shipped

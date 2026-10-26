@@ -1,7 +1,8 @@
 """Explicit recovery by the verified foreman, with no native effects.
 
-The caller holds the canonical state lock. Recovery preserves the admitted
-task, generation and cumulative correction counter. A free process lease
+Resume owns its short state transaction after native verification; other
+entrypoints require the caller's canonical state lock. Recovery preserves the
+admitted task, generation and cumulative correction counter. A free process lease
 proves only exclusion; native no-send and close outcomes come from their
 existing owners. Replaying a record never repeats a transport operation.
 """
@@ -16,7 +17,7 @@ from .chronology import timestamp
 from .errors import UsageError
 from .process_lease import process_lease
 from .runnable import command
-from .state import save_state
+from .state import save_state, state_lock
 
 
 RETRYABLE = frozenset({"release_evidence_unconfirmed", "cleanup_owner_refused",
@@ -230,12 +231,21 @@ def resume(path, data, at, client, plugin_root):
     recovery.text(data["task"], "task")
     recovery.authorization(data["authorization"])
     supervision.timestamp(at)
+    # Native identity reads precede the short owner transaction. The commit
+    # rechecks the actual binding; a slow native read cannot block checkpoints.
+    supervised = authority.verify_foreman(path, client)
+    with state_lock(path):
+        return _resume_owned(path, data, at, plugin_root, supervised)
+
+
+def _resume_owned(path, data, at, plugin_root, supervised):
     state = authority._load(path)
+    from .release_flight import require_clear
+    require_clear(path, state, {data["task"]})
     grant = authority.current_grant(state, data["task"])
     if (grant is None or grant["mode"] != "service" or grant.get("contract_schema") not in (2, 3)
             or type(data["expected_generation"]) is not int or data["expected_generation"] != grant["generation"]):
         raise UsageError("Resume only the current admitted task-workflow generation.", {})
-    supervised = authority.verify_foreman(path, client)
     version, digest = authority.loaded_policy(plugin_root)
     if grant["policy"] != {"version": version, "digest": digest}:
         raise UsageError("Restore the admitted policy bytes before resuming this task; recovery cannot adopt a different policy.", {})

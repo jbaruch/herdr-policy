@@ -289,6 +289,37 @@ On a non-zero exit, follow its diagnostic and re-run this step after the named
 condition clears; interrupted persistence uses the same normal invocation. Do not
 dispatch a brief whose worktree does not exist. Proceed immediately to Step 8.
 
+If native/local setup left untracked files in an otherwise verified and pushed
+task writer, keep those files. Before the release assignment, the actual bound
+foreman may run `foreman prepare-release-checkout --state <owner> --task <task>
+--source <original-writer> --target <fresh-path-under-WORKTREE_ROOT> --head
+<verified-full-head> --ledger <original-task-ledger>`. Use the installed foreman
+entrypoint selected in this reference. The owner checks the same-head
+`ready_for_release` ledger event, original task/brief/provision provenance,
+fresh remote head, pending work and holds. It detaches the retained source at
+that same commit and checks out the original feature branch in the clean
+successor. Compose the release brief with the emitted successor path. The
+source remains visible with its local files and original provenance; it is not
+cleanup work or evidence that any file is disposable. No cleanup approval or
+source/config commit is needed for this already authorized release handoff.
+
+For admitted workflows, omit `--ledger`: the same owner checks the original
+closed implementation/adoption and independent verification records. It
+replaces only the immutable contract's worktree path and increments the task
+grant/current progression generation. Jobs, head, correction count and all
+histories remain intact. A restored pre-launch Git-inspection exception resumes
+through its existing exact-packet owner. Other exceptions, release assignments,
+unknown effects and open gates retain their existing decision owner. All new
+checkout handoff writes follow the shared release activation; existing recorded
+handoffs remain readable/replayable. Git/native I/O runs outside short shared
+owner transactions; a task lease and durable locator fence only the affected
+task. The final commit reloads current state, preserving independent progress.
+Native workflow release startup uses the intent's verified retained source,
+preserving project-local Tessl/ACR hooks and policy; business Git uses the clean
+successor named in the brief. Fresh/no-handoff and legacy launches keep their
+existing startup cwd. No per-launch runtime directory or history is created.
+Every arbitrary untracked file in the successor still blocks the ordinary gate.
+
 ## Step 8 — Compose the Briefs
 
 Use the task's existing assignment evidence. Retrieve lessons only for a specific
