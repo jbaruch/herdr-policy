@@ -76,7 +76,7 @@ def prepare(plan, supplied, templates, reports_dir=None, state_path=None):
     for role in assignments:
         require_seatable(role)
         if re.search(r"[/=,\x00-\x1f\x7f]", role):
-            raise UsageError("Use plan role keys that can name a brief without path separators or control characters.", {"role": role})
+            raise UsageError("Use role keys from the selected plan that can name a brief without path separators or control characters.", {"role": role})
         path = templates / ("brief-" + canonical_role(role) + ".md")
         if not path.is_file() and canonical_role(role) in composition.CONSULTATION_ROLES:
             path = templates / "brief-specialist.md"

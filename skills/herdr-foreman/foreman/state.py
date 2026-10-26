@@ -772,7 +772,7 @@ def load_state_checked(path, warn=None, *, persist_migration=True):
     from .task_evidence import faults
     isolated = faults(state)
     if isolated:
-        warn("State retains {} contradictory assignment context row(s) under task-local evidence holds. Inspect `status --task <task>`; affected outcomes stay unknown and unrelated valid tasks may continue through their existing owner.".format(len(isolated)))
+        warn("State retains {} contradictory assignment context row(s) under task-local evidence holds. Inspect `{}`; affected outcomes stay unknown and unrelated valid tasks may continue through their existing owner.".format(len(isolated), runnable.command("status --task <task>")))
     if migrated and not persist_migration:
         raise StateError("This read-only preview needs an owner migration. Run `{}` with the same --state path, then retry the preview; the original file is unchanged.".format(
             runnable.command("state --migrate-only")), {"path": str(path)})
