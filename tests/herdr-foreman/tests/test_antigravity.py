@@ -149,12 +149,49 @@ class AntigravityTest(unittest.TestCase):
     def test_unproven_requests_or_missing_footers_are_refused_before_input(self):
         for tier in ({"model": "claude-sonnet-4-6", "effort": "high"}, {"model": "gemini-fixture-model", "effort": "high"},
                      {"model": "claude-opus-4-6-thinking", "effort": "high"}):
-            with self.subTest(tier=tier), self.assertRaisesRegex(HerdrError, "no captured native label"):
+            with self.subTest(tier=tier), self.assertRaisesRegex(HerdrError, "no captured native display"):
                 native.admit_model(tier, capture.OPUS_DISPLAY)
         startup = capture.OPUS_DISPLAY.rsplit("? for shortcuts", 1)[0]
         for display in (startup, "", capture.OPUS_DISPLAY.replace("shortcuts    ", "shortcuts\n   ")):
             with self.subTest(display=display[-40:]), self.assertRaisesRegex(HerdrError, "footer is not visible"):
                 native.admit_model({"model": "claude-opus-4-6-thinking", "effort": None}, display)
+
+    def test_each_captured_pair_admits_its_own_footer_and_recovers_by_its_selection(self):
+        displays = {"claude-opus-4-6-thinking": (capture.OPUS_DISPLAY, capture.OPUS_SESSION,
+                                                 transcript_rows(capture.OPUS_TRANSCRIPT)),
+                    "claude-sonnet-4-6": (capture.SONNET_DISPLAY, capture.SONNET_SESSION, rows())}
+        self.assertEqual(set(native.CAPTURED_DISPLAYS), {(model, None) for model in displays})
+        for (model, effort), captured in native.CAPTURED_DISPLAYS.items():
+            display, session, data = displays[model]
+            tier = {"model": model, "effort": effort}
+            with self.subTest(model=model):
+                self.assertEqual(native.admit_model(tier, display), {"source": "native_display",
+                    "label": captured["footer"], "effort": captured["effort"]})
+                body = "\n".join(json.dumps(row) for row in data)
+                path = native.transcript_path(session)
+                self.assertEqual(native.model_selection(data, session, path), captured["selection"])
+                self.assertTrue(report_delivery.native_model_matches(body, session, path, tier))
+                self.assertFalse(report_delivery.native_model_matches(body, session, path, {**tier, "effort": "high"}))
+
+    def test_a_configured_gemini_pair_names_its_missing_capture_instead_of_an_alias(self):
+        # The 0.16 Gemini profile still parses and launches with its explicit
+        # effort. Only Gemini's fallback rendering is captured, under a Sonnet
+        # request; it proves no Gemini request, so admission returns the
+        # capture contract rather than mapping that footer onto the pair.
+        tier = tiers.parse_tiers({"build": {"model": "gemini-3.8-flash-medium", "effort": "medium"}}, "agy")["build"]
+        self.assertEqual(tiers.launch_flags("agy", tier), ["--model", "gemini-3.8-flash-medium", "--effort", "medium"])
+        for display in (capture.FALLBACK_DISPLAY, capture.SONNET_DISPLAY):
+            with self.subTest(display=native.displayed_model(display)), self.assertRaises(HerdrError) as raised:
+                native.admit_model({"model": tier["model"], "effort": tier["effort"]}, display)
+            self.assertIn("'gemini-3.8-flash-medium' at effort medium", str(raised.exception))
+            self.assertIn("references/antigravity.md Admission Capture", str(raised.exception))
+        selection = transcript_rows(capture.FALLBACK_TRANSCRIPT)
+        body = "\n".join(json.dumps(row) for row in selection)
+        path = native.transcript_path(capture.FALLBACK_SESSION)
+        self.assertEqual(native.model_selection(selection, capture.FALLBACK_SESSION, path), "Gemini 3.8 Flash (High)")
+        for effort in ("high", "medium"):
+            self.assertFalse(report_delivery.native_model_matches(body, capture.FALLBACK_SESSION, path,
+                                                                  {"model": "gemini-3.8-flash-medium", "effort": effort}))
 
     def test_the_raw_effort_warning_capture_is_refused_through_the_live_reader(self):
         worker = SimpleNamespace(kind="agy")

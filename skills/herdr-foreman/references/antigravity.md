@@ -31,12 +31,17 @@ A model appearing in a catalog does not prove access, qualification or
 successful delivery.
 
 Argv only requests a model. Before any task input, the worker's live footer
-must show the requested model's captured native label, and the assignment
-records that display proof with effort `unknown`. A substituted, missing or
-uncaptured label refuses with nothing sent. Captured labels live in
-`skills/herdr-foreman/foreman/antigravity_native.py`; a model or effort
-without one, including every Gemini row today, stays unadmitted until a
-native launch of that exact pair is captured.
+must show the captured native display of the requested model and effort, and
+the assignment records that display proof with the effort its capture proves:
+`unknown` for the no-effort Claude pairs. A substituted, missing or uncaptured
+display refuses with nothing sent. Captured displays live in
+`CAPTURED_DISPLAYS` in `skills/herdr-foreman/foreman/antigravity_native.py`.
+
+Gemini rows remain supported configuration: they name an explicit effort and
+launch with `--effort`. No Gemini-requested launch is captured yet, so each
+Gemini pair is refused at admission until its capture is added. The Gemini
+display captured under a Sonnet request proves no Gemini request and is never
+mapped onto one.
 
 No permanent pane is reserved. Assignment-scoped workers use the existing
 launch, enrollment, report, verification and cleanup owners. Keep the existing
@@ -77,3 +82,22 @@ Tessl packages include the native Antigravity SessionStart hook using Google's
 ACR carry the same runtime adapter and scoped worker protocol. ACR's supported
 native host layouts remain unchanged; workers receive their scoped protocol in
 the existing verified assignment even where no startup hook is rendered.
+
+## Admission Capture
+
+A pair is admitted only after one actual signed-in launch of exactly that pair
+is captured and added to `CAPTURED_DISPLAYS` with regression fixtures:
+
+1. The configured `model` and `effort`, the CLI version and Herdr's process
+   argv for that launch.
+2. The visible startup pane, ANSI and plain, showing no effort-substitution
+   warning; its final `? for shortcuts` row supplies `footer`.
+3. The byte-exact canonical `transcript.jsonl` of one completed no-tools turn
+   and its sha256; its `USER_SETTINGS_CHANGE` `Model Selection` supplies
+   `selection`, followed by a `DONE` model response.
+4. The effort that display proves: the footer's effort text when it shows
+   one, otherwise `unknown`.
+
+Redact only the account address. A catalog entry, a quota reading, a startup
+footer without a completed turn, or another pair's display admits nothing.
+An assigned report and clear lifecycle remains separate acceptance evidence.

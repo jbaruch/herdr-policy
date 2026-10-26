@@ -23,12 +23,19 @@ SOURCE = "herdr:antigravity_cli"
 #: Flash; without the flag both models below ran as requested. Their effort is
 #: never displayed, so it stays unknown rather than measured.
 NO_EFFORT_MODELS = frozenset({"claude-opus-4-6-thinking", "claude-sonnet-4-6"})
-#: The label each captured model shows once selected: in the live footer and
-#: in its first turn's model selection. A model or effort without a captured
-#: label has no native proof of what runs and is refused before input (#73).
-MODEL_LABELS = {
-    "claude-opus-4-6-thinking": "Claude Opus 4.6 (Thinking)",
-    "claude-sonnet-4-6": "Claude Sonnet 4.6 (Thinking)",
+#: The captured native display of each requested `(model, effort)` pair (#73):
+#: the running model its idle footer names, its first turn's `Model Selection`
+#: and the effort that display proves. Claude pairs show no effort, so theirs
+#: stays unknown. The captured Gemini fallback renders its footer and selection
+#: differently (`Gemini 3.8 Flash · high`, `Gemini 3.8 Flash (High)`), so each
+#: is kept. No Gemini-requested launch is captured yet. A pair absent here is
+#: refused before input until its capture is added, as
+#: references/antigravity.md Admission Capture names.
+CAPTURED_DISPLAYS: "dict[tuple[str, str | None], dict[str, str]]" = {
+    ("claude-opus-4-6-thinking", None): {"footer": "Claude Opus 4.6 (Thinking)",
+                                         "selection": "Claude Opus 4.6 (Thinking)", "effort": "unknown"},
+    ("claude-sonnet-4-6", None): {"footer": "Claude Sonnet 4.6 (Thinking)",
+                                  "selection": "Claude Sonnet 4.6 (Thinking)", "effort": "unknown"},
 }
 #: The idle footer's last visible row: shortcut hint, then the running model.
 FOOTER = re.compile(r"\? for shortcuts {2,}(\S(?:.*\S)?)")
@@ -92,12 +99,13 @@ def subscription_usage(*, run=subprocess.run):
     return parse_usage(result.stdout)
 
 
-def expected_label(tier):
-    """The captured native label for a requested tier, or None when unproven."""
+def captured_display(tier):
+    """The captured native display of a requested tier's exact pair, or None when unproven."""
     model = tier.get("model") if isinstance(tier, dict) else None
-    if not isinstance(model, str) or tier.get("effort") is not None:
+    effort = tier.get("effort") if isinstance(tier, dict) else None
+    if not isinstance(model, str) or effort is not None and not isinstance(effort, str):
         return None
-    return MODEL_LABELS.get(model)
+    return CAPTURED_DISPLAYS.get((model, effort))
 
 
 def displayed_model(text):
@@ -110,22 +118,23 @@ def displayed_model(text):
 def admit_model(tier, text):
     """Prove from the native display that the requested model runs; argv only asks.
 
-    Returns the display proof. Its effort is `unknown`: no native surface shows
-    the effort a no-effort Claude model runs at.
+    Returns the display proof with the effort its capture proves: `unknown`
+    for a no-effort Claude model, whose effort no native surface shows.
     """
-    expected, shown = expected_label(tier), displayed_model(text)
+    captured, shown = captured_display(tier), displayed_model(text)
     details = {"kind": "agy", "model": tier.get("model"), "effort": tier.get("effort"), "displayed": shown}
-    if expected is None:
-        raise HerdrError("Antigravity has no captured native label for model {!r} at effort {}, so nothing proves it "
-                         "would run as requested. Configure a captured no-effort model; nothing was sent.".format(
-                             tier.get("model"), tier.get("effort") or "none"), details)
+    if captured is None:
+        raise HerdrError("Antigravity has no captured native display for model {!r} at effort {}, so nothing proves it "
+                         "would run as requested; nothing was sent. Configure a captured pair, or capture this exact "
+                         "pair's native launch as skills/herdr-foreman/references/antigravity.md Admission Capture "
+                         "names.".format(tier.get("model"), tier.get("effort") or "none"), details)
     if shown is None:
         raise HerdrError("Antigravity's native model footer is not visible, so the running model is unproven; inspect "
                          "the pane before retrying. Nothing was sent.", details)
-    if shown != expected:
+    if shown != captured["footer"]:
         raise HerdrError("Antigravity runs {!r}, not the requested {!r}; nothing was sent. Start a fresh worker with "
-                         "a launch the native CLI honors.".format(shown, expected), details)
-    return {"source": "native_display", "label": shown, "effort": "unknown"}
+                         "a launch the native CLI honors.".format(shown, captured["footer"]), details)
+    return {"source": "native_display", "label": shown, "effort": captured["effort"]}
 
 
 def sessions_root():

@@ -352,9 +352,9 @@ def source_prompt(body, kind, session=None, *, path=None):
 def native_model_matches(body, session, path, tier):
     """Whether the canonical Antigravity turn selected the dispatched tier's model (#73)."""
     rows = _rows(body)
-    expected = antigravity_native.expected_label(tier)
-    return (rows is not None and expected is not None
-            and antigravity_native.model_selection(rows, session, path) == expected)
+    captured = antigravity_native.captured_display(tier)
+    return (rows is not None and captured is not None
+            and antigravity_native.model_selection(rows, session, path) == captured["selection"])
 
 
 def native_identity(info):
