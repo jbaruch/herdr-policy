@@ -144,7 +144,7 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
                     if (reset.foreground_processes(native, pane) != row["foreground"]
                             or reset._foreman_record(native, pane).get("agent") != live["agent"]):
                         return refusal("foreground_replaced_before_session_report")
-                    native.pane_report_agent_session(pane, live["agent"], incoming, time.time_ns())
+                    native.pane_report_agent_session(pane, live["agent"], incoming, time.time_ns(), session_start_source="clear")
                 if reset.pane_session(native, pane) != incoming:
                     return refusal("native_hint_unacknowledged")
                 row["accepted_session"] = incoming

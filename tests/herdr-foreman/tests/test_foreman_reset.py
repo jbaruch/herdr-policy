@@ -207,9 +207,10 @@ class FakeClient:
         return {"pane_id": pane_id, "agent_session": {"source": "herdr:" + self.kind, "agent": self.kind,
                                                       "kind": "id", "value": value}}
 
-    def pane_report_agent_session(self, pane_id, kind, session, seq):
-        self.session_reports.append((pane_id, kind, session.copy(), seq))
-        self.reported_session = session.copy()
+    def pane_report_agent_session(self, pane_id, kind, session, seq, *, session_start_source):
+        self.session_reports.append((pane_id, kind, session.copy(), seq, session_start_source))
+        if session_start_source == "clear":
+            self.reported_session = session.copy()
 
     def pane_process_info(self, pane_id):
         pid = self.pids.pop(0) if len(self.pids) > 1 else self.pids[0]

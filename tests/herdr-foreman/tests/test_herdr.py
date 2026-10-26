@@ -120,14 +120,15 @@ class ArgvBuilderTest(unittest.TestCase):
                 runner = FakeRunner()
                 runner.set("pane report-agent-session", stdout="")
                 client = HerdrClient(binary="custom-herdr", runner=runner)
-                self.assertEqual(client.pane_report_agent_session("w7:p9", "codex", {"kind": kind, "value": value}, 123), {})
+                self.assertEqual(client.pane_report_agent_session("w7:p9", "codex", {"kind": kind, "value": value}, 123, session_start_source="clear"), {})
                 self.assertEqual(runner.calls, [["custom-herdr", "pane", "report-agent-session", "w7:p9",
-                    "--source", "herdr:codex", "--agent", "codex", "--seq", "123", flag, value]])
+                    "--source", "herdr:codex", "--agent", "codex", "--seq", "123", flag, value,
+                    "--session-start-source", "clear"]])
 
     def test_unknown_native_session_kind_is_never_reported(self):
         runner = FakeRunner()
         with self.assertRaisesRegex(HerdrError, "preserve unknown identity"):
-            HerdrClient(runner=runner).pane_report_agent_session("w7:p9", "codex", {"kind": "guess", "value": "incoming"}, 123)
+            HerdrClient(runner=runner).pane_report_agent_session("w7:p9", "codex", {"kind": "guess", "value": "incoming"}, 123, session_start_source="clear")
         self.assertEqual(runner.calls, [])
 
     def test_workspace_create_returns_the_supplied_root_pane_without_focus(self):

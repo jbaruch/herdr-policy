@@ -81,7 +81,9 @@ The deliverer permits that hint only for the planned continuation, under the
 unchanged foreground pins. The pre-prompt hook still refuses an old native
 session. After authenticating the incoming payload and unchanged foreground,
 the hook reports that verified native identity through Herdr's public session
-reporting API and requires matching readback before saving input acceptance.
+reporting API with the verified `session_start_source: clear` transition and
+requires matching readback before saving input acceptance. A plain identity
+report does not establish that transition.
 A foreign hint or unacknowledged report blocks admission; session metadata is
 never repaired from a guessed ID. An attested remote transport that lacks this
 reporting operation refuses a stale hint rather than falling back locally.
