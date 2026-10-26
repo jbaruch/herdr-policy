@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0 — 2026-10-25
+
+- Derive legacy brief input fields, role/slice scope and specialist vocabulary from the selected owner plan (#49). Validate every role before requested writes; keep departed-worker warnings separate from preparation failure. Exercise the packaged developer-to-review/test/security render and native apply path without intermediate schema repairs.
+- Add bounded native completion collection and parallel current task cycles through the existing executor (#81, #50). Keep preparation and native startup/composer waits outside shared owner transactions, reload current state for each short transport checkpoint, and preserve other tasks' assignments and indexes. An invalid input or task-local decision leaves independent ready work eligible.
+- Ship dual readers for immutable adoption contract/grant 3 and source-transfer intent 3. The original reported source, prompt/final proof, report, branch/head, cumulative corrections, contributors and gates remain bound to the actual task. The transfer supplies no fabricated built or approved claim; the independent responsible verifier reads and assesses the original report and source.
+- Keep new legacy adoption admissions disabled until both compatible reader publications are verified. Existing schema-3 recovery remains readable. Activation and native fleet acceptance follow separately; deterministic fixtures establish no production rollout or throughput outcome. Use each task's actual correction allowance and preserve unknown launches, holds, specialist boundaries, current-head review and publication gates.
+
 ## 0.17.0 — 2026-10-25
 
 - Reuse the successful delivery receipt and exact report digest already bound by the specialist assessment when resolving report gates (#71). Closing an enrollment before a watcher sample no longer strands an approved report or requires a replacement review; changed report bytes and foreign dispatches still refuse.
