@@ -9,7 +9,9 @@ description: >
 
 # Herdr Foreman Skill
 
-Choose the entry that matches the request and load its selected reference.
+This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
+
+The selected delivery entry runs concurrent workers internally.
 Inspection entries are individual lookups, not a startup checklist. Step 1 owns
 concurrent delivery; unselected entries add no prerequisite work.
 

@@ -1307,7 +1307,8 @@ def quiesce_host_goal(state, plan, client, at):
         row = _row(document, plan)
         if (row is None or row["status"] != "delivering" or row["process"] != process_identity(os.getpid())
                 or row["native_session"] != bound_session(data) or row["foreground"] != foreground_processes(client, pane)
-                or pane_session(client, pane) != before):
+                or _foreman_record(client, pane).get("agent") != "codex"
+                or pane_session(client, pane, expected_agent="codex") != before):
             raise SessionChanged("The claimed reset's source or foreground pins changed. Preserve its receipt; no scheduler retirement was authorized.", {})
         preflight(memory.show(state, at, plan["stow"])["record"], data, pane)
         host_goals.preclear(row["host_goal"], lambda: save_state(path, document))

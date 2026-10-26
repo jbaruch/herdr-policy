@@ -1161,6 +1161,31 @@ class ResetCommandTest(CliCase):
         self.assertEqual((row["status"], row["host_goal"]["phase"]), ("failed", "retired"))
         self.assertEqual(client.keystrokes, [])
 
+    def test_preclear_rechecks_foreign_provenance_after_pinning_the_same_identity(self):
+        host, client, identify = self.codex_delivery_fixture()
+        original = client.pane_get
+        calls = []
+        def changed(pane):
+            value = original(pane)
+            calls.append(pane)
+            if len(calls) == 2:
+                value["agent_session"].update(agent="claude", source="herdr:claude")
+            return value
+        with patch.object(client, "pane_get", side_effect=changed), \
+                patch("foreman.host_goals.AppServer", side_effect=host.connect), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=AssertionError("must not type")):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual(row["host_goal"]["phase"], "prepared")
+        self.assertIsNotNone(row["foreground"])
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertIn(SESSION["value"], host.goals)
+        self.assertFalse(any(method in ("thread/goal/clear", "turn/interrupt") for method, _ in host.calls))
+        self.assertEqual(client.keystrokes, [])
+
     def test_deliver_cli_preclear_failure_records_failure_without_entering_native_delivery(self):
         _host, client, identify = self.codex_delivery_fixture()
         with patch("foreman.host_goals.AppServer", side_effect=UsageError("Restore native host access.", {})), \

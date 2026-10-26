@@ -78,6 +78,9 @@ def coverage_diagnostics(gaps):
         elif gap.startswith("factory_receipt:"):
             result.append({"source": "factory_receipt", "section": "discovery", "refusal": gap.split(":", 1)[1],
                            "recovery": "Inspect the selected owner's JSON binding receipts; restore unreadable original receipts without replacing the owner."})
+        elif gap.startswith("factory_owner:"):
+            result.append({"source": "factory_owner", "section": "discovery", "refusal": gap.split(":", 1)[1],
+                           "recovery": "Restore the selected owner's original readable parent path; preserve symlink loops and unknown factory attribution for its owner."})
     return result
 
 
@@ -175,9 +178,14 @@ def owner_paths(root, explicit):
         path = Path(value).absolute()
         # Parent aliases name one owner; preserve the final component so the
         # projection reader still refuses a symlinked owner file.
-        return str(path.parent.resolve() / path.name)
+        return str(path.parent.resolve(strict=True) / path.name)
 
-    paths, gaps = {owner_path(p) for p in explicit}, []
+    paths, gaps = set(), []
+    for value in explicit:
+        try:
+            paths.add(owner_path(value))
+        except (OSError, RuntimeError, ValueError):
+            gaps.extend(["owner_evidence_unavailable", "factory_owner:source_unreadable"])
     receipts = root / "supervision-bindings"
     if receipts.is_dir():
         scanned = list(islice(receipts.iterdir(), MAX_DISCOVERY_FILES + 1))
@@ -206,12 +214,15 @@ def owner_paths(root, explicit):
                     paths.add(owner)
             except OwnerViewError as exc:
                 gaps.extend(["factory_receipt_unreadable", *exc.coverage()])
-            except OSError:
+            except (OSError, RuntimeError):
                 gaps.extend(["factory_receipt_unreadable", "factory_receipt:source_unreadable"])
             except (ValueError, TypeError, AttributeError, KeyError):
                 gaps.extend(["factory_receipt_unreadable", "factory_receipt:source_invalid"])
     if (root / "state.json").exists():
-        paths.add(owner_path(root / "state.json"))
+        try:
+            paths.add(owner_path(root / "state.json"))
+        except (OSError, RuntimeError, ValueError):
+            gaps.extend(["owner_evidence_unavailable", "factory_owner:source_unreadable"])
     if len(paths) > MAX_FACTORIES:
         gaps.append("factory_sources_truncated")
     return sorted(paths)[:MAX_FACTORIES], gaps

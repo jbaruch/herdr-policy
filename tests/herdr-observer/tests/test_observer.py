@@ -172,6 +172,26 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(foreman["role"], "foreman")
         self.assertNotIn("factory_discovery_truncated", view["current"]["coverage"])
 
+    def test_explicit_and_receipt_parent_loops_remain_local_coverage_gaps(self):
+        loop = self.owner.parent / "loop"
+        loop.symlink_to("loop", target_is_directory=True)
+        broken = str(loop / "state.json")
+        paths, gaps = sources.owner_paths(self.owner.parent, [broken, str(self.owner)])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_owner:source_unreadable", gaps)
+        diagnostic = next(row for row in sources.coverage_diagnostics(gaps) if row["source"] == "factory_owner")
+        self.assertIn("original readable parent", diagnostic["recovery"])
+        registry = self.owner.parent / "supervision-bindings"
+        registry.mkdir()
+        (registry / "loop.json").write_text(json.dumps({**self.supervised["binding"], "state_path": broken}))
+        (registry / "good.json").write_text(json.dumps(self.supervised["binding"]))
+        paths, gaps = sources.owner_paths(self.owner.parent, [])
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_receipt:source_unreadable", gaps)
+        roles, _quota, _closures, _contexts, owner_gaps = sources.owners(paths, self.client.agents)
+        self.assertEqual(roles[native.fingerprint(native.identity(self.foreman))]["role"], "foreman")
+        self.assertEqual(owner_gaps, [])
+
     def test_real_receipt_and_projection_refusals_keep_actionable_private_sections(self):
         registry = self.owner.parent / "supervision-bindings"
         registry.mkdir()
