@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: publish-herdr-policy
@@ -15,6 +17,8 @@ concurrency:
 jobs:
   gates:
     uses: ./.github/workflows/tests.yml
+    with:
+      reuse_runtime: true
     secrets: inherit
   tessl:
     needs: gates
@@ -57,7 +61,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6; Dependabot weekly
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7; Dependabot weekly
         with:
           # Match the ACR module; review monthly with its revision below.
           go-version: '1.27.0'
