@@ -246,6 +246,77 @@ class AdmissionLockTest(unittest.TestCase):
         self.race(lambda: self.fx.git("switch", "-c", "different-owner-branch"))
         self.assertEqual(self.fx.git("rev-parse", "HEAD"), before)
 
+    def origin_include(self, *, conditional=False):
+        path = self.fx.root / "origin.include"
+        path.write_text('[url "https://github.com/fixture/repository.git"]\n\tinsteadOf = fixture-origin:\n')
+        if not conditional:
+            self.fx.git("config", "remote.origin.url", "fixture-origin:")
+        key = "includeIf.onbranch:feature/task.path" if conditional else "include.path"
+        self.fx.git("config", key, str(path))
+        return path
+
+    def test_included_fetch_rewrite_change_refuses_without_altering_config(self):
+        path = self.origin_include()
+        config = self.fx.repository / ".git/config"
+        before = config.read_bytes()
+        def change():
+            path.write_text('[url "https://github.com/foreign/repository.git"]\n\tinsteadOf = fixture-origin:\n')
+            self.assertEqual(self.fx.git("remote", "get-url", "origin").strip(), "https://github.com/foreign/repository.git")
+        self.race(change)
+        self.assertEqual(config.read_bytes(), before)
+        self.assertIn("foreign/repository", path.read_text())
+
+    def test_conditional_included_push_rewrite_refuses_with_unchanged_fetch(self):
+        path = self.origin_include(conditional=True)
+        original = path.read_text()
+        def change():
+            path.write_text(original + '\n[url "https://github.com/foreign/repository.git"]\n\tpushInsteadOf = https://github.com/fixture/repository.git\n')
+            self.assertEqual(self.fx.git("remote", "get-url", "origin").strip(), "https://github.com/fixture/repository.git")
+            self.assertEqual(self.fx.git("remote", "get-url", "--push", "--all", "origin").strip(), "https://github.com/foreign/repository.git")
+        self.race(change)
+
+    def test_worktree_push_target_change_refuses_and_preserves_worktree_config(self):
+        self.fx.git("config", "extensions.worktreeConfig", "true")
+        self.fx.git("config", "--worktree", "remote.origin.pushurl", "https://github.com/fixture/repository.git")
+        config = self.fx.repository / ".git/config"
+        before = config.read_bytes()
+        self.race(lambda: self.fx.git("config", "--worktree", "remote.origin.pushurl", "https://github.com/foreign/repository.git"))
+        self.assertEqual(config.read_bytes(), before)
+        self.assertEqual(self.fx.git("remote", "get-url", "--push", "origin").strip(), "https://github.com/foreign/repository.git")
+
+    def test_secondary_fetch_url_cannot_hide_behind_an_explicit_valid_push_target(self):
+        path = self.origin_include()
+        self.fx.git("config", "remote.origin.pushurl", "https://github.com/fixture/repository.git")
+        original = path.read_text()
+        def change():
+            path.write_text(original + '\n[remote "origin"]\n\turl = https://github.com/foreign/repository.git\n')
+            self.assertEqual(self.fx.git("remote", "get-url", "--all", "origin").splitlines(),
+                ["https://github.com/fixture/repository.git", "https://github.com/foreign/repository.git"])
+            self.assertEqual(self.fx.git("remote", "get-url", "--push", "--all", "origin").splitlines(),
+                ["https://github.com/fixture/repository.git"])
+        self.race(change)
+
+    def test_all_push_targets_must_match_even_when_the_first_is_valid(self):
+        self.fx.git("config", "extensions.worktreeConfig", "true")
+        self.fx.git("config", "--worktree", "remote.origin.pushurl", "https://github.com/fixture/repository.git")
+        self.race(lambda: self.fx.git("config", "--worktree", "--add", "remote.origin.pushurl", "https://github.com/foreign/repository.git"))
+
+    def test_unchanged_include_and_worktree_origins_keep_supported_url_identity(self):
+        self.origin_include()
+        self.fx.git("config", "extensions.worktreeConfig", "true")
+        for url in ("https://github.com/fixture/repository.git", "git@github.com:FIXTURE/REPOSITORY",
+                    "ssh://git@github.com/fixture/repository.git"):
+            self.fx.git("config", "--worktree", "--add", "remote.origin.pushurl", url)
+        self.admit()
+        self.assertEqual(self.fx.progress()["phase"], "verify")
+
+    def test_local_head_tree_must_match_the_verified_adoption_tree(self):
+        expected = {**self.fx.document["adoption"]["head"], "tree": "0" * 40}
+        before = self.fx.path.read_bytes()
+        with self.assertRaises(UsageError):
+            adoption._require_local_head(self.fx.document, expected)
+        self.assertEqual(self.fx.path.read_bytes(), before)
+
     def test_dirty_tracked_file_outside_the_original_diff_stays_unmodified(self):
         other = self.fx.worktree / "src/untouched.py"
         self.assertNotIn("src/untouched.py", self.fx.document["adoption"]["head"]["paths"])

@@ -108,19 +108,37 @@ def _same_input(expected):
 
 
 def _require_local_head(document, expected):
-    """Two bounded local Git reads; no remote, native session or policy lookup."""
+    """Bounded local Git identities; no network, native session or policy lookup."""
     prefix = ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "--no-pager", "-C", document["repository"]["worktree"]]
     results = []
     try:
-        for args in (("rev-parse", "HEAD"), ("status", "--porcelain=v1", "-z", "--untracked-files=all")):
+        for args in (("rev-parse", "--show-toplevel", "HEAD", "HEAD^{tree}"), ("status", "--porcelain=v1", "-z", "--untracked-files=all"),
+                     ("branch", "--show-current"), ("remote", "get-url", "--all", "origin"),
+                     ("remote", "get-url", "--push", "--all", "origin")):
             result = subprocess.run([*prefix, *args], capture_output=True, timeout=2, check=False)
             if result.returncode or len(result.stdout) > workspace.INPUT_LIMIT:
                 raise UsageError("Restore this task's bounded readable local Git state before retrying adoption; preserve all source files.", {})
             results.append(result.stdout)
     except (OSError, subprocess.TimeoutExpired):
         raise UsageError("The local task checkout could not be rechecked within its short admission budget; preserve the owner and inspect that checkout before retrying.", {}) from None
-    if results[1] or results[0].strip() != expected["commit"].encode("ascii"):
+    try:
+        head = results[0].decode("utf-8").splitlines()
+        branch = results[2].decode("utf-8").strip()
+        fetch, push = (result.decode("utf-8").splitlines() for result in results[3:])
+    except UnicodeDecodeError:
+        raise UsageError("Restore the task's readable UTF-8 local checkout, branch and origin URLs before retrying adoption; preserve its current configuration.", {}) from None
+    try:
+        same_root = len(head) == 3 and Path(head[0]).resolve() == Path(document["repository"]["worktree"]).resolve()
+    except (OSError, RuntimeError):
+        raise UsageError("Restore the task's actual readable checkout path before retrying adoption; preserve its current files and configuration.", {}) from None
+    if results[1] or not same_root or head[1:] != [expected["commit"], expected["tree"]]:
         raise UsageError("The writer changed or became dirty after source verification; preserve the new source and prepare the same task again.",
+                         {"reason": "adoption_evidence_changed"})
+    target = document["repository"]["github"].casefold()
+    identities = [workspace.origin_identity(url) for url in (*fetch, *push)]
+    if (branch != document["repository"]["branch"] or not fetch or not push
+            or any(identity is None or identity.casefold() != target for identity in identities)):
+        raise UsageError("The effective task branch or fetch/push repository changed after verification; preserve the configuration and restore its authorized targets before retrying adoption.",
                          {"reason": "adoption_evidence_changed"})
 
 
