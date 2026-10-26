@@ -80,23 +80,36 @@ def source_evidence(state_path, state, member, dispatch, *, check_gates=True):
     return report, source, native
 
 
-def source_scope(document, dispatch):
-    """Match the original supported brief's owner-derived writer and branch."""
+def source_scope(document, dispatch, *, state_path=None, state=None):
+    """Match the original writer, or its exact settled Git-owner successor."""
     _receipt, raw = workspace.capture(dispatch["brief"])
     body = raw.decode("utf-8")
     marker = "## Admitted current task\n\n```json\n"
-    repository = document["repository"]
-    if body.count(marker) == 1:
+    compiled = body.count(marker) == 1
+    context_repository, pairs = None, []
+    if compiled:
         try:
             context = json.loads(body.split(marker, 1)[1].split("\n```", 1)[0])
         except ValueError:
             raise UsageError("Restore the original source brief's owner-derived task context before adoption.", {}) from None
-        if (not isinstance(context, dict) or context.get("task") != document["task"] or context.get("repository") != repository):
+        if not isinstance(context, dict) or context.get("task") != document["task"]:
             raise UsageError("The selected writer differs from the original source assignment; preserve its original task branch and checkout.", {})
-        return
-    matches = re.findall(r"Your worktree already exists at `([^`\n]+)`, on branch `([^`\n]+)`, provisioned", body)
-    if matches != [(repository["worktree"], repository["branch"])]:
-        raise UsageError("The original source brief does not bind this supported writer/branch; recover its real checkout provenance through the task owner before adoption.", {})
+        context_repository = context.get("repository")
+    else:
+        pairs = re.findall(r"Your worktree already exists at `([^`\n]+)`, on branch `([^`\n]+)`, provisioned", body)
+
+    def matches(repository):
+        return (context_repository == repository if compiled else
+                pairs == [(repository["worktree"], repository["branch"])])
+
+    if matches(document["repository"]):
+        return None
+    if state_path is not None and state is not None:
+        from .release_checkout import original_scope
+        original = original_scope(document, state_path, state)
+        if original is not None and matches(original["repository"]):
+            return original
+    raise UsageError("The original source brief does not bind this supported writer/branch; recover its real checkout provenance through the task owner before adoption.", {})
 
 
 def prepare(state_path, state, supervised, document, identifier, *, client=None):
@@ -110,7 +123,7 @@ def prepare(state_path, state, supervised, document, identifier, *, client=None)
         raise UsageError("Adopt the actual latest applied developer assignment under its original enrollment; unknown sends and missing provenance retain their existing owner.",
                          {"reason": "legacy_source_provenance_required"})
     report, source, native = source_evidence(state_path, state, member, dispatch)
-    source_scope(document, dispatch)
+    source_scope(document, dispatch, state_path=state_path, state=state)
     if member["active"]:
         if client is None:
             raise UsageError("Authenticate the completed source with the exact native foreman before transferring its active enrollment.", {})
@@ -171,7 +184,7 @@ def dependencies(state_path, state, supervised, document):
     expected = supervision.expected_assignment(member)
     task_evidence.require_clear(state, {expected["task"]})
     brief_evidence(dispatch, expected)
-    source_scope(document, dispatch)
+    original = source_scope(document, dispatch, state_path=state_path, state=state)
     report, _body = workspace.capture(expected["report"], limit=workspace.REPORT_LIMIT)
     native = report_delivery.native_identity({"agent_session": expected["native_session"]})
     resolution = member["resolution"]
@@ -182,9 +195,10 @@ def dependencies(state_path, state, supervised, document):
         grant = state["recovery"]["tasks"][document["task"]].get("authority")
         if grant is None or grant["contract_schema"] != 3:
             raise UsageError("Restore this source transfer's immutable admitted contract receipt before continuation.", {})
+        transfer_contract = original["contract"] if original is not None else grant["contract"]
         if resolution["outcome"] != transfer_outcome(document) or not all(any(
                 row["path"] == expected["path"] and row["sha256"] == expected["sha256"]
-                for row in resolution["evidence"]) for expected in (report, grant["contract"])):
+                for row in resolution["evidence"]) for expected in (report, transfer_contract)):
             raise UsageError("Restore the original source-transfer receipt; delivery transfer supplies no implementation approval.", {})
     else:
         from .progression_service import ProgressionService
