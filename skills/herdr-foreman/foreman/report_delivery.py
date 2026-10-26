@@ -350,7 +350,7 @@ def source_prompt(body, kind, session=None, *, path=None):
 
 
 def native_model_matches(body, session, path, tier):
-    """Whether the canonical Antigravity turn selected the dispatched tier's model (#73)."""
+    """Whether this canonical conversation proves the dispatched tier's selection (#73)."""
     rows = _rows(body)
     expected = antigravity_native.expected_label(tier)
     return (rows is not None and expected is not None

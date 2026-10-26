@@ -35,7 +35,8 @@ successful delivery.
 
 Argv only requests a model. Before any task input, the worker's live footer
 must show the requested model's captured native label. Effort remains unknown;
-the completed native turn must also name that model before acceptance. A substituted, missing or
+the completed turn also needs native conversation evidence of that same model
+selection before acceptance. A substituted, missing or
 uncaptured label refuses with nothing sent. Captured labels live in
 `skills/herdr-foreman/foreman/antigravity_native.py`; a model or effort
 without one, including every Gemini row today, stays unadmitted until a
@@ -72,8 +73,13 @@ session and source readback remain required. Arbitrary archived JSONL cannot
 prove an Antigravity session; unsupported source formats remain unconfirmed.
 Recovery compares the exact request inside the native `USER_REQUEST` envelope
 with the preserved dispatch, accepts only the known trailing metadata and model
-selection blocks, and requires that selection to name the dispatched tier's
-captured label. Any other envelope, request text or selection refuses.
+selection blocks. CLI 1.4.7 omits an unchanged selection on a second turn in
+the same conversation. The reader carries forward only a preceding valid native
+selection in that canonical conversation; a later change replaces it, and a
+malformed or unknown user-input envelope clears that proof. The current request
+still matches the preserved dispatch exactly. The effective selection must name
+the dispatched tier's captured label. Missing history, any other request text or
+a different selection refuses.
 
 Tessl packages include the native Antigravity SessionStart hook using Google's
 `conversationId`/`transcriptPath` input and `injectSteps` output. Both Tessl and
