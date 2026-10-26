@@ -497,6 +497,41 @@ class RefusalSourceBindingTests(LiveErrorProofTests):
         self.assertIsNone(unavailable.exclusion(self.store, agent, MODEL, expired))
 
 
+class LaunchScopeTests(unittest.TestCase):
+    AGY = {"schema_version": 1, "kind": "agy", "window_group": "antigravity-google-subscription",
+           "worker_kind": "antigravity"}
+
+    def test_every_tier_launch_adapter_scope_validates_as_written(self):
+        for kind in ("codex", "claude", "grok", "agy"):
+            with self.subTest(kind=kind):
+                agent = Agent(kind + "-template", kind, "/usage", "marker", "visible", "/clear", window_group="account")
+                scope = unavailable.launch_scope(agent)
+                unavailable.validate_scope(scope)
+                self.assertEqual(scope["kind"], kind)
+
+    def test_unknown_provider_or_malformed_scope_still_refuses(self):
+        cases = [{**self.AGY, "kind": "gemini"}, {**self.AGY, "kind": ""}, {**self.AGY, "kind": None},
+                 {**self.AGY, "schema_version": 2}, {**self.AGY, "schema_version": True},
+                 {**self.AGY, "window_group": None}, {**self.AGY, "worker_kind": " "},
+                 {**self.AGY, "account": "operator"}, {key: self.AGY[key] for key in ("schema_version", "kind", "worker_kind")},
+                 None, ["agy"]]
+        for scope in cases:
+            with self.subTest(scope=scope), self.assertRaisesRegex(UsageError, "Unsupported original launch scope"):
+                unavailable.validate_scope(scope)
+
+    def test_an_agy_launch_scope_claims_no_native_refusal_contract(self):
+        session = {"source": "herdr:antigravity_cli", "agent": "agy", "kind": "id",
+                   "value": "53f3dfd8-9651-4e9d-8a51-d2c222da98f0"}
+        proof = {"schema_version": 1, "kind": "agy", "model": "claude-sonnet-4-6", "code": "model_not_found",
+                 "account_scope": "unknown", "cli_version": "1.4.7", "prompt_sha256": "a" * 64,
+                 "native_session": session, "pane_id": "w1:p1", "terminal_id": "terminal-1", "revision": 1,
+                 "source": {"schema_version": 1, "path": "/brain/transcript.jsonl", "sha256": "b" * 64, "size": 1}}
+        for candidate in (proof, {**proof, "schema_version": 2, "code": "cyber_policy", "turn_id": "turn-1"}):
+            with self.subTest(schema=candidate["schema_version"]), \
+                    self.assertRaisesRegex(UsageError, "complete supported source"):
+                unavailable.validate_proof(candidate)
+
+
 class PublicWaitErrorTests(unittest.TestCase):
     """Real shell/Python entrypoints, representative pinned native CLI logs."""
     def setUp(self):

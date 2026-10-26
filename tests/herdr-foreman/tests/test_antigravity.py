@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills/herdr-forem
 
 import copy
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -16,9 +17,13 @@ import unittest
 from unittest.mock import patch
 
 from foreman import antigravity_native as native, config, launch, measure, planner, report_delivery, session_start_hook, tiers
+from foreman import assign, composer, lifecycle, recovery, supervision
 from foreman.assign import native_context_session
+from foreman.diagnostics import PREFIX as DIAGNOSTIC_PREFIX
 from foreman.errors import ConfigError, HerdrError, ParseError
+from foreman.state import load_state_checked
 from tests import agy_capture as capture
+from tests.test_cli import CliCase, FreshOwnerNative
 
 
 SESSION = capture.SONNET_SESSION
@@ -311,6 +316,127 @@ class AntigravityTest(unittest.TestCase):
             {"HERDR_ENV": "1", "HERDR_HOOK_ADAPTER": "antigravity"}, {"conversationId": SESSION}, context_reader=reader)
         assert result is not None
         self.assertIn("Scoped worker contract", result["injectSteps"][0]["systemMessage"]["systemMessage"])
+
+
+class AntigravityOwnerNative(FreshOwnerNative):
+    """The public owner transport for a fresh agy seat: one captured startup display."""
+
+    def __init__(self, display):
+        super().__init__()
+        self.EMPTY = display
+        self.frames = [display]
+
+    def agent_start(self, name, kind, pane_id, flags):
+        started = super().agent_start(name, kind, pane_id, flags)
+        session = {"source": native.SOURCE, "agent": "agy", "kind": "id", "value": capture.SONNET_SESSION}
+        self.agents[name]["agent_session"] = session
+        return {**started, "agent": dict(self.agents[name])}
+
+    def pane_read(self, pane_id, lines):
+        self.events.append(("pane_read", pane_id, lines))
+        return self.EMPTY
+
+
+class OwnerDispatchTest(CliCase):
+    """An ordinary fresh scoped agy dispatch through the actual owner apply (#58)."""
+
+    TASK = "agy-launch-scope"
+    SCOPE = {"schema_version": 1, "kind": "agy", "window_group": "antigravity-google-subscription",
+             "worker_kind": "antigravity"}
+
+    def setUp(self):
+        super().setUp()
+        skill = Path(__file__).resolve().parents[3] / "skills/herdr-foreman"
+        raw = json.loads((skill / "config.example.json").read_text())
+        worker = json.loads((skill / "antigravity.example.json").read_text())
+        # The captured fresh startup display is Sonnet's; the operator sets the
+        # captured composer glyph.
+        worker["tiers"]["build"] = {"model": "claude-sonnet-4-6", "multiplier": 1.0}
+        worker["composer_glyph"] = "> "
+        raw["worker_kinds"].append(worker)
+        self.config.write_text(json.dumps(raw))
+        snapshot = json.loads(self.snapshot.read_text())
+        snapshot["measured_at"] = AT
+        snapshot["agents"]["antigravity"] = {"kind": "agy", "state": "idle", "headroom_pct": 95.049697}
+        self.snapshot.write_text(json.dumps(snapshot))
+        record = self.tmp / "task.json"
+        record.write_text(json.dumps({"task": self.TASK, "base_revision": "a" * 40, "scope": "Antigravity launch scope",
+            "allowed_paths": ["src/*"], "authorization": {"source": "fixture operator", "quote": "Implement this task."}}))
+        code, _, error = self.invoke(["task", "--record", str(record), "--now", AT])
+        self.assertEqual(code, 0, error)
+        supervision.bind(self.state, {"kind": "id", "value": "fixture-foreman", "cwd": str(self.tmp),
+            "herdr_env": "fixture", "pane_id": "foreman-pane"}, AT, root=self.tmp / "bindings")
+        self.report = self.tmp / "report.md"
+        self.assign_report(self.briefs["developer"], self.report)
+        with patch("foreman.lifecycle.identity", return_value="developer-agy"):
+            code, output, error = self.invoke(["plan", "--roles", "developer", "--task", self.TASK,
+                "--snapshot", str(self.snapshot), "--exclude", "developer=claude,codex,grok", "--now", AT])
+        self.assertEqual(code, 0, error)
+        self.plan = json.loads(output)
+
+    def invoke(self, args, client=None):
+        self.out, self.err = io.StringIO(), io.StringIO()
+        return self.run_cli(self.base() + args, client=client)
+
+    def apply(self, client):
+        real_spawn, real_apply, real_ready = lifecycle.spawn, assign.apply, composer.ensure_ready
+        with patch("foreman.cli.lifecycle.spawn", side_effect=lambda *a, **kw: real_spawn(*a, **kw, sleep=lambda _: None)), \
+                patch("foreman.cli.apply_assignments", side_effect=lambda *a, **kw: real_apply(*a, **kw, sleep=lambda _: None)), \
+                patch("foreman.cli.ensure_ready", side_effect=lambda *a, **kw: real_ready(*a, **kw, sleep=lambda _: None)):
+            return self.invoke(["apply", "--assignments", json.dumps(self.plan), "--task", self.TASK,
+                "--common", str(self.common), "--brief", "developer=" + str(self.briefs["developer"]),
+                "--report", "developer=" + str(self.report), "--now", AT, "--composer-settle", "0"], client)
+
+    def test_fresh_dispatch_records_its_agy_launch_scope_and_sends_once(self):
+        client = AntigravityOwnerNative(capture.SONNET_DISPLAY)
+        code, output, error = self.apply(client)
+        self.assertEqual(code, 0, error)
+        applied = json.loads(output)["applied"][0]
+        self.assertEqual(applied["launch_scope"], self.SCOPE)
+        self.assertEqual(applied["tier"]["native_model"], {"source": "native_display",
+            "label": "Claude Sonnet 4.6 (Thinking)", "effort": "unknown"})
+        self.assertEqual(client.agents["developer-agy"]["argv"], capture.SONNET_ARGV)
+        self.assertEqual(len([event for event in client.events if event[0] == "prompt"]), 1)
+        saved, usable = load_state_checked(self.state)
+        self.assertTrue(usable)
+        dispatch = saved["recovery"]["dispatches"][0]
+        self.assertEqual((dispatch["status"], dispatch["provider"], dispatch["worker_kind"]), ("applied", "agy", "antigravity"))
+        self.assertEqual((dispatch["launch_scope"], dispatch["result"]["launch_scope"]), (self.SCOPE, self.SCOPE))
+        self.assertEqual([row["agent"] for row in saved["assignments"]], ["developer-agy"])
+        recovery.validate_store(copy.deepcopy(saved["recovery"]), saved["assignments"])
+
+    def test_a_refused_admission_keeps_the_scoped_attempt_and_the_identical_apply_recovers(self):
+        refused = AntigravityOwnerNative(capture.FALLBACK_DISPLAY)
+        code, output, error = self.apply(refused)
+        self.assertEqual((code, output), (1, ""), error)
+        failure = json.loads("\n".join(line for line in error.splitlines() if not line.startswith(DIAGNOSTIC_PREFIX)))
+        self.assertEqual(failure["details"]["displayed"], "Gemini 3.8 Flash · high")
+        evidence = failure["details"]["recovery"]["evidence"]
+        self.assertEqual(failure["details"]["recovery"]["outcome"], "retryable")
+        self.assertEqual((evidence["closed_agents"], evidence["retained_agents"], evidence["sending_agents"],
+                          evidence["state_saved"]), (["developer-agy"], [], [], True))
+        self.assertFalse(any(event[0] == "prompt" for event in refused.events))
+        self.assertEqual(refused.panes, {})
+        saved, usable = load_state_checked(self.state)
+        self.assertTrue(usable)
+        attempt = copy.deepcopy(saved["recovery"]["dispatches"][0])
+        self.assertEqual(evidence["dispatches"], [attempt["id"]])
+        self.assertEqual((attempt["status"], attempt["launch_scope"], attempt["agent"], attempt["provider"]),
+                         ("not_sent", self.SCOPE, "developer-agy", "agy"))
+        self.assertEqual(saved["assignments"], [])
+
+        client = AntigravityOwnerNative(capture.SONNET_DISPLAY)
+        code, output, error = self.apply(client)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(len([event for event in client.events if event[0] == "prompt"]), 1)
+        final, usable = load_state_checked(self.state)
+        self.assertTrue(usable)
+        previous, relaunch = final["recovery"]["dispatches"]
+        self.assertEqual(previous, attempt)
+        self.assertEqual((relaunch["status"], relaunch["launch_scope"], relaunch["task"], relaunch["role"]),
+                         ("applied", self.SCOPE, self.TASK, "developer"))
+        self.assertEqual([row["agent"] for row in final["assignments"]], ["developer-agy"])
+        recovery.validate_store(copy.deepcopy(final["recovery"]), final["assignments"])
 
 
 if __name__ == "__main__":

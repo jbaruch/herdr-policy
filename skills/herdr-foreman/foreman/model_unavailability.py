@@ -19,6 +19,7 @@ from . import claude_native, composer, report_delivery
 from .errors import UsageError
 from .chronology import timestamp
 from .capabilities import INTERVAL
+from .tiers import TOP_MODELS
 
 
 SUPPORTED_VERSIONS = {"codex": frozenset({"0.160.1"}), "claude": frozenset({"2.1.295"})}
@@ -56,9 +57,14 @@ def launch_scope(agent, worker_kind=None):
 
 
 def validate_scope(scope):
+    """Accept a scope `launch_scope` writes for a supported tier-launch adapter.
+
+    The kinds are the adapters tier parsing accepts, agy included; supporting
+    a launch scope claims no native refusal contract (`validate_proof`).
+    """
     if (not isinstance(scope, dict) or set(scope) != {"schema_version", "kind", "window_group", "worker_kind"}
             or type(scope["schema_version"]) is not int or scope["schema_version"] != 1
-            or not isinstance(scope["kind"], str) or scope["kind"] not in {"codex", "claude", "grok"}
+            or not isinstance(scope["kind"], str) or scope["kind"] not in TOP_MODELS
             or not isinstance(scope["window_group"], str)
             or not isinstance(scope["worker_kind"], str) or not scope["worker_kind"].strip()):
         raise UsageError("Unsupported original launch scope; restore its owner-recorded configured account/worker binding, never today's config.", {})
