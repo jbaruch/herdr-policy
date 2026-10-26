@@ -177,6 +177,8 @@ def handoff(state_path, data, at, client, plugin_root, *, returning=False):
     supervision.timestamp(at)
     state = _load(state_path)
     task_evidence.require_clear(state, {data["task"]})
+    from .release_flight import require_clear
+    require_clear(state_path, state, {data["task"]})
     row = recovery.task_record(state["recovery"], data["task"])
     if not returning and recovery.task_closure(state["recovery"], state["assignments"], data["task"]) is not None:
         raise UsageError("This task is closed; register the newly authorized scope under its own task identity before admission.", {})

@@ -57,7 +57,14 @@ writer paths and separately exercise default compatibility behavior.
 `release_flight.py` reads only the selected task's deterministic private locator;
 it performs no Git/native call, directory scan, mutation or migration. Locator
 schema 1 has exact fields `schema_version`, `state_path`, `task`, `intent`
-(`{path, sha256}`), `ready`, `generation`, and `task_sha256`. The private owned
+(`{path, sha256}`), `ready`, `generation`, and `task_sha256`. The latter is the
+exported `task_fingerprint(task_row, binding)`: canonical SHA-256 over immutable
+registration `task`, `base_revision`, `scope`, `allowed_paths`, `authorization`
+and registration `at`, plus the exact original intent binding generation/digest.
+Mutable task schema/authority/progression are excluded. Readers recompute this
+against the selected current task; same-generation scope/authorization changes
+cannot replay a ready record. A workflow intent's binding also equals its
+original grant binding. The private owned
 regular file is bounded to 4 KiB. `intent` names an immutable private Git
 `foreman-release-<sha256(successor-path)>.json`, bounded to 64 KiB and binding
 the same state/task/original base, source/successor paths, branch/head,

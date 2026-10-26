@@ -32,10 +32,17 @@ READY_FIELDS = {"schema_version", "state_path", "task", "intent", "generation", 
 INTENT_FIELDS = {"schema_version", "state_path", "task", "source", "path", "branch", "head", "base_revision",
                  "source_provenance", "evidence", "binding", "at", "authorizes_release"}
 SHA = re.compile(r"[a-f0-9]{64}\Z")
+TASK_FACTS = ("task", "base_revision", "scope", "allowed_paths", "authorization", "at")
 
 
 def locator_path(state_path, task):
     return Path(str(Path(state_path).resolve()) + ".release-" + hashlib.sha256(task.encode()).hexdigest() + ".json")
+
+
+def task_fingerprint(task_row, binding):
+    """Immutable registered scope plus original intent owner; no progress facts."""
+    value = {"task": {key: task_row[key] for key in TASK_FACTS}, "binding": binding}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _fail(task, reason, message, *, unreadable=False) -> NoReturn:
@@ -137,6 +144,7 @@ def _intent(locator, task):
             workflow_contract.validate_progress(evidence["progress"])
             if (evidence["grant"]["mode"] != "service" or evidence["grant"].get("contract_schema") not in (2, 3)
                     or evidence["grant"]["generation"] != locator["generation"]
+                    or evidence["grant"]["binding"] != value["binding"]
                     or not isinstance(evidence["reports"], list) or not 2 <= len(evidence["reports"]) <= 3):
                 raise ValueError()
             for captured in [*evidence["reports"], evidence["successor"]]:
@@ -166,6 +174,8 @@ def inspect(state_path, state, task):
     task_row = state["recovery"]["tasks"].get(task)
     if task_row is None or task_row["base_revision"] != intent["base_revision"]:
         _fail(task, "release_checkout_locator_unbound", "The checkout locator differs from the registered task and original base.")
+    if task_fingerprint(task_row, intent["binding"]) != locator["task_sha256"]:
+        _fail(task, "release_checkout_task_changed", "The registered task scope/authorization or original intent binding differs from this checkout transaction.")
     parsed = _read(Path(locator["ready"]), task, LOCATOR_BYTES, absent=True)
     completed = parsed is not None
     if completed:
