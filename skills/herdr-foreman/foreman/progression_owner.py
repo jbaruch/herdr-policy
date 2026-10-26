@@ -311,10 +311,12 @@ class ServiceCapability:
 
     def require_current(self, state_path, state, task):
         from .progression_service import capture_contract
+        from .release_flight import require_clear
         self.lease.require_current()
         task_evidence.require_clear(state, {task})
         if Path(state_path).resolve() != self.state_path or task != self.task:
             raise UsageError("The progression capability covers only its admitted state and task.", {})
+        require_clear(state_path, state, {task})
         grant = current_grant(state, task)
         if (grant is None or grant["mode"] != "service" or grant["generation"] != self.generation
                 or grant["service_id"] != self.service_id or Path(grant["lease_path"]).resolve() != self.lease._path.resolve()):
@@ -518,12 +520,16 @@ def require_command(state_path, args, capability=None, client=None, client_facto
                         compatible, _ = _validate(deepcopy(raw), Path(state_path), isolate_task_evidence=True)
                     except _NoUsableState:
                         raise StateError("Restore the supported original legacy owner before task effects; unreadable evidence cannot clear its task holds.", {}) from None
-                    _require_task_evidence(state_path, args, compatible)
+                    tasks = _require_task_evidence(state_path, args, compatible)
+                    from .release_flight import require_clear
+                    require_clear(state_path, compatible, tasks or command_tasks(args, state_path, compatible))
                     return
     state = _load(state_path)
     active = {task for task, row in state["recovery"]["tasks"].items()
               if row.get("authority", {}).get("mode") == "service"}
     tasks = _require_task_evidence(state_path, args, state, active=active)
+    from .release_flight import require_clear
+    require_clear(state_path, state, tasks or command_tasks(args, state_path, state))
     if not active and capability is None:
         return
     if capability is not None:

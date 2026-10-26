@@ -49,7 +49,41 @@ writer paths and separately exercise default compatibility behavior.
 | `<canonical-state-path>.bootstrap.json` | `skills/herdr-foreman/foreman/bootstrap_recovery.py` | Original Codex launch provenance and durable bootstrap transport/cleanup receipts |
 | `<state-path>.context-evidence/` | `skills/herdr-foreman/foreman/context_evidence.py` | Immutable original ledgers and schema-1 quarantine intent journals for the known fresh/no-clear contradiction |
 | `<state-path>.task-evidence/` | `skills/herdr-foreman/foreman/task_evidence.py` | Immutable original-owner backups and schema-1 preservation receipts for derived task-local evidence holds |
+| `<canonical-state>.release-<sha256(task)>.json` | `skills/herdr-foreman/foreman/release_flight.py` reader; staged checkout transaction owner is its sole future writer | Bounded task-local locator for an immutable Git-owned checkout intent; no file inventory or release approval |
 | Controller-configured private remote owner JSON | `skills/herdr-foreman/foreman/remote_owner.py` | Attested command context, current single-controller lease, indeterminate intent and task ingress; schema and writer/reader contract in `skills/herdr-foreman/references/remote-context.md` |
+
+## Release checkout flight reader
+
+`release_flight.py` reads only the selected task's deterministic private locator;
+it performs no Git/native call, directory scan, mutation or migration. Locator
+schema 1 has exact fields `schema_version`, `state_path`, `task`, `intent`
+(`{path, sha256}`), `ready`, `generation`, and `task_sha256`. The private owned
+regular file is bounded to 4 KiB. `intent` names an immutable private Git
+`foreman-release-<sha256(successor-path)>.json`, bounded to 64 KiB and binding
+the same state/task/original base, source/successor paths, branch/head,
+provision schema-1 provenance, binding, evidence and `authorizes_release: false`.
+Evidence is either a bounded ready-ledger receipt or the original workflow
+grant/progress, report receipts and successor contract receipt. Unknown shapes,
+versions, changed hashes, aliases/links and unreadable evidence hold only that
+selected task. Original bytes and all other task owners remain untouched.
+
+`ready` is exactly the intent path plus `.ready`. Its schema-1 exact fields are
+`schema_version`, `state_path`, `task`, `intent`, `generation`, `task_sha256`, and
+`authorizes_progression: false`; it is private, owned, regular and at most
+4 KiB. It must bind the original intent and exact current legacy generation or
+expected successor workflow grant/generation/contract. A copied, malformed or
+unbound ready record cannot clear the fence. A valid ready record proves only
+absence of this in-flight fence; actual role, Git/head/branch/source, policy,
+holds, native effects and evidence checks still run. The transaction owner
+alone retires its exact settled locator; this reader never deletes it.
+
+The compatibility release ships these readers and both selected legacy-command
+and native-capability gates without a writer or bypass. Future locator/ready
+and Git handoff writes must remain behind the single false
+`release_activation.NEW_OWNER_WRITES_ENABLED` until both package channels
+publish these readers. Existing ordinary legacy work remains usable. Pending
+handoffs resume only through their exact verified owner intent, never a caller
+flag, empty-ledger reset or generic catch-and-drop.
 
 ## Task-Local Evidence Holds
 
