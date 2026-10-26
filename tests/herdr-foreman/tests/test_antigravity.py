@@ -135,6 +135,14 @@ class AntigravityTest(unittest.TestCase):
         result = planner.plan(["developer"], snapshot)
         self.assertEqual(result["assignments"]["developer"], worker.name)
 
+    def test_the_example_glyph_reads_the_captured_startup_composer_as_empty(self):
+        example = json.loads((Path(__file__).resolve().parents[3] / "skills/herdr-foreman/antigravity.example.json").read_text())
+        worker = config.Agent("antigravity", "agy", "/usage", "marker", "visible", "/clear",
+                              composer_glyph=example["composer_glyph"])
+        startup = composer.inspect_composer(capture.FALLBACK_WARNING_ANSI, worker, ansi=True)
+        self.assertEqual((startup.visible, startup.occupied, startup.content), (True, False, ""))
+        self.assertFalse(composer.checkable(config.Agent("antigravity", "agy", "/usage", "marker", "visible", "/clear")))
+
     def test_native_display_proves_only_the_model_it_shows(self):
         opus, sonnet = ({"model": model, "effort": None} for model in ("claude-opus-4-6-thinking", "claude-sonnet-4-6"))
         proof = {"source": "native_display", "effort": "unknown"}
@@ -386,10 +394,8 @@ class OwnerDispatchTest(CliCase):
         skill = Path(__file__).resolve().parents[3] / "skills/herdr-foreman"
         raw = json.loads((skill / "config.example.json").read_text())
         worker = json.loads((skill / "antigravity.example.json").read_text())
-        # The captured fresh startup display is Sonnet's; the operator sets the
-        # captured composer glyph.
+        # The captured fresh startup display is Sonnet's.
         worker["tiers"]["build"] = {"model": "claude-sonnet-4-6", "multiplier": 1.0}
-        worker["composer_glyph"] = "> "
         raw["worker_kinds"].append(worker)
         self.config.write_text(json.dumps(raw))
         snapshot = json.loads(self.snapshot.read_text())
