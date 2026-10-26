@@ -248,6 +248,22 @@ class ObserverTest(unittest.TestCase):
         self.assertNotIn("factory_sources_truncated", gaps)
         self.assertEqual(json.loads(invalid.read_text()), {"schema_version": 99})
 
+    def test_nonregular_binding_receipt_cannot_stall_independent_discovery(self):
+        selected = self.root / "registry"
+        registry = selected / "supervision-bindings"
+        registry.mkdir(parents=True)
+        os.mkfifo(registry / "unsafe.json", mode=0o600)
+        (registry / "current.json").write_text(json.dumps(self.supervised["binding"]))
+        program = ("import json,sys; from pathlib import Path; sys.path[:0]=[sys.argv[1],sys.argv[3]]; "
+                   "from factory_observer import sources; "
+                   "paths,gaps=sources.owner_paths(Path(sys.argv[2]),[]); print(json.dumps([paths,gaps]))")
+        result = subprocess.run([sys.executable, "-I", "-c", program, str(ROOT / "skills/herdr-observer"), str(selected),
+                                 str(ROOT / "skills/herdr-foreman")], capture_output=True, text=True, timeout=3, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        paths, gaps = json.loads(result.stdout)
+        self.assertEqual(paths, [str(self.owner.resolve())])
+        self.assertIn("factory_receipt:source_invalid", gaps)
+
     def test_explicit_and_receipt_parent_loops_remain_local_coverage_gaps(self):
         loop = self.owner.parent / "loop"
         loop.symlink_to("loop", target_is_directory=True)
