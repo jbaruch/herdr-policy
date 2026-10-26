@@ -2140,8 +2140,6 @@ def _apply(args, client, warn, trace, hold_gates):
                     from .role_context import startup_environment
                     pane = lifecycle.spawn(
                         client, agents_by_name[name], tier,
-                        cwd=(release_checkout.native_cwd(state_path) if role == "release"
-                             and getattr(getattr(client, "context", None), "mode", "native") == "native" else None),
                         history=state["assignments"], before_start=preflight_start, owned=owned,
                         workspace_env=(startup_environment(state_path, _config_path(args))
                                        if getattr(getattr(client, "context", None), "mode", "native") == "native" else ()),

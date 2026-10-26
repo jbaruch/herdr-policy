@@ -92,6 +92,13 @@ def commit(state_path, state, intent):
     evidence = intent["evidence"]
     if evidence["kind"] != "workflow":
         return None
+    if not release_activation.enabled():
+        from .release_flight import inspect
+        from .release_checkout import _read
+        from pathlib import Path
+        recorded = inspect(state_path, state, intent["task"])
+        if recorded is None or _read(Path(recorded["intent"]["path"])) != intent:
+            release_activation.require("native release-checkout rebind")
     captured, document = capture_contract(evidence["successor"]["path"])
     if captured != evidence["successor"]:
         raise UsageError("Restore the immutable successor contract before completing the recorded handoff.", {})

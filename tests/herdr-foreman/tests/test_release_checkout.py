@@ -23,7 +23,7 @@ from tests import test_workflow_service as fixture
 from tests import test_workflow_adoption as adoption_fixture
 from tests.test_members import ledger_text
 from foreman import cli, progression_owner as authority, provision, recovery, release_checkout, supervision
-from foreman.errors import ForemanError, UsageError
+from foreman.errors import ForemanError, StateError, UsageError
 from foreman.state import load_state_checked, save_state, state_lock
 
 
@@ -56,6 +56,8 @@ class ReleaseCheckoutTest(unittest.TestCase):
             if args == ("fetch", "--quiet", "origin"):
                 return original(path, "fetch", "--quiet", str(self.remote),
                                 "+refs/heads/*:refs/remotes/origin/*")
+            if args[:3] == ("ls-remote", "--heads", "origin"):
+                return original(path, "ls-remote", "--heads", str(self.remote), *args[3:])
             return original(path, *args)
         transport = patch.object(release_checkout, "git", side_effect=local_network)
         transport.start()
@@ -150,9 +152,17 @@ class ReleaseCheckoutTest(unittest.TestCase):
         self.assertNotEqual(failed_remove.returncode, 0)
         self.assert_preserved(values)
 
-    def test_native_workflow_rebind_retains_verification_and_launches_setup_outside_git(self):
+    def test_native_rebind_preserves_project_only_bootstrap_and_clean_business_checkout(self):
         self.verified()
         values = self.local_files()
+        project = {".tessl/RULES.md": b"Project-only Tessl policy fixture.\n",
+                   "agents.yaml": b"Project-only ACR declaration fixture.\n",
+                   ".codex/config.toml": b"project_only = true\n"}
+        for relative, body in project.items():
+            path = self.source / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+        values.update(project)
         with self.case.owner.session() as capability:
             failure = self.case.runner(capability).tick()
         self.assertEqual(failure["data"]["exception"]["code"], "workflow_owner_refused")
@@ -183,15 +193,20 @@ class ReleaseCheckoutTest(unittest.TestCase):
         def setup(**options):
             root = Path(options["cwd"])
             locations.append(root)
-            (root / "AGENTS.md").write_text("Private owned fixture startup.\n")
-            (root / ".codex").mkdir()
-            (root / ".codex/config.toml").write_text("private = true\n")
+            self.assertEqual(root, self.source)
+            for relative, body in project.items():
+                self.assertEqual((root / relative).read_bytes(), body)
+                self.assertFalse((self.target / relative).exists())
+            # Model ordinary provider setup without reclassifying or replacing
+            # pre-existing user files. Its project remains the retained source.
+            (root / "native-setup-created.txt").write_text("Private fixture startup.\n")
             return original_start(**options)
         with patch.object(self.case.native, "workspace_create", side_effect=setup), self.case.owner.session(generation=2) as capability:
             runner = self.case.runner(capability)
             self.case.advance(runner, lambda: self.case.progress()["phase"] == "merge", delivery=self.case.deliver)
         self.assertEqual(len(locations), 1)
-        self.assertFalse(locations[0].is_relative_to(self.target))
+        self.assertEqual(locations[0], self.source)
+        self.assertFalse(Path(str(self.path) + ".release-runtime").exists())
         self.assertEqual(self.leftovers(self.target)[0], 0)
         self.assertEqual([row["role"] for row in self.case.owner.state()["assignments"]], ["developer", "reviewer", "release"])
         self.assert_preserved(values)
@@ -205,7 +220,7 @@ class ReleaseCheckoutTest(unittest.TestCase):
                 self.prepare()
         self.assertTrue(self.target.is_dir())
         self.assertFalse(provision.receipt_path(self.target).exists())
-        with patch.object(provision, "record", side_effect=original):
+        with patch.object(provision, "record", side_effect=original), patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", False):
             self.prepare()
         self.assertEqual(self.leftovers(self.target)[0], 0)
         self.assert_preserved(values)
@@ -223,6 +238,41 @@ class ReleaseCheckoutTest(unittest.TestCase):
             self.prepare()
         self.assertEqual(provision.git(self.source, "branch", "--show-current"), "feature/task")
         self.assertFalse(self.target.exists())
+
+    def test_deleted_remote_branch_cannot_reuse_its_stale_tracking_head(self):
+        self.verified(legacy=True)
+        values = self.local_files()
+        self.case.git("fetch", str(self.remote), "+refs/heads/*:refs/remotes/origin/*")
+        self.case.git("config", "fetch.prune", "false")
+        self.case.git("config", "remote.origin.prune", "false")
+        self.assertEqual(self.case.git("rev-parse", "refs/remotes/origin/feature/task").strip(), self.head)
+        self.case.git("push", str(self.remote), "--delete", "feature/task")
+        with self.assertRaisesRegex(UsageError, "freshly fetched remote"):
+            self.prepare()
+        self.assertEqual(self.case.git("rev-parse", "refs/remotes/origin/feature/task").strip(), self.head)
+        self.assertEqual(provision.git(self.source, "branch", "--show-current"), "feature/task")
+        self.assertFalse(self.target.exists())
+        for relative, body in values.items():
+            self.assertEqual((self.source / relative).read_bytes(), body)
+
+    def test_existing_armed_native_rebind_replays_with_new_writes_disabled(self):
+        self.verified()
+        values = self.local_files()
+        with patch("foreman.release_rebind.save_state", side_effect=StateError("Fixture primary write failed; preserve the intent.", {})):
+            with self.assertRaisesRegex(StateError, "primary write failed"):
+                self.prepare()
+        self.assertEqual(self.case.owner.state()["recovery"]["tasks"]["one"]["authority"]["generation"], 1)
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", False):
+            self.assertEqual(self.prepare()["generation"], 2)
+        self.assert_preserved(values)
+
+    def test_fresh_native_release_keeps_existing_cwd_without_runtime_store(self):
+        self.verified()
+        before = self.path.read_bytes()
+        with patch("foreman.release_activation.NEW_OWNER_WRITES_ENABLED", False):
+            self.assertEqual(release_checkout.native_cwd(self.path, "one", str(self.source)), str(self.source))
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(Path(str(self.path) + ".release-runtime").exists())
 
     def test_live_lease_and_pending_effect_preserve_source(self):
         self.verified()

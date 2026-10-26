@@ -130,8 +130,9 @@ return a blocking report; never fix it from the release seat. Required version
 edits therefore return to implementation too. The executor owns local cleanup
 after release; the release worker preserves the writer checkout.
 
-Native release startup uses a private owner runtime cwd outside the repository;
-the brief explicitly selects the actual worktree and its project policy. If
+Native release startup keeps the existing project cwd. After a handoff it uses
+the owner-proved retained source, preserving project-local Tessl/ACR bootstrap;
+the brief selects the actual successor for business Git and its project policy. If
 local setup has already dirtied a settled, verified writer, the bound foreman
 uses `prepare-release-checkout` from round setup to preserve that source and
 prepare a clean same-head successor before release transport. The explicit

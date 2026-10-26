@@ -97,7 +97,9 @@ def _pushed_head(source, branch, expected):
     if not pushes or any(value != fetch for value in pushes):
         raise UsageError("Restore the task's matching fetch/push origin before preparing release; conflicting targets remain unchanged.", {})
     git(source, "fetch", "--quiet", "origin")
-    if (git(source, "rev-parse", "HEAD") != expected
+    remote = git(source, "ls-remote", "--heads", "origin", "refs/heads/" + branch).splitlines()
+    if (len(remote) != 1 or remote[0].split("\t") != [expected, "refs/heads/" + branch]
+            or git(source, "rev-parse", "HEAD") != expected
             or git(source, "rev-parse", "refs/heads/" + branch) != expected
             or git(source, "rev-parse", "refs/remotes/origin/" + branch) != expected):
         raise UsageError("The source, local branch and freshly fetched remote must all equal the independently verified head; preserve changed refs and obtain current verification.", {})
@@ -356,6 +358,10 @@ def _task_snapshot(state, task):
 
 
 def _execute(state_path, snapshot, intent_path, intent, client, *, new):
+    if new:
+        release_activation.require("clean release-checkout handoff")
+    elif _read(intent_path) != intent:
+        raise UsageError("Resume only the exact original owner-written checkout intent; caller data cannot bypass activation.", {})
     task, source, target = intent["task"], Path(intent["source"]), Path(intent["path"])
     original, branch, head = intent["source_provenance"], intent["branch"], intent["head"]
     common = str(intent_path.parent)
@@ -532,17 +538,30 @@ def original_scope(document, state_path, state):
     return {"repository": declaration["repository"], "contract": original}
 
 
-def native_cwd(state_path):
-    """Fresh private runtime cwd keeps native local setup outside release Git."""
-    root = Path(str(Path(state_path).resolve()) + ".release-runtime")
-    try:
-        root.mkdir(mode=0o700, exist_ok=True)
-        _owned(root, directory=True)
-        if stat.S_IMODE(root.stat().st_mode) & 0o077:
-            raise UsageError("Keep the release runtime directory private to this owner; preserve its existing contents.", {})
-        return tempfile.mkdtemp(prefix="native-", dir=root)
-    except OSError:
-        raise StateError("Cannot prepare a private native release cwd outside the checkout; restore owner-directory access without deleting local work.", {}) from None
+def native_cwd(state_path, task, worktree):
+    """Keep the original project bootstrap; only business Git uses a successor.
+
+    No-handoff launches retain their existing worktree cwd. A current owned
+    handoff proves the retained source through its immutable Git owner bridge;
+    neither caller cwd nor a global plugin installation substitutes for it.
+    No new runtime directory, config copy or per-launch history is created.
+    """
+    location = receipt_path(worktree)
+    if not location.exists() and not location.is_symlink():
+        return worktree
+    intent = read(worktree, state_path, task)
+    state = authority._load(state_path)
+    grant = authority.current_grant(state, task)
+    if grant is None or grant["mode"] != "service" or grant.get("contract_schema") not in (2, 3):
+        raise UsageError("Use the original admitted workflow before selecting a retained startup project; a receipt alone grants no role.", {})
+    from .progression_service import capture_contract
+    captured, document = capture_contract(grant["contract"]["path"])
+    if captured != grant["contract"] or document["repository"]["worktree"] != str(worktree):
+        raise UsageError("Restore the exact current workflow and successor before selecting its original project bootstrap.", {})
+    original = original_scope(document, state_path, state)
+    if original is None or original["repository"]["worktree"] != intent["source"]:
+        raise UsageError("The retained startup project differs from the exact owner-written source; preserve both checkouts for provenance recovery.", {})
+    return intent["source"]
 
 
 def register_commands(sub, common):

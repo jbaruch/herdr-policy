@@ -314,9 +314,11 @@ checkout handoff writes follow the shared release activation; existing recorded
 handoffs remain readable/replayable. Git/native I/O runs outside short shared
 owner transactions; a task lease and durable locator fence only the affected
 task. The final commit reloads current state, preserving independent progress.
-Native release startup runs in a fresh
-private runtime cwd outside the selected checkout. Every arbitrary untracked
-file in that checkout still blocks the ordinary release gate.
+Native workflow release startup uses the intent's verified retained source,
+preserving project-local Tessl/ACR hooks and policy; business Git uses the clean
+successor named in the brief. Fresh/no-handoff and legacy launches keep their
+existing startup cwd. No per-launch runtime directory or history is created.
+Every arbitrary untracked file in the successor still blocks the ordinary gate.
 
 ## Step 8 — Compose the Briefs
 

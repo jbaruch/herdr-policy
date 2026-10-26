@@ -1,9 +1,10 @@
 # Native release responsibility
 
-Native startup runs outside the repository in a private owner runtime directory.
-Change to the repository.worktree in the admitted task before repository work;
-read its applicable AGENTS.md and project policy. Keep runtime-local setup
-outside that checkout. Any untracked file there still blocks release cleanliness.
+Native startup retains the existing project context. After a checkout handoff,
+the owner proves its original retained source as the startup cwd, preserving
+project-local hooks and policy discovery. Change to repository.worktree in the
+admitted task for business Git and read its applicable AGENTS.md/project policy.
+Preserve the retained source; any untracked file in the selected checkout blocks.
 
 Run the complete selected coding-policy release skill and all of its binding
 step references. This assignment owns the authorized release outcome, through

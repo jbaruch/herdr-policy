@@ -84,9 +84,9 @@ absence of this in-flight fence; actual role, Git/head/branch/source, policy,
 holds, native effects and evidence checks still run. The transaction owner
 alone retires its exact settled locator; this reader never deletes it.
 
-The 0.19.0 compatibility release ships these readers and both selected
-legacy-command and native-capability gates without a writer or bypass.
-`release_checkout.py` owns the subsequent transaction writer, which requires
+The 0.19.0 compatibility release ships these readers, selected legacy-command
+and native-capability gates, and the full transaction writer with new writes
+disabled. `release_checkout.py` owns that writer, which requires
 the one shared `release_activation.NEW_OWNER_WRITES_ENABLED` for every new
 locator/ready/Git handoff. Both package channels must publish the readers before
 the activation release enables that flag. Existing ordinary legacy work remains usable. Pending
@@ -1913,13 +1913,15 @@ checkout handoff intents/locators therefore follow the shared false activation f
 already recorded handoffs remain readable/replayable. No contract/adoption
 field is added under an older header.
 
-Native release launches use a fresh private `native-*` cwd under
-`<canonical-state-path>.release-runtime/`, outside the selected Git checkout.
-The release brief names the worktree and requires its applicable project
-policy. Runtime-created local files are retained in their own cwd; no blanket
-ignore or cleanup classification is created. The original dirty source remains
-visible in ordinary worktree inspection. Any unrelated private/untracked file
-in the clean successor still blocks the unchanged generic release gate.
+Native workflow release launches after a handoff use the exact retained source
+from the current owner-proved Git intent as startup cwd. Project-local
+Tessl/ACR hooks/config/policy remain discoverable there; owner routing environment
+alone does not install those hooks, and no global installation is assumed.
+The brief names the clean successor for business Git and requires its applicable
+project policy. Fresh/no-handoff and legacy launches keep their original cwd.
+No runtime directory store, copied setup or per-launch local history is created.
+The original source stays visible with its local files. Any unrelated private
+or untracked file in the clean successor still blocks the unchanged release gate.
 
 ## Trigger classification output
 
