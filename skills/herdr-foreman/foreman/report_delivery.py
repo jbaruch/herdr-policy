@@ -21,6 +21,7 @@ import re
 import unicodedata
 from fnmatch import fnmatchcase
 from pathlib import Path
+import stat
 
 from . import antigravity_native, claude_native
 from . import recovery as ledger
@@ -44,6 +45,10 @@ CONTAINER = re.compile(r"^ {0,3}(?:>|[-+*•][ \t]|[0-9]{1,9}[.)][ \t])")
 RECOVERY_INPUTS = {"id", "dispatch", "report", "wait_receipt", "pane", "visible", "source"}
 STALE_RECOVERY_INPUTS = RECOVERY_INPUTS | {"plan"}
 RECOVERY_ARTIFACTS = {"report", "wait_receipt", "pane", "visible", "source", "brief", "common"}
+NATIVE_ASSESSMENT_VERSION = 1
+MAX_ASSESSMENT_SOURCE_BYTES = 16 * 1024 * 1024
+NATIVE_ASSESSMENT_FIELDS = frozenset({"schema_version", "provider", "native_session", "dispatch_sha256",
+                                     "assignment_sha256", "report", "source"})
 
 
 def bare_final(text, report):
@@ -350,49 +355,132 @@ def source_prompt(body, kind, session=None, *, path=None):
 
 
 def native_model_matches(body, session, path, tier):
-    """Whether the canonical Antigravity turn selected the dispatched tier's model (#73)."""
+    """Whether this canonical conversation proves the dispatched tier's selection (#73)."""
     rows = _rows(body)
     expected = antigravity_native.expected_label(tier)
     return (rows is not None and expected is not None
             and antigravity_native.model_selection(rows, session, path) == expected)
 
 
-def require_primary_delivery(dispatch, assignment, enrolled, report):
-    """Bind Antigravity acceptance to the actual completed model and request."""
-    tier = (dispatch.get("result") or {}).get("tier")
-    from .engagement import requires_native_delivery
-    enrolled_native = enrolled.get("native_session")
-    if (not requires_native_delivery(dispatch)
-            and (not isinstance(enrolled_native, dict) or enrolled_native.get("agent") != "agy")):
-        return
-    identity = native_identity({"agent_session": enrolled.get("native_session")})
+def _assessment_dispatch_digest(dispatch):
+    """Immutable send identity; later review receipts do not change its proof."""
+    fields = {key: dispatch.get(key) for key in ("id", "fingerprint", "task", "role", "agent", "fix_round",
+        "assignment_index", "provider", "worker_kind", "common", "brief")}
+    result = dispatch.get("result") or {}
+    fields["result"] = {key: result.get(key) for key in ("context_session", "tier", "assignment_scoped")}
+    return ledger.canonical_digest(fields)
+
+
+def validate_native_assessment(proof, dispatch, assignment, report):
+    """Validate saved relationships only; historical loads reopen no source."""
     original = native_identity({"agent_session": assignment.get("context_session")})
-    if (identity is None or identity["agent"] != "agy" or original is not None and identity != original
-            or enrolled.get("report") != report):
-        raise UsageError("Antigravity acceptance needs the original dispatch's enrolled native session and report; preserve unknown evidence.", {})
-    path = source_path(identity)
-    source = read_native_source(path) if path is not None else None
-    if source is None:
-        raise UsageError("Restore this Antigravity conversation's readable canonical transcript before accepting its report.", {})
+    tier = (dispatch.get("result") or {}).get("tier")
+    if (not isinstance(proof, dict) or set(proof) != NATIVE_ASSESSMENT_FIELDS
+            or type(proof.get("schema_version")) is not int or proof["schema_version"] != NATIVE_ASSESSMENT_VERSION
+            or proof["provider"] != "agy" or original is None or original["agent"] != "agy"
+            or dispatch.get("provider") not in (None, "agy")
+            or not isinstance(tier, dict) or tier.get("kind") not in (None, "agy")
+            or proof["native_session"] != original
+            or proof["dispatch_sha256"] != _assessment_dispatch_digest(dispatch)
+            or proof["assignment_sha256"] != ledger.canonical_digest(assignment)
+            or proof["report"] != report):
+        raise UsageError("Restore this native assessment's original dispatch, assignment, provider and session binding; an unrelated receipt proves no delivery.", {})
+    ledger.validate_receipt(proof["report"])
+    source = proof["source"]
+    if (not isinstance(source, dict) or set(source) != {"path", "sha256", "bytes"}
+            or type(source["bytes"]) is not int or not 1 <= source["bytes"] <= MAX_ASSESSMENT_SOURCE_BYTES):
+        raise UsageError("Restore the native assessment's bounded original source prefix receipt; preserve unknown delivery.", {})
+    ledger.validate_receipt({key: source[key] for key in ("path", "sha256")})
+    expected = antigravity_native.transcript_path(original["value"])
+    if expected is None or source["path"] != str(expected) or expected.resolve() != expected:
+        raise UsageError("Use this original session's canonical native transcript; an archive or another conversation cannot prove its delivery.", {})
+
+
+def _primary_source_matches(dispatch, identity, body, path, report):
+    tier = (dispatch.get("result") or {}).get("tier")
     from .assign import assignment_text, tiered_prompt
     contents = {}
     for key in ("common", "brief"):
-        _saved, body = ledger.receipt(dispatch[key])
-        contents[dispatch[key]] = body.encode("utf-8")
+        _saved, frozen_body = ledger.receipt(dispatch[key])
+        contents[dispatch[key]] = frozen_body.encode("utf-8")
     prompt = assignment_text(dispatch["role"], dispatch["common"], dispatch["brief"])
     if not isinstance(tier, dict):
         raise UsageError("This Antigravity dispatch has no proven requested model; preserve its report without accepting it.", {})
     prompt, digest = tiered_prompt(prompt, tier, dispatch["common"], dispatch["brief"], contents)
     if (tier.get("prompt_hash") != digest
             or "REPORT: " + report not in contents[dispatch["brief"]].decode("utf-8").splitlines()
-            or not prompt_matches(source_prompt(source[1], "agy", identity["value"], path=path), prompt, "agy")
-            or not bare_final(source_final(source[1], "agy", identity["value"], path=path), report)
-            or not native_model_matches(source[1], identity["value"], path, tier)):
+            or not prompt_matches(source_prompt(body, "agy", identity["value"], path=path), prompt, "agy")
+            or not bare_final(source_final(body, "agy", identity["value"], path=path), report)
+            or not native_model_matches(body, identity["value"], path, tier)):
         raise UsageError("Antigravity's completed native turn does not prove this dispatch, report and requested model; preserve the report without accepting it.", {})
-    current = read_native_source(path)
+
+
+def _assessment_source(path, prefix_bytes=None):
+    """Read one owned canonical source within the assessment byte budget."""
+    if path is None:
+        return None
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or prefix_bytes is not None and info.st_size < prefix_bytes):
+                raise UsageError("Restore the original owned canonical native prefix before relying on this assessment; keep its delivery unproven.", {})
+            prefix = handle.read(prefix_bytes if prefix_bytes is not None else MAX_ASSESSMENT_SOURCE_BYTES + 1)
+        if not prefix or len(prefix) > MAX_ASSESSMENT_SOURCE_BYTES:
+            raise UsageError("The canonical native source exceeds the assessment byte budget or is empty; preserve its history and keep delivery unknown.", {})
+        body = prefix.decode("utf-8")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError):
+        raise UsageError("Restore this assessment's readable canonical native source prefix; do not resend or replace its original assignment.", {}) from None
+    return prefix, body
+
+
+def verify_native_assessment(proof, dispatch, assignment, report):
+    """Recheck only the selected assessment's committed canonical prefix.
+
+    Later warm turns append to the same transcript. Their bytes are outside
+    this receipt, so an unchanged original completed turn remains evidence.
+    """
+    validate_native_assessment(proof, dispatch, assignment, report)
+    source = proof["source"]
+    path = Path(source["path"])
+    saved = _assessment_source(path, source["bytes"])
+    if saved is None:
+        raise UsageError("Restore this assessment's original canonical native source; missing evidence proves no delivery.", {})
+    prefix, body = saved
+    if len(prefix) != source["bytes"] or hashlib.sha256(prefix).hexdigest() != source["sha256"]:
+        raise UsageError("This assessment's original native prefix changed or was truncated; preserve the old receipt and keep delivery unproven.", {})
+    _primary_source_matches(dispatch, proof["native_session"], body, path, report["path"])
+    if _assessment_source(path, source["bytes"]) != saved:
+        raise UsageError("The selected native prefix changed during verification; preserve its receipt and retry without resending work.", {})
+
+
+def require_primary_delivery(dispatch, assignment, enrolled, report):
+    """Bind Antigravity acceptance to the actual completed model and request."""
+    from .engagement import requires_native_delivery
+    enrolled_native = enrolled.get("native_session")
+    if not requires_native_delivery(dispatch):
+        if isinstance(enrolled_native, dict) and enrolled_native.get("agent") == "agy":
+            raise UsageError("The enrolled native provider differs from the original dispatch; restore its actual provider before assessment.", {})
+        return None
+    identity = native_identity({"agent_session": enrolled_native})
+    original = native_identity({"agent_session": assignment.get("context_session")})
+    if (identity is None or identity["agent"] != "agy" or original != identity or enrolled.get("report") != report):
+        raise UsageError("Antigravity acceptance needs the original dispatch's known enrolled native session and report; preserve unknown evidence.", {})
+    path = source_path(identity)
+    source = _assessment_source(path)
+    if source is None or not 1 <= len(source[0]) <= MAX_ASSESSMENT_SOURCE_BYTES:
+        raise UsageError("Restore this Antigravity conversation's readable canonical transcript within the native assessment source budget; preserve its original owner and unknown delivery.", {})
+    _primary_source_matches(dispatch, identity, source[1], path, report)
+    current = _assessment_source(path)
     if current is None or current[0] != source[0]:
         raise UsageError("Antigravity's canonical transcript changed during acceptance; retry the read without resending work.", {})
-    return {"path": str(path), "sha256": hashlib.sha256(source[0]).hexdigest()}
+    return {"schema_version": NATIVE_ASSESSMENT_VERSION, "provider": "agy", "native_session": identity,
+            "dispatch_sha256": _assessment_dispatch_digest(dispatch),
+            "assignment_sha256": ledger.canonical_digest(assignment), "report": ledger.receipt(report)[0],
+            "source": {"path": str(path), "sha256": hashlib.sha256(source[0]).hexdigest(), "bytes": len(source[0])}}
 
 
 def native_identity(info):

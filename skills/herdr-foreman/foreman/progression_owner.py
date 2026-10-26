@@ -513,16 +513,17 @@ def require_command(state_path, args, capability=None, client=None, client_facto
                     tasks = store.get("tasks", {})
                     if isinstance(tasks, dict) and any(isinstance(row, dict) and "authority" in row for row in tasks.values()):
                         raise UsageError("Older recovery contains unowned task authority; preserve it for its current owner.", {})
+                    from .state import _NoUsableState, _validate
+                    try:
+                        compatible, _ = _validate(deepcopy(raw), Path(state_path), isolate_task_evidence=True)
+                    except _NoUsableState:
+                        raise StateError("Restore the supported original legacy owner before task effects; unreadable evidence cannot clear its task holds.", {}) from None
+                    _require_task_evidence(state_path, args, compatible)
                     return
     state = _load(state_path)
     active = {task for task, row in state["recovery"]["tasks"].items()
               if row.get("authority", {}).get("mode") == "service"}
-    isolated = task_evidence.faults(state)
-    tasks = command_tasks(args, state_path, state) if active or isolated else set()
-    task_evidence.require_clear(state, tasks)
-    if isolated and args.command in WORKER_EFFECT_COMMANDS and not tasks:
-        raise UsageError("Select the actual independent task before worker effects while assignment evidence is held; an unknown task scope cannot bypass its hold.",
-                         {"reason": "task_evidence_scope_unknown", "authorizes_progression": False})
+    tasks = _require_task_evidence(state_path, args, state, active=active)
     if not active and capability is None:
         return
     if capability is not None:
@@ -542,6 +543,17 @@ def require_command(state_path, args, capability=None, client=None, client_facto
     elif tasks.intersection(active) or not tasks and active:
         raise UsageError("This task belongs to a progression service. Use its current authority or explicitly return a settled task; legacy dispatch cannot run alongside it.",
                          {"tasks": sorted(tasks), "service_owned_count": len(active)})
+
+
+def _require_task_evidence(state_path, args, state, *, active=()):
+    """Apply the same task hold to current and owner-parsed legacy views."""
+    isolated = task_evidence.faults(state)
+    tasks = command_tasks(args, state_path, state) if active or isolated else set()
+    task_evidence.require_clear(state, tasks)
+    if isolated and args.command in WORKER_EFFECT_COMMANDS and not tasks:
+        raise UsageError("Select the actual independent task before worker effects while assignment evidence is held; an unknown task scope cannot bypass its hold.",
+                         {"reason": "task_evidence_scope_unknown", "authorizes_progression": False})
+    return tasks
 
 
 @contextmanager

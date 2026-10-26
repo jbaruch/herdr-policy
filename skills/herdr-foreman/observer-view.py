@@ -35,7 +35,7 @@ def main():
         reason = ("owner_schema_unsupported" if isinstance(exc, StateError) else
                   "owner_projection_row_exceeds_budget" if isinstance(exc, ForemanError) else
                   "owner_projection_source_unreadable" if isinstance(exc, OSError) else "owner_projection_source_invalid")
-        print(json.dumps({"error": reason, "recovery": "Preserve the original owner. Inspect this selected observer-view section and restore its supported readable metadata; no migration or runtime action was attempted."}), file=sys.stderr)
+        print(json.dumps({"error": reason, "section": args.section, "recovery": "Preserve the original owner. Inspect this selected observer-view section and restore its supported readable metadata; no migration or runtime action was attempted."}), file=sys.stderr)
         return 2
     print(json.dumps(result, indent=2))
     return 0

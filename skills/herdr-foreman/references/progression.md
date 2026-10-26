@@ -274,6 +274,9 @@ timestamp, leave no pending or live disposable probe, and records only an
 incomplete measurement outcome. Missing processes, dispatches, reports and timeouts
 are not readback. Legacy started measurements without a saved timestamp can use
 only one unambiguous exact probe/config receipt; a later snapshot is never adopted.
+Both completed-snapshot and closed-probe readbacks require unambiguous live
+native inventory without disposable probes. Cleanup can fail before its recovery
+row is retained; a snapshot or absent row never proves that native owner is gone.
 
 Use `--readback-current` on the existing `progression-reconcile` command to derive
 the measurement evidence from its owners. Its record needs only the task,

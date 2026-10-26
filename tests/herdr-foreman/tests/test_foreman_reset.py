@@ -23,11 +23,12 @@ from unittest.mock import patch
 
 sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills/herdr-foreman")))
 
-from foreman import foreman_reset, retrospective, runnable, supervision_runtime
+from foreman import foreman_reset, retrospective, runnable, supervision_runtime, supervision
 from foreman.herdr import HerdrClient
 from foreman.state import state_lock
 from foreman.errors import HerdrError, StateError, UsageError
 from tests.test_cli import CliCase
+from tests.goal_fakes import GoalHost, goal
 
 PANE = "w9:p1"
 #: The foreman's native session as supervision-bind stores it.
@@ -174,6 +175,8 @@ class FakeClient:
         self.cleared = False
         self.prompt_started = False
         self.keystrokes = []
+        self.reported_session = None
+        self.session_reports = []
 
     def identify(self, pid):
         """Stands in for supervision_runtime.process_identity, which reads `ps`."""
@@ -195,12 +198,21 @@ class FakeClient:
         self.keystrokes.append(text)
 
     def pane_get(self, pane_id):
+        if self.reported_session is not None:
+            return {"pane_id": pane_id, "agent_session": {"source": "herdr:" + self.kind, "agent": self.kind,
+                                                          **self.reported_session}}
         if self.sessions is None:
             value = CLEARED if self.cleared else SESSION["value"]
         else:
             value = self.sessions.pop(0) if len(self.sessions) > 1 else self.sessions[0]
         return {"pane_id": pane_id, "agent_session": {"source": "herdr:" + self.kind, "agent": self.kind,
                                                       "kind": "id", "value": value}}
+
+    def pane_report_agent_session(self, pane_id, kind, session, seq, *, session_start_source):
+        self.session_reports.append((pane_id, kind, session.copy(), seq, session_start_source))
+        if session_start_source == "clear":
+            self.reported_session = session.copy()
+        return {}
 
     def pane_process_info(self, pane_id):
         pid = self.pids.pop(0) if len(self.pids) > 1 else self.pids[0]
@@ -637,7 +649,8 @@ class DeliverTest(unittest.TestCase):
             def pane_get(self, pane_id):
                 return {"pane_id": pane_id, "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "path", "value": "/loop/t.jsonl"}}
         with patch("foreman.foreman_reset.supervision.canonical", side_effect=RuntimeError("Symlink loop")):
-            self.assertIsNone(foreman_reset.pane_session(Looping(["idle"]), PANE))
+            with self.assertRaises(foreman_reset.SessionChanged):
+                foreman_reset.pane_session(Looping(["idle"]), PANE)
             with self.assertRaises(foreman_reset.SessionChanged):
                 self.run_deliver(Looping(["idle"]), native_session={"kind": "path", "value": "/loop/t.jsonl"})
 
@@ -645,7 +658,8 @@ class DeliverTest(unittest.TestCase):
         class Nul(FakeClient):
             def pane_get(self, pane_id):
                 return {"pane_id": pane_id, "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "path", "value": "/tmp/t\x00.jsonl"}}
-        self.assertIsNone(foreman_reset.pane_session(Nul(["idle"]), PANE))
+        with self.assertRaises(foreman_reset.SessionChanged):
+            foreman_reset.pane_session(Nul(["idle"]), PANE)
         with self.assertRaises(foreman_reset.SessionChanged):
             self.run_deliver(Nul(["idle"]), native_session={"kind": "path", "value": "/tmp/t.jsonl"})
 
@@ -698,7 +712,8 @@ class DeliverTest(unittest.TestCase):
                 class Foreign(FakeClient):
                     def pane_get(self, pane_id, ref=ref):
                         return {"pane_id": pane_id, "agent_session": {**ref, "kind": "id", "value": SESSION["value"]}}
-                self.assertIsNone(foreman_reset.pane_session(Foreign(["idle"]), PANE))
+                with self.assertRaises(foreman_reset.SessionChanged):
+                    foreman_reset.pane_session(Foreign(["idle"]), PANE)
                 with self.assertRaises(foreman_reset.SessionChanged):
                     self.run_deliver(Foreign(["idle"]))
 
@@ -733,9 +748,16 @@ class DeliverTest(unittest.TestCase):
         class Bare(FakeClient):
             def pane_get(self, pane_id):
                 return {"pane_id": "w2:p1", "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "id", "value": SESSION["value"]}}
-        self.assertIsNone(foreman_reset.pane_session(Bare(["idle"]), PANE))
+        with self.assertRaises(foreman_reset.SessionChanged):
+            foreman_reset.pane_session(Bare(["idle"]), PANE)
         with self.assertRaises(foreman_reset.SessionChanged):
             self.run_deliver(Bare(["idle"]))
+
+    def test_absent_native_hint_remains_distinct_from_invalid_metadata(self):
+        class Absent(FakeClient):
+            def pane_get(self, pane_id):
+                return {"pane_id": pane_id, "agent_session": None}
+        self.assertIsNone(foreman_reset.pane_session(Absent(["idle"]), PANE))
 
     def test_mechanics_copy_does_not_rename_the_template(self):
         template = worker("claude-a", "claude")
@@ -1108,6 +1130,75 @@ RESET_AT = "2026-09-24T10:00:00+00:00"
 
 
 class ResetCommandTest(CliCase):
+    def codex_delivery_fixture(self):
+        host = GoalHost({SESSION["value"]: goal(SESSION["value"])})
+        host.active.add(SESSION["value"])
+        with patch("foreman.host_goals.WRITE_SCHEMA_VERSION", 2):
+            receipt = foreman_reset.host_goals.prepare("codex", SESSION, connect=host.connect,
+                                                      discover=lambda: "/fixture/codex.sock")
+        supervision.bind(self.state, supervision.identity(SESSION["value"], str(self.tmp), "1", pane_id=PANE),
+                         RESET_AT, root=self.tmp / "bindings")
+        foreman_reset.schedule(self.state, {"pane_id": PANE, "stow": "round-7"}, RESET_AT,
+                               os.getpid, native_session=SESSION, host_goal=receipt)
+        client = FakeClient(["working"], kind="codex")
+        identity = supervision_runtime.process_identity(os.getpid())
+        return host, client, lambda pid: identity if pid == os.getpid() else client.identify(pid)
+
+    def test_deliver_cli_retires_the_goal_before_entering_idle_or_composer_delivery(self):
+        host, client, identify = self.codex_delivery_fixture()
+        def before_delivery(*_args, **_kwargs):
+            self.assertNotIn(SESSION["value"], host.goals)
+            self.assertTrue(any(method == "turn/interrupt" for method, _ in host.calls))
+            self.assertEqual(client.keystrokes, [])
+            raise UsageError("Fixture stops after retirement, before native delivery.", {})
+        with patch("foreman.host_goals.AppServer", side_effect=host.connect), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=before_delivery):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual((row["status"], row["host_goal"]["phase"]), ("failed", "retired"))
+        self.assertEqual(client.keystrokes, [])
+
+    def test_preclear_rechecks_foreign_provenance_after_pinning_the_same_identity(self):
+        host, client, identify = self.codex_delivery_fixture()
+        original = client.pane_get
+        calls = []
+        def changed(pane):
+            value = original(pane)
+            calls.append(pane)
+            if len(calls) == 2:
+                value["agent_session"].update(agent="claude", source="herdr:claude")
+            return value
+        with patch.object(client, "pane_get", side_effect=changed), \
+                patch("foreman.host_goals.AppServer", side_effect=host.connect), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=AssertionError("must not type")):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual(row["host_goal"]["phase"], "prepared")
+        self.assertIsNotNone(row["foreground"])
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertIn(SESSION["value"], host.goals)
+        self.assertFalse(any(method in ("thread/goal/clear", "turn/interrupt") for method, _ in host.calls))
+        self.assertEqual(client.keystrokes, [])
+
+    def test_deliver_cli_preclear_failure_records_failure_without_entering_native_delivery(self):
+        _host, client, identify = self.codex_delivery_fixture()
+        with patch("foreman.host_goals.AppServer", side_effect=UsageError("Restore native host access.", {})), \
+                patch("foreman.foreman_reset.process_identity", side_effect=identify), \
+                patch("foreman.cli.memory.show", return_value={"record": READY}), \
+                patch("foreman.cli.foreman_reset.deliver", side_effect=AssertionError("must not poll idle or type")):
+            code, _out, err = self.run_cli(self.base() + ["foreman-reset-deliver", "--pane", PANE, "--stow", "round-7"], client=client)
+        self.assertEqual(code, 1, err)
+        row = json.loads(foreman_reset.record_path(self.state).read_text())["resets"][0]
+        self.assertEqual((row["status"], row["host_goal"]["phase"]), ("failed", "prepared"))
+        self.assertIn(foreman_reset.RESET_RECEIPT_PREFIX, row["result"]["resume_prompt"])
+        self.assertEqual(client.keystrokes, [])
+
     def run_cli(self, argv, client=None, *, explicit_reset=True):
         # These fixtures exercise the opt-in maintenance owner, not the default
         # round checkpoint. The default-refusal test disables this fixture opt-in.

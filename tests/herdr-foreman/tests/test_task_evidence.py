@@ -138,6 +138,25 @@ class TaskEvidenceTests(fixture.CliCase):
         # isolation adds no repair phase, wait interval or bookkeeping command.
         self.assertEqual(actual["recovery"]["dispatches"][-1]["at"], AT)
 
+    def test_legacy_schema18_cannot_migrate_around_a_task_evidence_hold(self):
+        legacy = deepcopy(self.original_value)
+        legacy["recovery"]["schema_version"] = 18
+        for row in legacy["recovery"]["tasks"].values():
+            row["schema_version"] = 1
+            row.pop("authority", None)
+        original = (json.dumps(legacy, indent=2) + "\n").encode()
+        self.state.write_bytes(original)
+        code, _, err = self.owner("close-task", {"task": "held", "outcome": "merged", "evidence": "must stay held"})
+        self.assertEqual(code, 1, err)
+        self.assertIn("task_evidence_held", err)
+        self.assertEqual(self.state.read_bytes(), original)
+        code, _, err = self.owner("record-report", self.report_record())
+        self.assertEqual(code, 0, err)
+        actual = json.loads(self.state.read_text())
+        self.assertEqual(actual["assignments"][self.held_index], legacy["assignments"][self.held_index])
+        self.assertEqual(actual["recovery"]["dispatches"][0], legacy["recovery"]["dispatches"][0])
+        self.assertIsNone(recovery.task_closure(actual["recovery"], actual["assignments"], "held"))
+
     def test_held_task_reports_dispatches_closures_and_enrollment_acceptance_refuse(self):
         client = self._client({"grok": "idle"})
         commands = [self.apply_arguments("held"), ["relaunch-worker", "held-worker", "--now", AT],

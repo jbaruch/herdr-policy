@@ -296,8 +296,10 @@ def accepted_bootstrap(repo, base, artifact, digest, state_path):
         raise UsageError("Bootstrap consultation history is unreadable; restore the existing owner ledger.", {})
     expected = {"repo": str(Path(repo).resolve()), "base_revision": base,
                 "path": str(Path(artifact).resolve()), "sha256": digest}
-    for record in reversed(engagement.eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])):
-        if record["role"] not in engagement.CONSULTATION_ROLES or not engagement.investigated(record):
+    dispatches = {row["id"]: row for row in state["recovery"]["dispatches"]}
+    for record in reversed(state["specialist_assessments"]):
+        if (record["source"] != "report" or record["role"] not in engagement.CONSULTATION_ROLES
+                or not engagement.investigated(record)):
             continue
         try:
             evidence, body = receipt(record["report"])
@@ -314,7 +316,9 @@ def accepted_bootstrap(repo, base, artifact, digest, state_path):
             binding = json.loads(bindings[0])
         except json.JSONDecodeError:
             continue
-        if binding == expected:
+        dispatch = dispatches.get(record["dispatch"])
+        if (binding == expected and dispatch is not None and dispatch["status"] == "applied"
+                and engagement.native_delivery_proven(record, dispatch, state["assignments"][record["assignment_index"]])):
             return record["id"]
     raise UsageError("The first trigger declaration has no accepted consultation bound to these exact artifact bytes, repository and task base. Dispatch the read-only declaration consultation and assess its delivered report through the normal owner path.", {})
 
@@ -353,7 +357,8 @@ def accepted_legacy_review(expected, task, state_path):
     if not usable:
         raise UsageError("Legacy consultation history is unreadable; restore the existing owner ledger before classification.", {})
     mismatched = set()
-    eligible = {row["id"] for row in engagement.eligible_assessments(state["specialist_assessments"], state["recovery"]["dispatches"])}
+    eligible = {row["id"] for row in engagement.eligible_assessments(state["specialist_assessments"],
+        state["recovery"]["dispatches"], state["assignments"], task=task)}
     for record in reversed(state["specialist_assessments"]):
         if record["role"] not in engagement.CONSULTATION_ROLES:
             continue

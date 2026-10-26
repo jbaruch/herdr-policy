@@ -1045,7 +1045,7 @@ class AssessmentSchemaTest(unittest.TestCase):
         loaded, usable = load_state_checked(case.path)
         self.assertTrue(usable)
         sources = [(row["id"], row["schema_version"], row["source"]) for row in loaded["specialist_assessments"]]
-        self.assertEqual(sources, [("legacy-1", 3, "foreman_assessment"), ("assessment-1", 2, "report")])
+        self.assertEqual(sources, [("legacy-1", 4, "foreman_assessment"), ("assessment-1", 2, "report")])
         self.assertEqual(loaded["specialist_assessments"][1], current)
         self.assertEqual(loaded["schema_version"], STATE_SCHEMA_VERSION)
         rewritten = case.path.read_bytes()
@@ -1053,9 +1053,10 @@ class AssessmentSchemaTest(unittest.TestCase):
         self.assertEqual(case.path.read_bytes(), rewritten)
 
     def test_a_newer_assessment_record_is_the_lagging_reader_case(self):
+        from foreman.engagement import ASSESSMENT_SCHEMA_VERSION
         case = self.case
         case.assess()
-        case.state["specialist_assessments"][0]["schema_version"] = 4
+        case.state["specialist_assessments"][0]["schema_version"] = ASSESSMENT_SCHEMA_VERSION + 1
         case.path.write_text(json.dumps(case.state))
         before = case.path.read_bytes()
         warnings = []

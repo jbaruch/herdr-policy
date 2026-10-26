@@ -1,6 +1,7 @@
 """Reset-owned transfer of a Codex host goal, with no invented goal status.
 
-The native input hook authenticates the incoming owner before this handshake.
+For schema 2, the claimed deliverer retires the outgoing goal before native idle;
+the input hook authenticates the incoming owner before selecting its target.
 Retire the old scheduler before activating the new one: a failure can leave
 zero executors, never two admitted executors. Persist intent before each RPC;
 reconciliation reads both goals rather than repeating uncertain mutations.
@@ -20,6 +21,9 @@ from .codex_goals import AppServer, control_socket, unavailable, valid_goal
 
 QUIESCE_BUDGET_SEC = 30
 QUIESCE_POLL_SEC = 0.2
+# Reader-first release: publish dual readers through Tessl and ACR before the
+# activation release flips new receipts to 2. Existing schema-2 recovery works.
+WRITE_SCHEMA_VERSION = 1
 PHASES = {"prepared", "quiescing", "retiring", "retired", "restoring", "restored", "verified"}
 FIELDS = {"schema_version", "runtime", "socket", "source_thread", "source_goal", "target_thread",
           "target_created_at", "phase", "carried_tokens", "carried_seconds", "retiring_turn", "resume_status"}
@@ -28,10 +32,11 @@ FIELDS = {"schema_version", "runtime", "socket", "source_thread", "source_goal",
 def valid(value):
     if value is None:
         return True  # Legacy rows have no proof; a Codex input must refuse them.
-    if not isinstance(value, dict) or type(value.get("schema_version")) is not int or value["schema_version"] != 1:
+    if not isinstance(value, dict) or type(value.get("schema_version")) is not int or value["schema_version"] not in (1, 2):
         return False
     if value.get("runtime") in ("claude", "grok"):
-        return set(value) == {"schema_version", "runtime", "phase"} and value["phase"] == "not_applicable"
+        return (value["schema_version"] == 1
+                and set(value) == {"schema_version", "runtime", "phase"} and value["phase"] == "not_applicable")
     shape = (set(value) == FIELDS and value.get("runtime") == "codex"
             and isinstance(value["socket"], str) and os.path.isabs(value["socket"])
             and isinstance(value["source_thread"], str) and bool(value["source_thread"])
@@ -47,7 +52,9 @@ def valid(value):
     if not shape:
         return False
     phase, source, target = value["phase"], value["source_goal"], value["target_thread"]
-    if target == value["source_thread"] or phase != "prepared" and target is None:
+    if (target == value["source_thread"]
+            or target is None and phase != "prepared"
+            and (value["schema_version"] == 1 or phase not in {"quiescing", "retiring", "retired"})):
         return False
     if value["target_created_at"] is not None and phase not in ("restored", "verified"):
         return False
@@ -91,7 +98,7 @@ def prepare(runtime, session, previous=(), *, connect=None, discover=None):
                 and receipt["source_goal"]["objective"] == goal["objective"]):
             carried_tokens, carried_seconds = receipt["carried_tokens"], receipt["carried_seconds"]
             break
-    return {"schema_version": 1, "runtime": runtime, "socket": path, "source_thread": session["value"],
+    return {"schema_version": WRITE_SCHEMA_VERSION, "runtime": runtime, "socket": path, "source_thread": session["value"],
             "source_goal": copy.deepcopy(goal), "target_thread": None, "target_created_at": None, "phase": "prepared",
             "retiring_turn": None, "resume_status": goal["status"] if goal else None,
             "carried_tokens": carried_tokens + (goal["tokensUsed"] if goal else 0),
@@ -172,6 +179,66 @@ def retire_turn(receipt, host, persist, sleep, clock):
     refresh(receipt, host, interrupted=receipt["retiring_turn"] is not None)
 
 
+def _retire(receipt, host, persist, sleep, clock):
+    """Retire the captured source scheduler without activating a successor."""
+    if receipt["phase"] == "quiescing":
+        retire_turn(receipt, host, persist, sleep, clock)
+        receipt["phase"] = "retiring"
+        persist()
+    if receipt["phase"] == "retiring":
+        current = host.goal(receipt["source_thread"])
+        if current is not None:
+            quiescent(host, receipt["source_thread"], sleep, clock)
+            refresh(receipt, host)
+            persist()
+            # A journal write can block. Revalidate after it, immediately
+            # before the RPC, rather than acting on the persisted snapshot.
+            # The native API has no compare-and-clear parameter; this is
+            # live verification, not a transaction against external clients.
+            if host.goal(receipt["source_thread"]) != receipt["source_goal"]:
+                raise unavailable("source_goal_changed")
+            # --explicit-reset records the operator's requested handoff.
+            # Clearing an obsolete executor is not completion or a pause.
+            result = host.call("thread/goal/clear", {"threadId": receipt["source_thread"], "origin": "user"})
+            if result.get("cleared") is not True:
+                raise unavailable("source_retirement_unverified")
+        if host.goal(receipt["source_thread"]) is not None:
+            raise unavailable("source_retirement_unverified")
+        receipt["phase"] = "retired"
+        persist()
+    # A cleared goal stops future continuation, not a turn already in flight.
+    # Do not admit the incoming turn until that executor has actually ended.
+    quiescent(host, receipt["source_thread"], sleep, clock)
+    if host.goal(receipt["source_thread"]) is not None:
+        raise unavailable("source_goal_reactivated")
+
+
+def preclear_enabled(receipt):
+    """Continue an existing v2 journal or use the activated new-writer protocol."""
+    return (receipt is not None and receipt["runtime"] == "codex"
+            and (receipt["schema_version"] == 2 or WRITE_SCHEMA_VERSION == 2))
+
+
+def preclear(receipt, persist, *, connect=None, sleep=time.sleep, clock=time.monotonic):
+    """Settle an explicit reset's outgoing scheduler before waiting for pane idle."""
+    if not valid(receipt) or receipt is None:
+        raise unavailable("missing_goal_preflight")
+    if receipt["runtime"] != "codex":
+        return
+    if not preclear_enabled(receipt):
+        raise unavailable("goal_reader_rollout_pending")
+    if receipt["target_thread"] is not None:
+        raise unavailable("preclear_target_already_bound")
+    with (connect or AppServer)(receipt["socket"]) as host:
+        if receipt["phase"] == "prepared":
+            refresh(receipt, host)
+            # Schema 1 required a target before source retirement. This owner
+            # upgrades only the recognized receipt, preserving its full scope.
+            receipt.update(schema_version=2, phase="quiescing")
+            persist()
+        _retire(receipt, host, persist, sleep, clock)
+
+
 def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=time.monotonic, restore=True):
     """Complete/recover only this authenticated reset's journaled host handoff."""
     if not valid(receipt) or receipt is None:
@@ -181,42 +248,14 @@ def transfer(receipt, target, persist, *, connect=None, sleep=time.sleep, clock=
     if target == receipt["source_thread"] or receipt["target_thread"] not in (None, target):
         raise unavailable("target_thread_changed")
     with (connect or AppServer)(receipt["socket"]) as host:
-        if receipt["phase"] == "prepared":
-            refresh(receipt, host)
+        if receipt["phase"] == "prepared" or receipt["target_thread"] is None:
+            if receipt["phase"] == "prepared":
+                refresh(receipt, host)
             if host.goal(target) is not None:
                 raise unavailable("target_goal_already_exists")
-            receipt.update(target_thread=target, phase="quiescing")
+            receipt.update(target_thread=target, phase="quiescing" if receipt["phase"] == "prepared" else receipt["phase"])
             persist()
-        if receipt["phase"] == "quiescing":
-            retire_turn(receipt, host, persist, sleep, clock)
-            receipt["phase"] = "retiring"
-            persist()
-        if receipt["phase"] == "retiring":
-            current = host.goal(receipt["source_thread"])
-            if current is not None:
-                quiescent(host, receipt["source_thread"], sleep, clock)
-                refresh(receipt, host)
-                persist()
-                # A journal write can block. Revalidate after it, immediately
-                # before the RPC, rather than acting on the persisted snapshot.
-                # The native API has no compare-and-clear parameter; this is
-                # live verification, not a transaction against external clients.
-                if host.goal(receipt["source_thread"]) != receipt["source_goal"]:
-                    raise unavailable("source_goal_changed")
-                # --explicit-reset records the operator's requested handoff.
-                # Clearing an obsolete executor is not completion or a pause.
-                result = host.call("thread/goal/clear", {"threadId": receipt["source_thread"], "origin": "user"})
-                if result.get("cleared") is not True:
-                    raise unavailable("source_retirement_unverified")
-            if host.goal(receipt["source_thread"]) is not None:
-                raise unavailable("source_retirement_unverified")
-            receipt["phase"] = "retired"
-            persist()
-        # A cleared goal stops future continuation, not a turn already in flight.
-        # Do not admit the incoming turn until that executor has actually ended.
-        quiescent(host, receipt["source_thread"], sleep, clock)
-        if host.goal(receipt["source_thread"]) is not None:
-            raise unavailable("source_goal_reactivated")
+        _retire(receipt, host, persist, sleep, clock)
         if not restore:
             # UserPromptSubmit retires only. Creating an active target here
             # could schedule work even if native input admission later fails.

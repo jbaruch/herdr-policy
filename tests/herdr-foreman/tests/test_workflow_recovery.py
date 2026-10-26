@@ -25,6 +25,7 @@ class WorkflowRecoveryTest(unittest.TestCase):
         self.case.setUp()
         self.addCleanup(self.case.doCleanups)
         self.case.admit()
+        self.case.owner.client.agent_list = lambda: []
 
     def exception(self, code="workflow_owner_refused", *, at=None):
         with self.case.owner.session() as capability:
@@ -204,6 +205,16 @@ class WorkflowRecoveryTest(unittest.TestCase):
                      "other": state["recovery"]["tasks"]["two"].copy(),
                      "assignments": list(state["assignments"]), "round": self.case.progress()["round"]}
         save_state(self.case.path, state)
+        # Cleanup plus failed retention can leave a completed snapshot with no
+        # saved probe row. Live inventory, not that absence, decides readiness.
+        self.assertEqual(probe_recovery.load(self.case.path)["records"], [])
+        before = self.case.path.read_bytes()
+        for inventory in ([{"name": "probe-untracked"}], None, [None], [{"name": ""}],
+                          [{"name": "worker"}, {"name": "worker"}]):
+            with self.subTest(inventory=inventory), patch.object(self.case.owner.client, "agent_list", return_value=inventory):
+                with self.assertRaisesRegex(UsageError, "still live or native inventory is ambiguous"):
+                    self.reconcile_measurement(intent, "snapshot_completed", snapshot)
+                self.assertEqual(self.case.path.read_bytes(), before)
         data, result = self.reconcile_measurement(intent, "snapshot_completed", snapshot, via_cli=True)
         self.assertEqual(result["outcome"], "snapshot_completed")
         self.assertIsNone(self.case.progress()["pending"])

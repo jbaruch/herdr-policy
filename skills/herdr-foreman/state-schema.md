@@ -1107,7 +1107,7 @@ Its input is exactly `id`, `dispatch`, `report` and `delivery`; `outcome`,
 `skills/herdr-foreman/foreman/report_contract.py`, whose module docstring holds
 the line formats and refusal classes.
 
-Each schema-3 record contains `schema_version: 3`, `id`, `at`, `dispatch`,
+Each schema-4 record contains `schema_version: 4`, `id`, `at`, `dispatch`,
 `assignment_index`, `task`, `role`, `agent`, `report`, `delivery`,
 `report_evidence`, `delivery_evidence`, `source`, `brief_evidence`, `criteria`,
 `acceptance`, `verdict`, `contribution`, `legacy`, `gap` and `native_delivery`. The evidence objects
@@ -1126,7 +1126,7 @@ that dispatch and the same report bytes.
 | `contribution` | The report's optional `CONTRIBUTION:` value or null; a migrated record keeps its old value |
 | `legacy` | `{outcome, summary}` on a migrated record, else null |
 | `gap` | `{message, gaps}` on a `contribution_only` record: the refusal it replays on an identical retry (same input, same report bytes); else null |
-| `native_delivery` | Canonical native-source receipt after the owner proves an Antigravity request/model; null for other providers or unproven historical evidence |
+| `native_delivery` | Versioned canonical native-prefix proof bound to the original Antigravity assignment/session and immutable dispatch; null for other providers or unproven migrated history |
 
 The role and specialty come from the owner dispatch, never from the caller. A
 report with a contract gap appends nothing, save a `contribution_only` entry
@@ -1135,7 +1135,25 @@ and satisfies no reader below. The utility verifies the original
 confirmed dispatch, assignment, enrollment and frozen brief before appending.
 Exact ID/input retries preserve the original receipt, including after source
 cleanup; changed input requires a new ID. Historical reads validate schema and
-relationships without reopening sources.
+relationships without reopening sources. Missing native sources do not erase
+history, contributors or exclusions, and establish no positive delivery authority.
+
+`skills/herdr-foreman/foreman/report_delivery.py` owns native proof schema 1.
+It records `provider`, the original `native_session`, canonical assignment and
+immutable-dispatch digests, the report receipt, and `source: {path, sha256, bytes}`.
+The prefix length and digest bind the exact completed canonical conversation at
+assessment time; later warm turns may append without invalidating that prefix.
+Only Antigravity report-sourced assessments carry this proof; every other
+provider requires null. `NATIVE_ASSESSMENT_FIELDS`, `validate_native_assessment`,
+`verify_native_assessment` and `MAX_ASSESSMENT_SOURCE_BYTES` own its fields,
+relationships and byte budget. Source schemas are never migrated by this reader.
+
+Positive evidence consumers verify the selected record/task's current canonical
+prefix, exact original assignment/request/report and captured model selection.
+An unrelated archive, session, provider or dispatch, a changed/truncated prefix,
+or missing proof supplies no authority. Reading one task does not reopen unrelated
+native history. A general gate-ledger inspection leaves native delivery unknown
+until a report scopes the affected task. No native content is copied into state.
 
 A report-sourced record gates three readers. `close-member` needs one matching
 the current report bytes before an `accepted` reviewer, tester or consultation
@@ -1149,16 +1167,18 @@ A `design` or `implementation` contribution on any record adds a same-task
 independence exclusion; nothing subtracts one. Missing, corrupt or unsupported
 assessment history follows the main state's preserve-and-refuse writer contract.
 
-Migration `1 → 3` runs in the owner while state loads, and is idempotent. It
+Migration `1 → 4` runs in the owner while state loads, and is idempotent. It
 moves `outcome` and `summary` under `legacy`, sets `source:
 foreman_assessment`, nulls the line fields and native delivery proof, and keeps `contribution`. A migrated
 record never satisfies `accepted`, a warm follow-up or the diagnose and judge
 gates; an in-flight consultation needs a fresh dispatch. A schema-1 record
-already carrying newer fields is refused as corrupt. Schema-2 records remain
-readable without rewriting or inventing native proof. Their Antigravity rows
+already carrying newer fields is refused as corrupt. Schema-2/3 records remain
+readable without rewriting or inventing native proof. Schema 3 introduced an
+unbound generic native receipt; it cannot establish the newer canonical prefix
+and assignment proof. These historical Antigravity rows
 cannot supply delivery/approval authority; reassess the same report under a
 new assessment id after the owner can prove its canonical request and model.
-A record newer than 3
+A record newer than 4
 takes the lagging-reader path: no usable prior state, the file left untouched.
 The document's own version is unchanged.
 
@@ -1582,7 +1602,7 @@ could not take.
 | `schema_version` | integer, always `4` | Row version |
 | `foreground` | null or nonempty list of unique process identities | The claimed deliverer's pre-clear foreground runtime pins, saved by `arm_resume` before the first clear keystroke. A reported process-group leader supplies its PID/start/command identity; a transport without a group ID pins the strict whole set. Migrated rows have null and supply no hook input authority |
 | `accepted_session` | null or native kind/value | Written only by the reset input gate after verifying and rebinding the new session. A new supervision binding alone never proves continuation input accepted |
-| `host_goal` | null or goal-receipt schema 1 | Legacy null grants no goal authority. New rows carry host preflight and the journal below. The input hook retires the source before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
+| `host_goal` | null or goal-receipt schema 1/2 | Legacy null grants no goal authority. The 0.18.0 compatibility release reads both versions and keeps new writes at schema 1. For schema 2, the claimed deliverer retires the source before waiting for idle, then the input hook verifies that retirement before saving acceptance, creating no target goal. The admitted continuation restores it through reconciliation after receiving the saved scope/holds; only verified restoration permits dispatch |
 | `pane_id` | string | The foreman's Herdr pane; with `stow`, the reset's identity |
 | `stow` | string | The stow id the resume prompt names |
 | `status` | one of `scheduled`, `delivering`, `delivered`, `failed`, `interrupted`, `reconciled` | `scheduled` → `delivering` → `delivered`; `failed` before any keystroke; `interrupted` after one; `reconciled` when the operator confirmed through `foreman-reset-reconcile` that the foreman resumed |
@@ -1592,18 +1612,27 @@ could not take.
 | `native_session` | `{"kind": "id" \| "path", "value": non-empty string}`, or null | Original native binding. Null is retained only from schema-1 migration and authorizes no input. The per-keystroke session/process contract is `skills/herdr-foreman/foreman/foreman_reset.py` (`deliver`); hook transfer is `skills/herdr-foreman/foreman/reset_input_hook.py` (`check`) |
 | `result` | null, the delivery object, or the failure object | `scheduled` and `delivering` hold null. `delivered` holds exactly `{"schema_version", "pane_id", "stow", "agent", "cleared": true, "resume": {"landed": true, "started": true}}`, whose `schema_version`, `pane_id` and `stow` equal the row's. `failed` and `interrupted` hold exactly `{"error": string, "message": string, "details": object, "resume_prompt": string}`; the saved prompt is used only when the recovery instruction requires operator input. `reconciled` holds exactly `{"outcome": "delivered", "reconciled_at": ISO-8601 string}` |
 
-The reset owner writes and reads goal-receipt schema 1 through
+The reset owner reads Codex goal-receipt schemas 1/2 through
 `skills/herdr-foreman/foreman/host_goals.py`; the host adapter is
 `skills/herdr-foreman/foreman/codex_goals.py`. Native Claude/Grok receipts contain
-only `schema_version`, `runtime` and `phase: not_applicable`: they create no
+only `schema_version: 1`, `runtime` and `phase: not_applicable`: they create no
 Codex goal and prove nothing about an external scheduler. Codex receipts contain:
+
+The readers-first rollout follows `rules/stateful-artifacts.md` Cross-Pipeline
+Schema Bumps. Release 0.18.0 keeps `host_goals.WRITE_SCHEMA_VERSION` at 1 and
+ships dual-accept readers through both Tessl and ACR. Confirm both publications
+before the activation release changes that constant to 2. No elapsed waiting
+period or new operator approval is required. Existing schema-2 receipts remain
+recoverable during the compatibility stage; a schema-1 receipt cannot enter
+targetless preclear until writer activation. Older schema-1-only owners refuse
+schema 2 without rewriting its history.
 
 | Field | Contract |
 | --- | --- |
-| `schema_version`, `runtime` | Integer `1`, literal `codex` |
+| `schema_version`, `runtime` | Integer `1` for new receipts during the compatibility stage, then `2` after writer activation. Both remain readable. Once activated, a claimed preclear upgrades its existing prepared receipt before effects, preserving its snapshot/accounting. Literal `codex` |
 | `socket` | Absolute existing daemon control socket selected during read-only preflight |
 | `source_thread`, `source_goal` | Original native ID and its authoritative host goal snapshot, or null when no goal exists. Snapshot fields are `threadId`, `objective`, `status`, nullable `tokenBudget`, `tokensUsed`, `timeUsedSeconds`, `createdAt`, `updatedAt`; additional host fields are preserved |
-| `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration |
+| `target_thread`, `target_created_at` | Incoming authenticated native ID and restored host goal generation; null before selection/restoration. Schema 2 also permits a null target while preclear is `quiescing`, `retiring` or `retired` |
 | `phase` | `prepared`, `quiescing`, `retiring`, `retired`, `restoring`, `restored`, `verified`; intermediate intent is never proof the corresponding host mutation succeeded |
 | `retiring_turn`, `resume_status` | Exact outgoing turn ID selected for host interruption, or null; original goal lifecycle restored on the successor, or null with no source goal. A real interruption may pause the outgoing host goal; it never changes the saved objective's intended lifecycle |
 | `carried_tokens`, `carried_seconds` | Nonnegative cumulative usage from prior executors of this goal. The successor's native counters remain native; its token cap is only the remaining allowance |
@@ -1620,8 +1649,10 @@ receipt under the per-response output bound; it prints no objective or
 history. A missing or ambiguous selection refuses. Its output is a receipt,
 not a substitute for live host/owner verification.
 Codex receipts bind `source_thread` to the row's original native session and
-any accepted session to `target_thread`. Non-prepared phases require a distinct
-target; restored/verified goals require their created generation. An absent
+any accepted session to `target_thread`. A selected target must be distinct;
+schema 1 requires it after `prepared`, while schema 2 permits targetless preclear.
+Restoring/restored/verified phases require the target, and restored/verified
+goals require their created generation. An absent
 source goal carries no generation, usage or interrupted-turn authority.
 Restoring/restored/verified Codex rows require native acceptance. Reconciliation
 matches that accepted identity to the live pane/runtime before host effects;
@@ -1740,7 +1771,7 @@ without the provenance placeholder retain their rendering-only contract.
 A first trigger consultation's `TRIGGER_DECLARATION` line is report content,
 not a new owner-state schema or acceptance record. Only a standalone line counts;
 fenced, quoted, indented and inline-code copies are examples
-(`skills/herdr-foreman/foreman/report_contract.py` `trigger_bindings`). Ordinary schema-2 specialist
+(`skills/herdr-foreman/foreman/report_contract.py` `trigger_bindings`). Ordinary schema-4 specialist
 assessment receipts bind its exact bytes; the assessment owner checks its
 absolute repository/artifact, exact task base and reviewed digest. The existing
 four-key writing shape is unchanged. Legacy review uses the separate five-key
@@ -1760,7 +1791,7 @@ Its authority contains `kind: legacy_review`, canonical absolute `repo` and
 `path`, full `base_revision` and `head_revision`, artifact `sha256`, exact `task`,
 accepted `assessment` id and `report_evidence: {path, sha256}`.
 This is read-only command output, not a stored authorization or migration.
-Ordinary specialist assessments use schema 3 and retain readable schema-2 history; older owner state takes its
+Ordinary specialist assessments use schema 4 and retain readable schema-2/3 history without Antigravity native authority; older owner state takes its
 existing migration refusal before classification and is left unchanged.
 
 ## Coding Policy Installation
