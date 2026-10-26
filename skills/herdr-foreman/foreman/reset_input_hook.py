@@ -103,7 +103,7 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
             if goal is not None and goal["runtime"] != live.get("agent"):
                 return refusal("host_goal_runtime_changed")
             incoming = {key: who[key] for key in ("kind", "value")}
-            hint = reset.pane_session(native, pane)
+            hint = reset.pane_session(native, pane, expected_agent=live["agent"])
             if hint not in (None, row["native_session"], incoming):
                 return refusal("native_hint_changed")
             if live["agent"] != "codex" and hint != incoming:
@@ -140,17 +140,20 @@ def check(payload, environ, at, *, client=None, root=None, probe=runtime.process
                         goal["target_thread"] = who["value"]
                         save_state(path, document)
                     host_goals.transfer(goal, who["value"], lambda: save_state(path, document), restore=False)
-                reported = reset.pane_session(native, pane)
+                reported = reset.pane_session(native, pane, expected_agent=live["agent"])
                 if reported not in (None, row["native_session"], incoming):
                     return refusal("native_hint_changed")
-                if reported != incoming:
-                    if live["agent"] != "codex":
-                        return refusal("native_hint_unacknowledged")
+                if live["agent"] == "codex":
                     if (reset.foreground_processes(native, pane) != row["foreground"]
                             or reset._foreman_record(native, pane).get("agent") != live["agent"]):
                         return refusal("foreground_replaced_before_session_report")
-                    native.pane_report_agent_session(pane, live["agent"], incoming, time.time_ns(), session_start_source="clear")
-                if reset.pane_session(native, pane) != incoming:
+                    acknowledgment = native.pane_report_agent_session(
+                        pane, live["agent"], incoming, time.time_ns(), session_start_source="clear")
+                    if not isinstance(acknowledgment, dict):
+                        return refusal("native_hint_report_unacknowledged")
+                elif reported != incoming:
+                    return refusal("native_hint_unacknowledged")
+                if reset.pane_session(native, pane, expected_agent=live["agent"]) != incoming:
                     return refusal("native_hint_unacknowledged")
                 row["accepted_session"] = incoming
                 save_state(path, document)

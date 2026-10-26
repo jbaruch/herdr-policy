@@ -91,6 +91,12 @@ foreground, the hook reports that verified native identity through Herdr's publi
 reporting API with the verified `session_start_source: clear` transition and
 requires matching readback before saving input acceptance. A plain identity
 report does not establish that transition.
+The Codex hook reports the verified transition even when the hint already names
+the incoming ID. Absent metadata permits that deferred registration; malformed
+or foreign nonempty metadata refuses before binding or reporting instead of
+being treated as absence. Readback retains the native integration provenance.
+An unacknowledged transition report blocks admission even when a plain incoming
+hint already matches.
 A foreign hint or unacknowledged report blocks admission; session metadata is
 never repaired from a guessed ID. An attested remote transport that lacks this
 reporting operation refuses a stale hint rather than falling back locally.

@@ -212,6 +212,7 @@ class FakeClient:
         self.session_reports.append((pane_id, kind, session.copy(), seq, session_start_source))
         if session_start_source == "clear":
             self.reported_session = session.copy()
+        return {}
 
     def pane_process_info(self, pane_id):
         pid = self.pids.pop(0) if len(self.pids) > 1 else self.pids[0]
@@ -648,7 +649,8 @@ class DeliverTest(unittest.TestCase):
             def pane_get(self, pane_id):
                 return {"pane_id": pane_id, "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "path", "value": "/loop/t.jsonl"}}
         with patch("foreman.foreman_reset.supervision.canonical", side_effect=RuntimeError("Symlink loop")):
-            self.assertIsNone(foreman_reset.pane_session(Looping(["idle"]), PANE))
+            with self.assertRaises(foreman_reset.SessionChanged):
+                foreman_reset.pane_session(Looping(["idle"]), PANE)
             with self.assertRaises(foreman_reset.SessionChanged):
                 self.run_deliver(Looping(["idle"]), native_session={"kind": "path", "value": "/loop/t.jsonl"})
 
@@ -656,7 +658,8 @@ class DeliverTest(unittest.TestCase):
         class Nul(FakeClient):
             def pane_get(self, pane_id):
                 return {"pane_id": pane_id, "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "path", "value": "/tmp/t\x00.jsonl"}}
-        self.assertIsNone(foreman_reset.pane_session(Nul(["idle"]), PANE))
+        with self.assertRaises(foreman_reset.SessionChanged):
+            foreman_reset.pane_session(Nul(["idle"]), PANE)
         with self.assertRaises(foreman_reset.SessionChanged):
             self.run_deliver(Nul(["idle"]), native_session={"kind": "path", "value": "/tmp/t.jsonl"})
 
@@ -709,7 +712,8 @@ class DeliverTest(unittest.TestCase):
                 class Foreign(FakeClient):
                     def pane_get(self, pane_id, ref=ref):
                         return {"pane_id": pane_id, "agent_session": {**ref, "kind": "id", "value": SESSION["value"]}}
-                self.assertIsNone(foreman_reset.pane_session(Foreign(["idle"]), PANE))
+                with self.assertRaises(foreman_reset.SessionChanged):
+                    foreman_reset.pane_session(Foreign(["idle"]), PANE)
                 with self.assertRaises(foreman_reset.SessionChanged):
                     self.run_deliver(Foreign(["idle"]))
 
@@ -744,9 +748,16 @@ class DeliverTest(unittest.TestCase):
         class Bare(FakeClient):
             def pane_get(self, pane_id):
                 return {"pane_id": "w2:p1", "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "id", "value": SESSION["value"]}}
-        self.assertIsNone(foreman_reset.pane_session(Bare(["idle"]), PANE))
+        with self.assertRaises(foreman_reset.SessionChanged):
+            foreman_reset.pane_session(Bare(["idle"]), PANE)
         with self.assertRaises(foreman_reset.SessionChanged):
             self.run_deliver(Bare(["idle"]))
+
+    def test_absent_native_hint_remains_distinct_from_invalid_metadata(self):
+        class Absent(FakeClient):
+            def pane_get(self, pane_id):
+                return {"pane_id": pane_id, "agent_session": None}
+        self.assertIsNone(foreman_reset.pane_session(Absent(["idle"]), PANE))
 
     def test_mechanics_copy_does_not_rename_the_template(self):
         template = worker("claude-a", "claude")

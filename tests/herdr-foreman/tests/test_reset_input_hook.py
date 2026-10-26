@@ -154,6 +154,43 @@ class ResetHookTest(unittest.TestCase):
         self.assertEqual(client.session_reports, [])
         self.assertEqual(store.load(self.state)["binding"], before)
 
+    def test_a_plain_incoming_hint_still_requires_the_verified_clear_transition_report(self):
+        client = FakeClient(["idle"], kind="codex")
+        client.reported_session = {"kind": "id", "value": CLEARED}
+        self.assertEqual(self.invoke(client=client), hook.acceptance())
+        self.assertEqual(len(client.session_reports), 1)
+        self.assertEqual(client.session_reports[0][-1], "clear")
+        self.setUp()
+        client = FakeClient(["idle"], kind="codex")
+        client.reported_session = {"kind": "id", "value": CLEARED}
+        with patch.object(client, "pane_report_agent_session", return_value=None):
+            self.assertEqual(self.invoke(client=client)["decision"], "block")
+        document, _ = reset._load(reset.record_path(self.state), migrate_legacy=False)
+        self.assertIsNone(document["resets"][0]["accepted_session"])
+
+    def test_absent_codex_hint_can_be_registered_from_the_verified_transition(self):
+        class Absent(FakeClient):
+            def pane_get(self, pane_id):
+                if self.reported_session is None:
+                    return {"pane_id": pane_id, "agent_session": None}
+                return super().pane_get(pane_id)
+        client = Absent(["idle"], kind="codex")
+        self.assertEqual(self.invoke(client=client), hook.acceptance())
+        self.assertEqual(len(client.session_reports), 1)
+
+    def test_malformed_or_foreign_hint_metadata_is_not_overwritten_as_absence(self):
+        for hint in ({}, "invalid", {"source": "untrusted", "agent": "codex", "kind": "id", "value": CLEARED},
+                     {"source": "herdr:claude", "agent": "claude", "kind": "id", "value": CLEARED},
+                     {"source": "herdr:codex", "agent": "codex", "kind": "id", "value": ""}):
+            with self.subTest(hint=hint):
+                self.setUp()
+                client = FakeClient(["idle"], kind="codex")
+                before = store.load(self.state)["binding"]
+                with patch.object(client, "pane_get", return_value={"pane_id": PANE, "agent_session": hint}):
+                    self.assertEqual(self.invoke(client=client)["decision"], "block")
+                self.assertEqual(client.session_reports, [])
+                self.assertEqual(store.load(self.state)["binding"], before)
+
     def test_two_resets_leave_herdr_and_native_owner_identity_agreeing(self):
         first = FakeClient(["idle"], kind="codex")
         self.assertEqual(self.invoke(client=first), hook.acceptance())
