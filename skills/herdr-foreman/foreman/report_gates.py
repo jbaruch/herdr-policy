@@ -600,6 +600,9 @@ def ledger_view(state_path, judge_agent):
     roles and tasks are the recovery store's
     dispatches; operator decisions are the attention sidecar's entries;
     owner-parsed verdicts are the assessments and `record-report` receipts.
+    An assessment proves delivery but not its timestamp: its projection carries
+    `assessment_at` and null `at`. Gate chronology uses that dispatch's lower
+    bound instead of reinterpreting the assessment's persisted timestamp.
     `judge_agent` is the legacy pinned agent or schema-7 pinned worker kind
     from config.json, or None.
     """
@@ -616,7 +619,7 @@ def ledger_view(state_path, judge_agent):
         if row["source"] == "report" and dispatch is not None and engagement.native_delivery_proven(row, dispatch):
             saved = row["report_evidence"]
             deliveries.append({"dispatch": row["dispatch"], "path": _report_key(saved["path"]),
-                               "sha256": saved["sha256"], "at": row["at"]})
+                               "sha256": saved["sha256"], "at": None, "assessment_at": row["at"]})
     for event in data["events"]:
         detail = event.get("data")
         if (event.get("kind") == "report_observed" and isinstance(detail, dict) and detail.get("present") is True
@@ -668,16 +671,23 @@ def _delivered(view, owner, key, since, evidence, allowed):
         _fail("A resolution cites the resolving worker's own report, not the gated report itself.")
     digest = _digest(path)
     for row in view["deliveries"]:
-        if row["path"] != path or row["sha256"] != digest or timestamp(row["at"], "Delivery") <= since:
+        if row["path"] != path or row["sha256"] != digest:
             continue
         dispatch = view["dispatches"].get(row["dispatch"])
         if dispatch is None:
+            continue
+        # Assessment proves delivery, but its timestamp is only an upper bound.
+        # A later dispatch proves the assessment-derived delivery followed the
+        # gate; an actual observation/recovery retains its own chronology.
+        after = dispatch.get("at") if "assessment_at" in row else row.get("at")
+        if not _nonempty(after) or timestamp(after, "Dispatch or delivery") <= since:
             continue
         role = _resolver(view, owner, dispatch)
         if role in allowed:
             return role, {"path": path, "sha256": digest, "dispatch": dispatch["id"]}
     _fail("Report {} carries no delivery receipt that resolves this gate: it must be the current bytes of a report "
-          "supervision observed (or `{}` recovered) after the gate was recorded, for an applied dispatch on task {} "
+          "supervision observed (or `{}` recovered) after the gate was recorded, or an assessed report from a "
+          "dispatch started after the gate, for an applied dispatch on task {} "
           "held by {}. Dispatch that re-read or ruling and cite its delivered report.".format(
               path, runnable.command("recover-report"), owner["task"], " or ".join(
                   {"worker": "the {} role".format(owner["role"]),
