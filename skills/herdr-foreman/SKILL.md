@@ -1,15 +1,17 @@
 ---
 name: herdr-foreman
 description: >
-  Coordinate parallel Herdr delivery. Use to assign work, recover workers,
-  quarantine contradictory context evidence, release verified changes, or inspect
-  readiness, task cost, attention, GitHub evidence, lessons, working memory,
-  retrospectives and coordination metrics.
+  Coordinate Herdr delivery or answer named offline Herdr lookups. Use when asked
+  to assign or delegate work, recover workers, quarantine contradictory context
+  evidence, release verified changes, or check readiness, task cost, attention,
+  GitHub evidence, memory, retrospectives/postmortems and coordination metrics.
 ---
 
 # Herdr Foreman Skill
 
-This skill is an action router — pick the step that matches the user's intent and execute only that step. Do not run other steps; do not parallelize.
+Choose the entry that matches the request and load its selected reference.
+Inspection entries are individual lookups, not a startup checklist. Step 1 owns
+concurrent delivery; unselected entries add no prerequisite work.
 
 Step 1 chains concurrent delivery. Authorized quarantine chains Step 1 to Step 10,
 then returns to Step 1's role lookup and verified continuation. Other entries
@@ -59,7 +61,8 @@ Use no replacement store.
 
 ## Step 2 — Collect Coordination Evidence
 
-Collect selected evidence; finish here:
+Return the capture receipt for the selected frozen owners and observation
+window, retaining collection gaps; finish here:
 
 ```text
 skills/herdr-foreman/references/coordination-metrics.md
@@ -67,7 +70,8 @@ skills/herdr-foreman/references/coordination-metrics.md
 
 ## Step 3 — Summarize a Measurement Snapshot
 
-Summarize a prepared snapshot; finish here:
+Return the prepared sanitized snapshot's counts, deltas and stated limitations;
+finish here:
 
 ```text
 skills/herdr-foreman/references/coordination-metrics.md
@@ -75,7 +79,8 @@ skills/herdr-foreman/references/coordination-metrics.md
 
 ## Step 4 — Inspect Workflow Readiness
 
-Retain readiness unknowns and coverage; finish here:
+Return the selected task's readiness reasons and eligible capacity, retaining
+unknowns and page coverage; finish here:
 
 ```text
 skills/herdr-foreman/references/workflow-capacity.md
@@ -83,7 +88,8 @@ skills/herdr-foreman/references/workflow-capacity.md
 
 ## Step 5 — Retrieve Saved Attention
 
-Keep page coverage; finish here:
+Return the named obligation or selected attention page with lifecycle, sources
+and page coverage; finish here:
 
 ```text
 skills/herdr-foreman/references/attention.md
@@ -91,7 +97,8 @@ skills/herdr-foreman/references/attention.md
 
 ## Step 6 — Retrieve Working Memory
 
-Retrieve the named record; finish here:
+Return the named capture, lesson or stow with its evidence references,
+freshness and recorded gaps; finish here:
 
 ```text
 skills/herdr-foreman/references/working-memory.md
@@ -99,7 +106,8 @@ skills/herdr-foreman/references/working-memory.md
 
 ## Step 7 — Retrieve a Retrospective
 
-Retain date, coverage and path; finish here:
+Return the selected retrospective evidence with its date, coverage and source
+path; finish here:
 
 ```text
 skills/herdr-foreman/references/retrospectives.md
@@ -107,7 +115,8 @@ skills/herdr-foreman/references/retrospectives.md
 
 ## Step 8 — Inspect Task Cost
 
-Retain task-cost unknowns and coverage; finish here:
+Return the selected task's effort/cost facts and unmeasured fields, retaining
+page coverage; finish here:
 
 ```text
 skills/herdr-foreman/references/decision-context.md
@@ -115,7 +124,8 @@ skills/herdr-foreman/references/decision-context.md
 
 ## Step 9 — Retrieve GitHub Evidence
 
-Read one named GitHub source; finish here:
+Return the named GitHub source's identity, current state, source link and
+evidence coverage; finish here:
 
 ```text
 skills/herdr-foreman/references/decision-context.md
@@ -128,3 +138,8 @@ Use protected quarantine and its continuation:
 ```text
 skills/herdr-foreman/references/context-quarantine.md
 ```
+
+The owner must confirm the original native binding, explicit authorization and
+quarantine eligibility before its write. On refusal, preserve the evidence and
+report its diagnostic. After a successful repair, return to Step 1's role lookup
+and continue only under its verified role and saved continuation.
