@@ -222,6 +222,10 @@ def main(argv):
         notes = plan.get("notes", [])
         if not isinstance(notes, list) or any(not isinstance(note, str) for note in notes):
             raise UsageError("Restore the selected plan's diagnostic notes before preparing briefs.", {})
+        rationale = plan.get("rationale", [])
+        if not isinstance(rationale, list) or any(not isinstance(line, str) for line in rationale):
+            raise UsageError("Restore the selected plan's rationale before preparing its warnings and briefs.", {})
+        notes = list(dict.fromkeys([*notes, *(line for line in rationale if line.startswith("note:"))]))
         if not errors:
             errors = validate_roles(args.templates, values)
         rendered = None

@@ -159,6 +159,15 @@ class BriefInputsTest(unittest.TestCase):
         self.assertIsNone(json.loads(result.stdout)["common"])
         self.assertFalse((self.root / "round").exists())
 
+    def test_actual_planner_rationale_notes_are_success_with_warnings(self):
+        self.plan["rationale"] = ["note: excluded contributor old-worker is absent from this snapshot"]
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        view = json.loads(result.stdout)
+        self.assertTrue(view["ready"])
+        self.assertEqual(view["plan_notes"]["items"], self.plan["rationale"])
+        self.assertEqual(view["diagnostics"]["items"], [])
+
     def test_historical_exclusion_note_is_explicitly_a_note_on_success(self):
         self.plan["notes"] = ["note: a historical excluded worker is absent from this snapshot"]
         result = self.invoke()
