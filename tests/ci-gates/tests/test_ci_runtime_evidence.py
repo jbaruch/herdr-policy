@@ -288,6 +288,24 @@ class RuntimeEvidenceTests(unittest.TestCase):
             run.assert_not_called()
             self.assertTrue(json.loads(output.getvalue())['reused'])
 
+    def test_git_failure_or_timeout_during_lookup_runs_the_full_suites(self):
+        for error in (subprocess.CalledProcessError(128, ['git', 'status']),
+                      subprocess.TimeoutExpired(['git', 'rev-parse'], 30)):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as scratch:
+                env = {**self.environment, 'RUNNER_TEMP': scratch, 'PATH': os.environ['PATH'],
+                       'HERDR_CODING_POLICY_ROOT': '/baseline', 'HERDR_REUSE_RUNTIME': '1',
+                       'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': 'refs/heads/main'}
+                execution = subprocess.CompletedProcess([], 0, stdout='{"suites":3,"passed":3,"failed":0}')
+                with patch.dict(os.environ, env, clear=True), patch.object(GATE, 'fingerprint', return_value=self.api.current), \
+                     patch.object(GATE, 'tree_identity', side_effect=error), \
+                     patch.object(GATE.subprocess, 'run', return_value=execution) as run, \
+                     contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(GATE.main(['--evidence', scratch + '/runtime-evidence.json']), 0)
+                run.assert_called_once()
+                result = json.loads(output.getvalue())
+                self.assertFalse(result['reused'])
+                self.assertEqual(result['result']['passed'], 3)
+
     def test_pr_producer_writes_only_after_complete_unchanged_runtime_success(self):
         for changed in (False, True):
             with self.subTest(changed=changed), tempfile.TemporaryDirectory() as scratch:

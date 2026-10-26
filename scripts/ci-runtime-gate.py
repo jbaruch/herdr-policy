@@ -286,7 +286,7 @@ def main(argv=None):
                 try:
                     proof = reusable(GitHub(environ["GITHUB_REPOSITORY"], environ.get("GH_TOKEN", "")),
                                      current, tree_identity(environment), environ)
-                except (Unavailable, KeyError, TypeError, ValueError, OSError) as exc:
+                except (Unavailable, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError) as exc:
                     reason = str(exc) if isinstance(exc, Unavailable) else "invalid or unavailable evidence metadata"
                 else:
                     emit({"reused": True, "evidence_written": False, "source": proof,
