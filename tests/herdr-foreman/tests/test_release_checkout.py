@@ -15,6 +15,7 @@ from copy import deepcopy
 import io
 import json
 import os
+import stat
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -273,6 +274,46 @@ class ReleaseCheckoutTest(unittest.TestCase):
             self.assertEqual(release_checkout.native_cwd(self.path, "one", str(self.source)), str(self.source))
         self.assertEqual(self.path.read_bytes(), before)
         self.assertFalse(Path(str(self.path) + ".release-runtime").exists())
+
+    def test_shared_metadata_modes_refuse_reads_and_republication_without_changes(self):
+        self.verified(legacy=True)
+        self.local_files()
+        result = self.prepare()
+        intent = Path(result["intent"])
+        paths = (intent, release_checkout.receipt_path(self.target), Path(str(intent) + ".ready"))
+        for path in paths:
+            body = path.read_bytes()
+            value = json.loads(body)
+            for mode in (0o644, 0o666):
+                with self.subTest(path=path.name, mode=oct(mode)):
+                    path.chmod(mode)
+                    if path != paths[-1]:
+                        with self.assertRaises(ForemanError) as refused:
+                            release_checkout._read(path)
+                        self.assertEqual(refused.exception.details["reason"], "release_checkout_evidence_unsafe")
+                    with self.assertRaises(ForemanError) as refused:
+                        release_checkout._publish(path, value)
+                    self.assertEqual(refused.exception.details["reason"], "release_checkout_evidence_unsafe")
+                    self.assertEqual(path.read_bytes(), body)
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+            path.chmod(0o600)  # Restore only this controlled fixture's metadata.
+
+    def test_ordinary_contract_and_provision_modes_keep_compatibility(self):
+        provision.receipt_path(self.source).chmod(0o644)
+        self.case.common.chmod(0o644)
+        for captured in self.case.document["briefs"].values():
+            Path(captured["path"]).chmod(0o644)
+        self.verified()
+        self.local_files()
+        self.prepare()
+        task = self.case.owner.state()["recovery"]["tasks"]["one"]
+        path = Path(task["authority"]["contract"]["path"])
+        body = path.read_bytes()
+        path.chmod(0o644)
+        release_checkout._publish(path, json.loads(body), metadata=False)
+        self.assertEqual(path.read_bytes(), body)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+        self.assertEqual(stat.S_IMODE(provision.receipt_path(self.source).stat().st_mode), 0o644)
 
     def test_live_lease_and_pending_effect_preserve_source(self):
         self.verified()
@@ -573,7 +614,9 @@ class AdoptedReleaseCheckoutTest(unittest.TestCase):
         self.case.git("worktree", "add", "-b", "feature/equivalent", str(other), self.helper.head)
         location = release_checkout.receipt_path(self.helper.target)
         original = location.read_bytes()
-        release_checkout.receipt_path(other).write_bytes(original)
+        other_receipt = release_checkout.receipt_path(other)
+        other_receipt.write_bytes(original)
+        other_receipt.chmod(0o600)
         unrelated = deepcopy(document)
         unrelated["repository"].update(worktree=str(other), branch="feature/equivalent")
         with self.assertRaisesRegex(UsageError, "exact task and owner"):

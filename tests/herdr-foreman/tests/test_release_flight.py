@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import subprocess
+import stat
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -185,6 +186,23 @@ class ReleaseFlightTest(unittest.TestCase):
         with self.assertRaises(ForemanError):
             release_flight.require_clear(self.path, self.state, {"one"})
         self.assertTrue(self.location.is_symlink())
+
+    def test_every_flight_gate_input_requires_private_mode_without_chmod_repair(self):
+        self.seed()
+        self.write(Path(self.locator["ready"]), self.ready)
+        paths = (self.location, Path(self.locator["intent"]["path"]), Path(self.locator["ready"]))
+        for path in paths:
+            body = path.read_bytes()
+            for mode in (0o644, 0o666):
+                with self.subTest(path=path.name, mode=oct(mode)):
+                    path.chmod(mode)
+                    with self.assertRaises(ForemanError) as refused:
+                        release_flight.require_clear(self.path, self.state, {"one"})
+                    self.assertEqual(refused.exception.details["reason"], "release_checkout_evidence_unsafe")
+                    release_flight.require_clear(self.path, self.state, {"two"})
+                    self.assertEqual(path.read_bytes(), body)
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+            path.chmod(0o600)
 
     def test_actual_fifo_refuses_without_blocking_the_owner(self):
         self.seed()
