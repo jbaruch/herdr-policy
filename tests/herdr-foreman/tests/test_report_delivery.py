@@ -563,7 +563,12 @@ class NativeDeliveryTests(unittest.TestCase):
             self.assertEqual(document["recovery"]["delivery_recoveries"], [])
             source.write_text(encode(rows))
             proof = delivery.require_primary_delivery(dispatch, document["assignments"][0], enrolled, data["report"])
-            self.assertEqual(proof, {"path": str(source), "sha256": hashlib.sha256(source.read_bytes()).hexdigest()})
+            assert proof is not None
+            self.assertEqual(proof["schema_version"], 1)
+            self.assertEqual(proof["native_session"], native)
+            self.assertEqual(proof["source"], {"path": str(source), "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                                              "bytes": source.stat().st_size})
+            delivery.verify_native_assessment(proof, dispatch, document["assignments"][0], proof["report"])
             data["source"] = str(source)
             prior = copy.deepcopy(document["assignments"])
             result = delivery.recover(document["recovery"], document["assignments"], data, AT)

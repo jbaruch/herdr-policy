@@ -552,10 +552,10 @@ def _ledger_state(state_path):
     if not usable:
         raise StateError("State file {} is unusable, so no gate resolution can be bound to a delivered report; "
                          "restore it before resolving a gate.".format(state_path), {"path": str(state_path)})
-    return state["recovery"], state["specialist_assessments"]
+    return state["recovery"], state["specialist_assessments"], state["assignments"]
 
 
-def _verdicts(store, assessments):
+def _verdicts(store, assessments, proven):
     """Every owner-parsed verdict, keyed to the report bytes it was parsed from.
 
     Sources, each bound to who delivered it: a report-sourced specialist
@@ -567,7 +567,7 @@ def _verdicts(store, assessments):
     for row in assessments:
         dispatch = dispatches.get(row.get("dispatch"))
         if (row.get("source") == "report" and row.get("verdict") is not None and dispatch is not None
-                and engagement.native_delivery_proven(row, dispatch)):
+                and row["id"] in proven):
             found.append({"path": _report_key(row["report"]), "sha256": row["report_evidence"]["sha256"],
                           "verdict": row["verdict"], "dispatch": row.get("dispatch"), "task": None, "agent": None})
     for row in store["dispatches"]:
@@ -592,7 +592,7 @@ def _approves(row, path, digest, dispatch):
             and row["agent"] is not None and row["agent"] == dispatch.get("agent"))
 
 
-def ledger_view(state_path, judge_agent):
+def ledger_view(state_path, judge_agent, report=None):
     """What the owners already record about who delivered which report, and when.
 
     Deliveries are the report-contract assessments, supervision's
@@ -606,17 +606,31 @@ def ledger_view(state_path, judge_agent):
     `judge_agent` is the legacy pinned agent or schema-7 pinned worker kind
     from config.json, or None.
     """
-    store, assessments = _ledger_state(state_path)
+    store, assessments, assignments = _ledger_state(state_path)
     data = supervision.load(state_path)
     _document, entries, _progress = attention.load(state_path)
     deliveries = []
     dispatches = {row["id"]: row for row in store["dispatches"]}
+    tasks = {dispatches[row["id"]]["task"] for row in data["members"]
+             if report is not None and _report_key(row["assignment"]["report"]) == _report_key(report)
+             and row["id"] in dispatches}
+    # Native files are read only for the report's actual task. A broad ledger
+    # inspection keeps other native delivery unknown and reconstructs no history.
+    proven = set()
+    for row in assessments:
+        dispatch = dispatches.get(row.get("dispatch"))
+        index = row.get("assignment_index")
+        assignment = (assignments[index] if type(index) is int and 0 <= index < len(assignments)
+                      and row.get("task") in tasks else None)
+        if (row.get("source") == "report" and dispatch is not None
+                and engagement.native_delivery_proven(row, dispatch, assignment)):
+            proven.add(row["id"])
     # Assessment already validated the positive wait/recovery receipt and
     # bound it to this dispatch and these report bytes. It survives pane
     # closure even when the background watcher never sampled the report.
     for row in assessments:
         dispatch = dispatches.get(row["dispatch"])
-        if row["source"] == "report" and dispatch is not None and engagement.native_delivery_proven(row, dispatch):
+        if row["source"] == "report" and dispatch is not None and row["id"] in proven:
             saved = row["report_evidence"]
             deliveries.append({"dispatch": row["dispatch"], "path": _report_key(saved["path"]),
                                "sha256": saved["sha256"], "at": None, "assessment_at": row["at"]})
@@ -633,7 +647,7 @@ def ledger_view(state_path, judge_agent):
     return {"dispatches": dispatches,
             "enrolled": {row["id"]: _report_key(row["assignment"]["report"]) for row in data["members"]},
             "deliveries": deliveries, "decisions": entries, "judge": judge_agent,
-            "verdicts": _verdicts(store, assessments)}
+            "verdicts": _verdicts(store, assessments, proven)}
 
 
 def _owner(view, key):
@@ -894,8 +908,8 @@ def run_command(args, state_path, now, judge_agent=None):
         return record(state_path, data, args.now or now)
     if args.command == "report-gate-reread":
         return resolve(state_path, args.report, "reread", args.note, args.now or now,
-                       ledger_view(state_path, judge_agent), evidence=args.evidence)
+                       ledger_view(state_path, judge_agent, args.report), evidence=args.evidence)
     if args.command == "report-gate-clear":
         return resolve(state_path, args.report, "clear", args.reason, args.now or now,
-                       ledger_view(state_path, judge_agent), evidence=args.evidence, decision=args.decision)
+                       ledger_view(state_path, judge_agent, args.report), evidence=args.evidence, decision=args.decision)
     return status(state_path, args.report)
