@@ -69,7 +69,7 @@ jobs:
         run: python3 scripts/ci-runtime-gate.py --evidence "$RUNNER_TEMP/herdr-runtime-evidence/runtime-evidence.json"
       - name: Retain immutable runtime evidence for this PR attempt
         if: github.event_name == 'pull_request' && steps.runtime.outputs.evidence_written == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6; Dependabot weekly
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v6; Dependabot weekly
         with:
           name: runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/herdr-runtime-evidence/runtime-evidence.json
