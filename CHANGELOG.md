@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.19.2 — 2026-11-01
+
+- Add the MIT license.
+
 ## 0.19.1 — 2026-10-26
 
 - Activate the shared writers after confirmed Tessl and ACR publication of the 0.19.0 compatibility readers. New owner writes use recovery 20, Antigravity assessment 4, Codex goal receipt 2 and legacy adoption 3; accepted older history remains readable.
